@@ -15,14 +15,12 @@ import { FinalCTA } from './components/FinalCTA';
 import { Footer } from './components/Footer';
 import { InteractiveModal } from './components/InteractiveModal';
 import { EasterEgg } from './components/EasterEgg';
-import { ProductTour } from './components/ProductTour';
 import { ScrollToTop } from './components/ScrollToTop';
 import { useDecisionModel } from './hooks/useDecisionModel';
 
 export function App() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
-  const [isTourOpen, setIsTourOpen] = useState(false);
 
   const {
     dataset,
@@ -44,22 +42,6 @@ export function App() {
     ? `TIPPING: ${accessibleTipping.criterionName} > ${accessibleTipping.tippingPointWeight}% flips to ${accessibleTipping.wouldFlipToOptionName}`
     : 'LEAD IS MATHEMATICALLY STABLE';
 
-  // Check first visit and auto-open tour
-  useEffect(() => {
-    const hasSeenTour = localStorage.getItem('decision_os_tour_seen');
-    if (!hasSeenTour) {
-      const timer = setTimeout(() => {
-        setIsTourOpen(true);
-      }, 700);
-      return () => clearTimeout(timer);
-    }
-  }, []);
-
-  const handleCloseTour = () => {
-    localStorage.setItem('decision_os_tour_seen', 'true');
-    setIsTourOpen(false);
-  };
-
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
@@ -69,7 +51,6 @@ export function App() {
       if (e.key === 'Escape') {
         setIsSandboxOpen(false);
         setIsAuditOpen(false);
-        setIsTourOpen(false);
       }
     };
 
@@ -83,7 +64,6 @@ export function App() {
       <Navbar
         onOpenSandbox={() => setIsSandboxOpen(true)}
         onOpenAudit={() => setIsAuditOpen(true)}
-        onOpenTour={() => setIsTourOpen(true)}
       />
 
       {/* Main Narrative Structure */}
@@ -146,18 +126,10 @@ export function App() {
       <Footer
         onOpenSandbox={() => setIsSandboxOpen(true)}
         onOpenAudit={() => setIsAuditOpen(true)}
-        onOpenTour={() => setIsTourOpen(true)}
       />
 
       {/* Floating Scroll To Top / Start Navigation Arrow */}
       <ScrollToTop />
-
-      {/* Interactive Guided Tour / Onboarding Walkthrough */}
-      <ProductTour
-        isOpen={isTourOpen}
-        onClose={handleCloseTour}
-        onOpenSandbox={() => setIsSandboxOpen(true)}
-      />
 
       {/* Interactive Sandbox Modal */}
       <InteractiveModal

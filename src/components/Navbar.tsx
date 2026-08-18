@@ -1,15 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Command, Volume2, VolumeX, HelpCircle } from 'lucide-react';
+import { Sparkles, Command, Volume2, VolumeX } from 'lucide-react';
 import { Logo } from './Logo';
 import { sound } from '../utils/audioFx';
 
 interface NavbarProps {
   onOpenSandbox: () => void;
   onOpenAudit: () => void;
-  onOpenTour: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit, onOpenTour }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit }) => {
   const [scrolled, setScrolled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(sound.isSoundEnabled());
 
@@ -85,19 +84,6 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit, onOp
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Interactive Guide / Tour Trigger Button */}
-          <button
-            onClick={() => {
-              sound.playTick();
-              onOpenTour();
-            }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border-subtle hover:border-signal/40 text-xs font-mono text-slate-300 hover:text-signal transition-all shadow-sm cursor-pointer"
-            title="Open Interactive Tour & Guide"
-          >
-            <HelpCircle className="w-3.5 h-3.5 text-signal" />
-            <span className="hidden xs:inline sm:inline">Tour</span>
-          </button>
-
           {/* Audio Feedback Toggle */}
           <button
             onClick={handleToggleSound}

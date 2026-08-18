@@ -1,15 +1,14 @@
 import React from 'react';
-import { Terminal, Shield, Sparkles, HelpCircle } from 'lucide-react';
+import { Terminal, Shield, Sparkles } from 'lucide-react';
 import { Logo } from './Logo';
 import { sound } from '../utils/audioFx';
 
 interface FooterProps {
   onOpenSandbox: () => void;
   onOpenAudit: () => void;
-  onOpenTour: () => void;
 }
 
-export const Footer: React.FC<FooterProps> = ({ onOpenSandbox, onOpenAudit, onOpenTour }) => {
+export const Footer: React.FC<FooterProps> = ({ onOpenSandbox, onOpenAudit }) => {
   return (
     <footer className="border-t border-border-subtle bg-surface/40 py-14 relative text-xs text-slate-400">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -68,21 +67,9 @@ export const Footer: React.FC<FooterProps> = ({ onOpenSandbox, onOpenAudit, onOp
           {/* Interactive Tools & Guides */}
           <div>
             <div className="font-mono text-xs uppercase tracking-wider text-slate-300 font-semibold mb-3">
-              Guides & Actions
+              Actions
             </div>
             <ul className="space-y-2">
-              <li>
-                <button
-                  onClick={() => {
-                    sound.playTick();
-                    onOpenTour();
-                  }}
-                  className="hover:text-signal transition-colors text-left flex items-center gap-1.5 font-mono cursor-pointer"
-                >
-                  <HelpCircle className="w-3.5 h-3.5 text-signal" />
-                  <span>Start Interactive Tour</span>
-                </button>
-              </li>
               <li>
                 <button
                   onClick={() => {

@@ -77,11 +77,7 @@ Instead of buried tabs, Decision OS features a dedicated laboratory with 4 speci
   - **Frontend Architecture**: Vite SPA velocity vs Next.js Server Components.
 - 1-click **Simulate Model** action that loads pre-configured parameters into the sandbox.
 
-### 6. 🧭 Interactive Product Tour Onboarding Walkthrough
-- 5-step guided walkthrough that auto-launches on first visit with smooth contextual auto-scrolling to active page sections.
-- Persistent "Guide Tour" trigger in the top navbar and footer.
-
-### 7. 🔊 Synthesized Tactile Web Audio Engine
+### 6. 🔊 Synthesized Tactile Web Audio Engine
 - Built-in Web Audio API synthesizer that produces mechanical slider ticks and harmonic chords on scenario presets with zero external audio assets.
 
 ---
@@ -112,8 +108,8 @@ Where $\Delta R = \sum_{i \neq k} w_i^{\text{current}} \cdot (s_{Ai} - s_{Bi})$.
 
 ### 1. Clone & Install
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/decision-os.git
-cd decision-os
+git clone https://github.com/AmiTtiwari43/Decision-OS.git
+cd Decision-OS
 npm install
 ```
 
@@ -163,7 +159,6 @@ The optimized production bundle will be generated in `dist/`.
 │   │   ├── Navbar.tsx                  # Sticky top navigation
 │   │   ├── Principles.tsx              # Core product tenets
 │   │   ├── ProblemSection.tsx          # Cognitive friction breakdown
-│   │   ├── ProductTour.tsx             # Interactive onboarding walkthrough
 │   │   ├── RadarChart.tsx              # 5-axis SVG radar polygon visualizer
 │   │   ├── ScenarioSwitcher.tsx        # Preset scenario selector
 │   │   ├── ScoreCard.tsx               # Option score breakdown card
