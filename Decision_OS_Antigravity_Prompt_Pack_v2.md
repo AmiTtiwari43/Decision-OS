@@ -202,7 +202,7 @@ To prevent two competing sources of truth, mathematical specifications and golde
 3. **Weight Normalization**:
    - Largest Remainder Method (Hare-Niemeyer) ensures integer-constrained percentage weights sum strictly to 100.0% while eliminating array-order bias. User-locked weights ($S_L$) are preserved inviolate.
 4. **Deterministic Tie Handling**:
-   - Scores within $10^{-9}$ are considered ties. Rank order among tied options preserves input order; tied options receive identical ranks; `tiedWithWinner` flags all co-winners. Winner is never silently chosen.
+   - Scores within $10^{-9}$ are considered ties. Tied options receive identical ranks (Standard Competition Ranking 1224 Ranking); presentation order is determined deterministically via Tiers 2–5 (Tier 2 Locked criteria, Tier 3 Dominant criterion, Tier 4 Unweighted average, Tier 5 Option ID ASCII); `tiedWinnerIds` lists all co-winners (`isTie: true`, `winnerId: null`). Winner is never silently chosen.
 5. **Exact Analytical Tipping Points**:
    - Closed-form derivative equations solve exact breakeven weights $w_k^*$ under locked constraints without iterative numerical drift.
 6. **Seeded Monte Carlo & Reproducibility Contract**:
@@ -211,8 +211,8 @@ To prevent two competing sources of truth, mathematical specifications and golde
      > Same engine version, seed, inputs, and deterministic execution path produce identical results.
    - Output label is strictly: `"win probability under the specified uncertainty model"`, NEVER `"accuracy"`.
 7. **Golden Fixtures (G1–G10)**:
-   - Mandatory test fixtures G1 through G10 are defined exclusively in `CANONICAL_DECISION_ENGINE_V1_SPEC.md` (Section 8).
-   - Fixtures cover: G1 Baseline MCDA, G2 Proportional Rescaling with Locked Constraints, G3 Closed-Form Analytical Tipping Point, G4 Dual-Option Co-Dominance & Shared Ranks, G5 Multi-Way Tie Handling, G6 Missing Scores Rejection, G7 Invalid Input Rejection, G8 Non-Standard Inputs, G9 Boundary Inversion, and G10 Deterministic Monte Carlo Reproducibility.
+   - Mandatory test fixtures G1 through G10 are defined exclusively in `CANONICAL_DECISION_ENGINE_V1_SPEC.md` (Section 6).
+   - Fixtures cover: G1 Basic Weighted Decision, G2 Multi-Option Ranking, G3 Proportional Normalization + Largest Remainder (Hare-Niemeyer), G4 Locked Criteria Constraints, G5 All-Zero Raw Weights, G6 Missing Score Rejection, G7 Invalid Score Rejection, G8 Exact-Score Tie Behavior, G9 Sensitivity / Tipping-Point with Locked Criteria, and G10 Deterministic Monte Carlo Reproducibility.
    - Fixtures are read-only and must be implemented verbatim in `packages/decision-engine/tests/fixtures/golden.json`.
 8. **Historical Characterization Baselines (F1–F3)**:
    - F1–F3 are historical characterization baselines of the prototype frontend documented in `PHASE_0_REPORT.md` and tested in `src/utils/characterization.test.ts`.
@@ -455,7 +455,7 @@ CONTRACT (write docs/API.md first; commit; then implement)
 - Client-supplied `winner`, `rank`, `finalScore`, `analysis`, `engineVersion` fields are IGNORED
   or rejected (document which). Never persisted as authoritative.
 - Analyze: load → validate completeness → call packages/decision-engine → persist result
-  (scores, contributions, ranking, winner, tiedWithWinner, tipping points per criterion,
+  (scores, contributions, ranking, winner, tiedWinnerIds, isTie, tipping points per criterion,
   engineVersion, inputs snapshot, analyzedAt) → return it.
 - Editing criteria/weights/options/scores marks the stored analysis as stale (or clears it).
   Document the choice and test it.
