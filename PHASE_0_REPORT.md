@@ -20,8 +20,8 @@ The following baselines represent the ground-truth mathematical output of the **
   * **#2 Runner-up: Company Alpha** — **82.0 pts** ($\Delta = -0.9$ pts)
   * **#3 Alternative: Company Gamma** — **78.5 pts** ($\Delta = -4.4$ pts)
 * **Characterized Scenario Results**:
-  * `career-first` (40/20/25/10/5): **Alpha = 85.7** (Winner) | Beta = 80.1 | Gamma = 75.5
-  * `balanced` (25/25/20/15/15): **Beta = 83.8** (Winner) | Alpha = 80.8 | Gamma = 79.2
+  * `career-first` (40/20/25/10/5): **Alpha = 85.7** (Winner) | Beta = 80.1 | Gamma = 76.5
+  * `balanced` (25/25/20/15/15): **Beta = 84.0** (Winner) | Alpha = 80.5 | Gamma = 79.2
   * `money-first` (15/45/10/15/15): **Beta = 88.1** (Winner) | Gamma = 80.0 | Alpha = 75.8
   * `worklife-first` (15/20/15/35/15): **Beta = 85.4** (Winner) | Gamma = 83.7 | Alpha = 77.7
 
@@ -33,7 +33,7 @@ The following baselines represent the ground-truth mathematical output of the **
   * **#3 Alternative: New York City** — **74.8 pts** ($\Delta = -8.4$ pts)
 * **Characterized Scenario Results**:
   * `career-dense` (15/45/20/10/10): **New York City = 84.7** (Winner) | Lisbon = 79.0 | Austin = 78.2
-  * `lifestyle-balance` (35/15/20/20/10): **Lisbon = 85.4** (Winner) | Austin = 76.0 | New York City = 70.4
+  * `lifestyle-balance` (35/15/20/20/10): **Lisbon = 85.4** (Winner) | Austin = 75.5 | New York City = 70.4
 
 ### Baseline F3: Frontend Architecture Matrix (`frontend-architecture`)
 * **Default Weights**: Performance 30%, Dev Velocity 30%, Maintainability 25%, Hiring Pool 15%

@@ -93,6 +93,7 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
       expect(result.winner.weightedScore).toBe(85.7);
       expect(result.runnerUp?.option.id).toBe('beta');
       expect(result.runnerUp?.weightedScore).toBe(80.1);
+      expect(result.evaluations[2].weightedScore).toBe(76.5);
       expect(result.explainability.pointLead).toBe(5.6);
     });
 
@@ -136,7 +137,7 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
       expect(result.evaluations[2].weightedScore).toBe(74.8);
     });
 
-    it('characterizes F2 under network-focused scenario (NYC 84.7 vs Lisbon 79.0 vs Austin 78.1)', () => {
+    it('characterizes F2 under network-focused scenario (NYC 84.7 vs Lisbon 79.0 vs Austin 78.2)', () => {
       const scenario = cityDataset.scenarios.find(s => s.id === 'career-dense')!;
       const result = runDecisionEngine(cityDataset.options, cityDataset.criteria, scenario.weights);
 
