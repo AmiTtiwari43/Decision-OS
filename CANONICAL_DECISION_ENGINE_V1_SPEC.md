@@ -434,7 +434,7 @@ $$\text{Denominator} = 100 \Delta R_U - \Delta s_k (100 - S_L - w_k)$$
    - The perturbed weights $\mathbf{w}^{\text{perturbed}}$ are passed through canonical Largest Remainder normalization, strictly preserving locked weights.
 4. **Deterministic PRNG (Mulberry32)**:
    - Configurable 32-bit unsigned integer seed (e.g. `seed: 42`).
-   - Bit-for-bit reproducibility across all platforms:
+   - Same engine version, seed, inputs, and deterministic execution path produce identical results:
      ```typescript
      function mulberry32(a: number): () => number {
        return function() {
@@ -622,7 +622,7 @@ These ten fixtures provide exact mathematical specifications for validating any 
 - **Explanation**: Closed-form solution accurately predicts breakeven while respecting locked constraints.
 
 ### G10: Deterministic Monte Carlo Reproducibility
-- **Purpose**: Verify bit-for-bit reproducibility of Gaussian Monte Carlo simulation using Mulberry32 PRNG.
+- **Purpose**: Verify reproducibility of Gaussian Monte Carlo simulation using Mulberry32 PRNG (same engine version, seed, inputs, and deterministic execution path produce identical results).
 - **Input**:
   - Criteria: `growth` (30), `comp` (25), `learning` (20), `wlb` (15), `stability` (10).
   - Options: `Company Alpha`, `Company Beta`, `Company Gamma` (from `primaryJobOfferDataset`).
@@ -701,7 +701,7 @@ Every decision evaluation persisted by the platform stores the following immutab
 1. **Historical Immutability**:
    When Engine v1.1 or v2.0 is deployed in the future, **existing historical decisions MUST NOT be automatically recalculated**. They retain their original engine version and mathematical record.
 2. **Reproducibility Guarantee**:
-   The backend service must retain historical calculation engines (e.g., `packages/decision-engine/v1`). Any historical decision can be re-run at any time and will produce the exact bit-for-bit score and ranking originally generated.
+   The backend service must retain historical calculation engines (e.g., `packages/decision-engine/v1`). Any historical decision can be re-run at any time and will produce identical scores and rankings originally generated (same engine version, seed, inputs, and deterministic execution path produce identical results).
 3. **Opt-in Recalculation**:
    If a user requests recalculation under a newer engine version (e.g. to enable cost criteria in v1.1), the system generates a new versioned snapshot while archiving the previous record.
 
@@ -725,7 +725,7 @@ Every decision evaluation persisted by the platform stores the following immutab
 | **12. Near Tie** | Option A = $80.0000001$, B = $80.0000000$ | Option A is `rank: 1`, Option B is `rank: 2`. Telemetry surfaces sub-decimal delta. |
 | **13. Zero Tipping Denom** | $\text{Denominator} = 0$ (parallel slopes) | `tippingPointWeight = null`, `feasibility = 'unreachable'`. |
 | **14. Impossible Tipping** | $w_k^* = -15.0\%$ or $140.0\%$ | `tippingPointWeight = null`, `feasibility = 'unreachable'`. |
-| **15. Monte Carlo Same Seed** | Two runs with `seed: 42` | Bit-for-bit identical win probabilities and counts. |
+| **15. Monte Carlo Same Seed** | Two runs with `seed: 42` | Identical win probabilities and counts (same engine version, seed, inputs, and deterministic execution path produce identical results). |
 | **16. Monte Carlo Diff Seed** | Run with seed `42` vs seed `43` | Statistically close win probabilities; distinct individual iteration trajectories. |
 | **17. Unicode & Special IDs** | `id: 'salário_💰'` or long string | Validated and sorted via standard UTF-8 / ASCII code-point ordering. |
 
