@@ -101,6 +101,9 @@ graph TD
 
 ### Mathematical Foundations
 
+> [!NOTE]
+> For the comprehensive, locked mathematical specification of Decision Engine v1 (covering strict validation, Hare-Niemeyer largest-remainder normalization, 5-tier deterministic tie-breaking, dual-precision scoring, and closed-form tipping calculus with locked constraints), see [CANONICAL_DECISION_ENGINE_V1_SPEC.md](./CANONICAL_DECISION_ENGINE_V1_SPEC.md).
+
 #### 1. Linear Multi-Criteria Scoring Function
 $$\text{Score}(O_j) = \sum_{i=1}^n \left( \frac{w_i}{100} \right) \cdot s_{ij}$$
 Where:

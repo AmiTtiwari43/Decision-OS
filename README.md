@@ -21,7 +21,7 @@ Turns complex, multi-factor dilemmas into transparent, defensible choices driven
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38BDF8.svg?style=flat-square&logo=tailwindcss)](https://tailwindcss.com/)
 [![Vitest](https://img.shields.io/badge/Vitest-Passing-green.svg?style=flat-square&logo=vitest)](https://vitest.dev/)
 
-[Explore Live Demo](#-quickstart) • [Product Specification](./PROJECT_SPECIFICATION.md) • [Future Backend Architecture](./FUTURE_BACKEND_ARCHITECTURE.md) • [Engineering Decisions](./DECISIONS.md)
+[Explore Live Demo](#-quickstart) • [Product Specification](./PROJECT_SPECIFICATION.md) • [Canonical Engine v1 Spec](./CANONICAL_DECISION_ENGINE_V1_SPEC.md) • [Future Backend Architecture](./FUTURE_BACKEND_ARCHITECTURE.md) • [Engineering Decisions](./DECISIONS.md)
 
 </div>
 
