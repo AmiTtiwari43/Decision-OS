@@ -1,0 +1,162 @@
+{
+  "G1": {
+    "name": "Basic Weighted Decision",
+    "criteria": [
+      { "id": "growth", "name": "Growth", "weight": 60 },
+      { "id": "comp", "name": "Compensation", "weight": 40 }
+    ],
+    "options": [
+      { "id": "optA", "name": "Option A", "scores": { "growth": 90, "comp": 70 } },
+      { "id": "optB", "name": "Option B", "scores": { "growth": 60, "comp": 95 } }
+    ],
+    "expected": {
+      "normalizedWeights": { "growth": 60.0, "comp": 40.0 },
+      "scores": { "optA": 82.0, "optB": 74.0 },
+      "exactScores": { "optA": 82.0, "optB": 74.0 },
+      "ranks": { "optA": 1, "optB": 2 },
+      "isTie": false,
+      "winnerId": "optA",
+      "pointLead": 8.0
+    }
+  },
+  "G2": {
+    "name": "Multi-Option Ranking",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 50 },
+      { "id": "c2", "name": "Crit 2", "weight": 30 },
+      { "id": "c3", "name": "Crit 3", "weight": 20 }
+    ],
+    "options": [
+      { "id": "o1", "name": "Option 1", "scores": { "c1": 90, "c2": 90, "c3": 90 } },
+      { "id": "o2", "name": "Option 2", "scores": { "c1": 80, "c2": 85, "c3": 70 } },
+      { "id": "o3", "name": "Option 3", "scores": { "c1": 70, "c2": 60, "c3": 80 } },
+      { "id": "o4", "name": "Option 4", "scores": { "c1": 50, "c2": 50, "c3": 50 } }
+    ],
+    "expected": {
+      "normalizedWeights": { "c1": 50.0, "c2": 30.0, "c3": 20.0 },
+      "exactScores": { "o1": 90.0, "o2": 79.5, "o3": 69.0, "o4": 50.0 },
+      "ranks": { "o1": 1, "o2": 2, "o3": 3, "o4": 4 },
+      "isTie": false,
+      "winnerId": "o1"
+    }
+  },
+  "G3": {
+    "name": "Proportional Normalization + Largest Remainder (Hare-Niemeyer)",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 20 },
+      { "id": "c2", "name": "Crit 2", "weight": 20 },
+      { "id": "c3", "name": "Crit 3", "weight": 20 }
+    ],
+    "expected": {
+      "normalizedWeights": { "c1": 33.4, "c2": 33.3, "c3": 33.3 },
+      "totalWeight": 100.0
+    }
+  },
+  "G4": {
+    "name": "Locked Criteria Constraints",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 40, "isLocked": true },
+      { "id": "c2", "name": "Crit 2", "weight": 30, "isLocked": true },
+      { "id": "c3", "name": "Crit 3", "weight": 20, "isLocked": false },
+      { "id": "c4", "name": "Crit 4", "weight": 10, "isLocked": false }
+    ],
+    "expected": {
+      "normalizedWeights": { "c1": 40.0, "c2": 30.0, "c3": 20.0, "c4": 10.0 },
+      "totalWeight": 100.0
+    }
+  },
+  "G5": {
+    "name": "All-Zero Raw Weights",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 0 },
+      { "id": "c2", "name": "Crit 2", "weight": 0 },
+      { "id": "c3", "name": "Crit 3", "weight": 0 },
+      { "id": "c4", "name": "Crit 4", "weight": 0 }
+    ],
+    "expected": {
+      "normalizedWeights": { "c1": 25.0, "c2": 25.0, "c3": 25.0, "c4": 25.0 },
+      "totalWeight": 100.0
+    }
+  },
+  "G6": {
+    "name": "Missing Score Rejection",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 50 },
+      { "id": "c2", "name": "Crit 2", "weight": 50 }
+    ],
+    "options": [
+      { "id": "optA", "name": "Option A", "scores": { "c1": 80 } }
+    ],
+    "expectedError": "Option 'optA' is missing required score for criterion 'c2'"
+  },
+  "G7": {
+    "name": "Invalid Score Rejection",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 100 }
+    ],
+    "options": [
+      { "id": "optA", "name": "Option A", "scores": { "c1": 105.0 } }
+    ],
+    "expectedError": "Score for option 'optA' on criterion 'c1' must be between 0.0 and 100.0"
+  },
+  "G8": {
+    "name": "Exact-Score Tie Behavior",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 50 },
+      { "id": "c2", "name": "Crit 2", "weight": 50 }
+    ],
+    "options": [
+      { "id": "alpha", "name": "Option Alpha", "scores": { "c1": 80, "c2": 80 } },
+      { "id": "beta", "name": "Option Beta", "scores": { "c1": 80, "c2": 80 } }
+    ],
+    "expected": {
+      "exactScores": { "alpha": 80.0, "beta": 80.0 },
+      "displayScores": { "alpha": 80.0, "beta": 80.0 },
+      "ranks": { "alpha": 1, "beta": 1 },
+      "presentationOrder": { "alpha": 1, "beta": 2 },
+      "isTie": true,
+      "winnerId": null,
+      "tiedWinnerIds": ["alpha", "beta"],
+      "decisionOutcome": "tie"
+    }
+  },
+  "G9": {
+    "name": "Sensitivity / Tipping-Point with Locked Criteria",
+    "criteria": [
+      { "id": "c1", "name": "Crit 1", "weight": 40.0, "isLocked": true },
+      { "id": "c2", "name": "Crit 2", "weight": 30.0, "isLocked": false },
+      { "id": "c3", "name": "Crit 3", "weight": 30.0, "isLocked": false }
+    ],
+    "options": [
+      { "id": "optA", "name": "Option A", "scores": { "c1": 70, "c2": 60, "c3": 95 } },
+      { "id": "optB", "name": "Option B", "scores": { "c1": 70, "c2": 90, "c3": 60 } }
+    ],
+    "testedCriterionId": "c2",
+    "expected": {
+      "optAScore": 74.5,
+      "optBScore": 73.0,
+      "tippingPointWeight": 32.3,
+      "weightDeltaNeeded": 2.3,
+      "direction": "increase",
+      "feasibility": "low-threshold",
+      "wouldFlipToOptionId": "optB"
+    }
+  },
+  "G10": {
+    "name": "Deterministic Monte Carlo Reproducibility",
+    "config": {
+      "seed": 42,
+      "iterations": 1000,
+      "sigmaRelative": 0.15
+    },
+    "expected": {
+      "dominantOptionId": "beta",
+      "robustnessRating": "moderate",
+      "approxProbabilities": {
+        "beta": 64.8,
+        "alpha": 35.2,
+        "gamma": 0.0
+      }
+    }
+  }
+}

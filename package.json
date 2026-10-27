@@ -11,5 +11,8 @@
     "build:web": "npm run build --workspace=@decision-os/web",
     "test:web": "npm run test --workspace=@decision-os/web",
     "lint:web": "npm run lint --workspace=@decision-os/web"
+  },
+  "devDependencies": {
+    "@vitest/coverage-v8": "^4.1.12"
   }
 }
