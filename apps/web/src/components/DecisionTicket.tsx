@@ -10,6 +10,8 @@ interface DecisionTicketProps {
   criteria: Criterion[];
   weights: Record<string, number>;
   question: string;
+  decisionId?: string | null;
+  isAuthoritative?: boolean;
 }
 
 export const DecisionTicket: React.FC<DecisionTicketProps> = ({
@@ -18,17 +20,24 @@ export const DecisionTicket: React.FC<DecisionTicketProps> = ({
   criteria,
   weights,
   question,
+  decisionId,
+  isAuthoritative = false,
 }) => {
   const [copied, setCopied] = useState(false);
+
+  const serialNumber = decisionId
+    ? `DEC-${decisionId.toUpperCase()}`
+    : 'DEC-LOCAL-PREVIEW';
 
   const handleCopyTicket = () => {
     sound.playCelebrate();
     const text = `=========================================
-  DECISION OS — VERIFIED DECISION TICKET
+  DECISION OS — ${isAuthoritative ? 'AUTHORITATIVE DECISION TICKET' : 'DECISION BRIEFING PASS'}
 =========================================
 Target: "${question}"
 Timestamp: ${new Date().toISOString()}
-Serial: DEC-${Math.random().toString(36).substring(2, 9).toUpperCase()}
+Serial: ${serialNumber}
+Status: ${isAuthoritative ? 'Authoritative Server Result (Canonical Engine v1.0.0)' : 'Unsaved Local Preview'}
 
 RECOMMENDED WINNER:
 🏆 ${winner.option.name} (Score: ${winner.weightedScore}/100)
@@ -41,7 +50,7 @@ PRIORITY CALIBRATION:
 ${criteria.map(c => `• ${c.name}: ${weights[c.id]}%`).join('\n')}
 
 =========================================
-Verification: 100% Deterministic MCDA
+Verification: ${isAuthoritative ? 'Server-Verified MongoDB & Engine v1.0.0' : 'Client-Side Mathematical Preview'}
 Generated via Decision OS
 =========================================`;
 
@@ -79,14 +88,18 @@ Generated via Decision OS
                   <div className="text-[10px] font-mono uppercase tracking-widest text-slate-400">
                     Decision Briefing Ticket
                   </div>
-                  <div className="text-xs font-mono font-bold text-white truncate">
-                    DEC-OS-2026-0942
+                  <div className="text-xs font-mono font-bold text-white truncate max-w-[200px]" title={serialNumber}>
+                    {serialNumber}
                   </div>
                 </div>
               </div>
 
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-signal/15 text-signal font-semibold border border-signal/30 shrink-0">
-                VERIFIED MCDA
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-semibold border shrink-0 ${
+                isAuthoritative
+                  ? 'bg-signal/15 text-signal border-signal/30'
+                  : 'bg-accent-amber/15 text-accent-amber border-accent-amber/30'
+              }`}>
+                {isAuthoritative ? 'SERVER-VERIFIED MCDA' : 'UNSAVED PREVIEW'}
               </span>
             </div>
 

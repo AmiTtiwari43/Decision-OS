@@ -53,7 +53,7 @@ export const DecisionHistoryTimeline: React.FC<DecisionHistoryTimelineProps> = (
         <div className="text-center max-w-3xl mx-auto mb-16">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface border border-border text-xs font-mono font-medium text-slate-300 mb-3">
             <History className="w-3.5 h-3.5 text-signal" />
-            <span>Decision Evolution</span>
+            <span>Illustrative Case Walkthrough · Decision Evolution</span>
           </div>
           <h2 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white">
             How a decision evolves.

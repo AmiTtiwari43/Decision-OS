@@ -8,27 +8,43 @@ import {
   Award,
   Sliders,
   RotateCcw,
+  Save,
+  Database,
+  Plus,
+  AlertTriangle,
+  Loader2,
+  Table,
+  CheckCircle2,
+  Clock,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { templateDatasets } from '../data/decisionData';
-import { useDecisionModel } from '../hooks/useDecisionModel';
-import { WeightSlider } from './WeightSlider';
+import { templateDatasets } from '../data/decisionData.js';
+import { useDecisionModel } from '../hooks/useDecisionModel.js';
+import { WeightSlider } from './WeightSlider.js';
+import type { DecisionDto } from '../api/types.js';
+import { sound } from '../utils/audioFx.js';
 
 interface InteractiveModalProps {
   isOpen: boolean;
   onClose: () => void;
+  model?: ReturnType<typeof useDecisionModel>;
 }
 
 export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   isOpen,
   onClose,
+  model: externalModel,
 }) => {
-  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState(0);
-  const [copied, setCopied] = useState(false);
+  const localModel = useDecisionModel(templateDatasets[0]);
+  const model = externalModel ?? localModel;
 
   const {
     dataset,
     criteria,
+    options,
     weights,
     lockedIds,
     engineResult,
@@ -36,11 +52,89 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     toggleLock,
     resetToDefaults,
     switchDataset,
-  } = useDecisionModel(templateDatasets[0]);
+    mode,
+    decisionId,
+    serverDecision,
+    isDirty,
+    isAuthoritative,
+    saveStatus,
+    apiError,
+    saveDecision,
+    loadDecision,
+    listSavedDecisions,
+    createNewDecision,
+    updateOptionScore,
+    updateDecisionMetadata,
+    clearApiError,
+  } = model;
+
+  const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
+  const [copied, setCopied] = useState(false);
+  const [isScoringOpen, setIsScoringOpen] = useState(false);
+  const [isSavedListOpen, setIsSavedListOpen] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitle, setEditTitle] = useState(dataset.title);
+  const [editContext, setEditContext] = useState(dataset.context);
+  const [savedDecisions, setSavedDecisions] = useState<DecisionDto[]>([]);
+  const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+
+  const handleStartEditTitle = () => {
+    setEditTitle(dataset.title);
+    setEditContext(dataset.context);
+    setIsEditingTitle(true);
+  };
 
   const handleTemplateChange = (idx: number) => {
     setSelectedTemplateIndex(idx);
+    setIsSavedListOpen(false);
     switchDataset(templateDatasets[idx]);
+  };
+
+  const handleOpenSavedList = async () => {
+    setIsSavedListOpen((prev) => !prev);
+    if (!isSavedListOpen) {
+      setIsLoadingSaved(true);
+      try {
+        const res = await listSavedDecisions({ limit: 15 });
+        setSavedDecisions(res.items);
+      } catch {
+        setSavedDecisions([]);
+      } finally {
+        setIsLoadingSaved(false);
+      }
+    }
+  };
+
+  const handleSelectSavedDecision = async (id: string) => {
+    setSelectedTemplateIndex(null);
+    setIsSavedListOpen(false);
+    await loadDecision(id);
+  };
+
+  const handleCreateNew = () => {
+    setSelectedTemplateIndex(null);
+    setIsSavedListOpen(false);
+    createNewDecision();
+  };
+
+  const handleSaveTitle = () => {
+    if (editTitle.trim()) {
+      updateDecisionMetadata(editTitle.trim(), editContext.trim());
+      setIsEditingTitle(false);
+    }
+  };
+
+  const handleSaveToServer = async () => {
+    sound.playTick();
+    const result = await saveDecision();
+    if (result) {
+      sound.playCelebrate();
+      confetti({
+        particleCount: 80,
+        spread: 70,
+        origin: { y: 0.6 },
+      });
+    }
   };
 
   const handleExportBriefing = () => {
@@ -49,6 +143,8 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     const report = `# Decision OS — Decision Briefing
 Generated: ${new Date().toLocaleDateString()}
 Decision Prompt: "${dataset.question}"
+${decisionId ? `Server Decision ID: ${decisionId}` : 'Status: Unsaved Draft / Preview'}
+Verification: ${isAuthoritative ? `Authoritative Server MCDA (Canonical Engine v${serverDecision?.analysis?.engineVersion || '1.0.0'})` : 'Client Preview'}
 
 ## Leading Recommendation
 🏆 **${winner.option.name}** (Weighted Score: ${winner.weightedScore}/100)
@@ -82,7 +178,7 @@ ${criteria
     navigator.clipboard.writeText(report);
     setCopied(true);
     confetti({
-      particleCount: 75,
+      particleCount: 50,
       spread: 60,
       origin: { y: 0.6 },
     });
@@ -93,79 +189,275 @@ ${criteria
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25 }}
-          className="relative w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
+          className="relative w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
-          <div className="flex items-center justify-between p-5 border-b border-border bg-surface">
+          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-surface shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-surface-subtle border border-border flex items-center justify-center text-signal">
                 <Layers className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
-                  <span>Decision OS Workspace</span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-signal/15 text-signal border border-signal/20">
-                    Live Sandbox
-                  </span>
-                </h3>
-                <p className="text-xs text-slate-400">
-                  Select a template or calibrate weights to generate an explainable briefing.
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-base sm:text-lg font-bold text-white">
+                    Decision OS Workspace
+                  </h3>
+
+                  {/* Dynamic Status Pill */}
+                  {isAuthoritative ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-signal/15 text-signal border border-signal/30 flex items-center gap-1 font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
+                      <span>Server-Verified (v1.0.0)</span>
+                      {decisionId && (
+                        <span className="opacity-70 text-[9px]">#{decisionId.slice(-6)}</span>
+                      )}
+                    </span>
+                  ) : isDirty || mode === 'draft' ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-accent-amber/15 text-accent-amber border border-accent-amber/30 flex items-center gap-1 font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-amber" />
+                      <span>Unsaved Preview (Draft)</span>
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-surface-subtle text-slate-400 border border-border flex items-center gap-1">
+                      <span>Template Demonstration</span>
+                    </span>
+                  )}
+                </div>
+
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Calibrate weights and scores to generate an authoritative, explainable decision.
                 </p>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="p-2 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-all"
+              className="p-2 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-all cursor-pointer"
               aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
           </div>
 
-          {/* Template Selector Bar */}
-          <div className="p-4 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center gap-2">
-            <span className="text-xs font-mono text-slate-400 mr-2">Templates:</span>
-            {templateDatasets.map((t, idx) => (
+          {/* Selector & Action Ribbon */}
+          <div className="p-3 sm:p-4 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+              <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline">Templates:</span>
+              {templateDatasets.map((t, idx) => (
+                <button
+                  key={t.id}
+                  onClick={() => handleTemplateChange(idx)}
+                  className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
+                    selectedTemplateIndex === idx && mode === 'template'
+                      ? 'bg-signal text-background border-signal font-bold shadow-sm'
+                      : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
+                  }`}
+                >
+                  {t.title}
+                </button>
+              ))}
+
               <button
-                key={t.id}
-                onClick={() => handleTemplateChange(idx)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                  selectedTemplateIndex === idx
+                onClick={handleCreateNew}
+                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
+                  mode === 'draft' && selectedTemplateIndex === null
                     ? 'bg-signal text-background border-signal font-bold shadow-sm'
                     : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
                 }`}
+                title="Create a new custom decision"
               >
-                {t.title}
+                <Plus className="w-3 h-3" />
+                <span>New Decision</span>
               </button>
-            ))}
+            </div>
+
+            {/* Saved Decisions Dropdown Trigger */}
+            <div className="relative">
+              <button
+                onClick={handleOpenSavedList}
+                className={`px-3 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-all border cursor-pointer ${
+                  isSavedListOpen || mode === 'saved'
+                    ? 'bg-surface border-signal/50 text-signal shadow-glow-signal-sm'
+                    : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-500'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>Saved Records</span>
+                <ChevronDown className={`w-3 h-3 transition-transform ${isSavedListOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Saved Records Dropdown Popover */}
+              <AnimatePresence>
+                {isSavedListOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 5 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 5 }}
+                    className="absolute right-0 top-full mt-2 w-72 sm:w-80 bg-surface-card border border-border rounded-xl shadow-2xl p-2 z-50 overflow-hidden"
+                  >
+                    <div className="p-2 border-b border-border-subtle flex items-center justify-between">
+                      <span className="text-[11px] font-mono text-slate-400 font-bold uppercase">
+                        MongoDB Persisted Decisions
+                      </span>
+                    </div>
+
+                    <div className="max-h-56 overflow-y-auto space-y-1 p-1">
+                      {isLoadingSaved ? (
+                        <div className="p-4 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-signal" />
+                          <span>Loading from database...</span>
+                        </div>
+                      ) : savedDecisions.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-500 font-mono">
+                          No saved decisions found in database. Click "Save to Server" to persist your first decision!
+                        </div>
+                      ) : (
+                        savedDecisions.map((doc) => (
+                          <button
+                            key={doc._id}
+                            onClick={() => handleSelectSavedDecision(doc._id)}
+                            className={`w-full p-2.5 rounded-lg text-left text-xs transition-all border flex flex-col gap-0.5 cursor-pointer ${
+                              decisionId === doc._id
+                                ? 'bg-signal/15 border-signal/40 text-white'
+                                : 'bg-surface hover:bg-surface-subtle border-border-subtle text-slate-300 hover:text-white'
+                            }`}
+                          >
+                            <span className="font-bold truncate text-white">{doc.title}</span>
+                            <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                              <span>#{doc._id.slice(-6)}</span>
+                              <span>{new Date(doc.createdAt).toLocaleDateString()}</span>
+                            </div>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
 
-          {/* Modal Scrollable Body */}
-          <div className="p-6 overflow-y-auto space-y-6 flex-1">
-            {/* Question Banner */}
-            <div className="p-4 rounded-xl bg-surface/80 border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <span className="text-[10px] font-mono uppercase text-signal tracking-wider">
-                  Target Question
-                </span>
-                <h4 className="text-lg font-bold text-white mt-0.5">
-                  "{dataset.question}"
-                </h4>
-                <p className="text-xs text-slate-400 mt-1">{dataset.context}</p>
+          {/* Active Error Banner */}
+          {apiError && (
+            <div className="p-3 bg-accent-rose/10 border-b border-accent-rose/30 flex items-start justify-between gap-3 text-xs text-accent-rose">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-bold uppercase tracking-wider block">
+                    {apiError.error || 'Server Error'} (Status {apiError.statusCode || 'Offline'})
+                  </span>
+                  <p className="text-slate-200 mt-0.5 leading-relaxed">{apiError.message}</p>
+                  {apiError.missingPairs && apiError.missingPairs.length > 0 && (
+                    <div className="mt-1 text-[11px] font-mono text-accent-amber">
+                      Missing score coordinates:{' '}
+                      {apiError.missingPairs.map((p) => `[Option: ${p.optionId}, Criterion: ${p.criterionId}]`).join(', ')}
+                    </div>
+                  )}
+                  {apiError.requestId && (
+                    <span className="text-[10px] font-mono text-slate-400 block mt-1">
+                      Trace Request ID: {apiError.requestId}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              <div className="flex items-center gap-3 bg-surface-card p-3 rounded-lg border border-border shrink-0">
-                <Award className="w-5 h-5 text-signal" />
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleSaveToServer}
+                  className="px-2.5 py-1 rounded bg-accent-rose/20 hover:bg-accent-rose/30 text-white font-mono text-[11px] font-bold border border-accent-rose/40 cursor-pointer"
+                >
+                  Retry
+                </button>
+                <button
+                  onClick={clearApiError}
+                  className="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
+                  aria-label="Dismiss error"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Modal Scrollable Body */}
+          <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
+            {/* Question Banner & Server Status */}
+            <div className="p-4 rounded-xl bg-surface/80 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-mono uppercase text-signal tracking-wider">
+                    Target Question & Scope
+                  </span>
+                  {!isEditingTitle && (
+                    <button
+                      onClick={handleStartEditTitle}
+                      className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Sparkles className="w-3 h-3 text-signal" />
+                      <span>Edit Title</span>
+                    </button>
+                  )}
+                </div>
+
+                {isEditingTitle ? (
+                  <div className="space-y-2 mt-1">
+                    <input
+                      type="text"
+                      value={editTitle}
+                      onChange={(e) => setEditTitle(e.target.value)}
+                      placeholder="Enter decision title..."
+                      className="w-full px-3 py-1.5 rounded-lg bg-surface-card border border-signal/50 text-white text-sm font-bold focus:outline-none"
+                    />
+                    <input
+                      type="text"
+                      value={editContext}
+                      onChange={(e) => setEditContext(e.target.value)}
+                      placeholder="Context or dilemma statement..."
+                      className="w-full px-3 py-1.5 rounded-lg bg-surface-card border border-border text-slate-300 text-xs focus:outline-none"
+                    />
+                    <div className="flex items-center gap-2 pt-1">
+                      <button
+                        onClick={handleSaveTitle}
+                        className="px-3 py-1 rounded bg-signal text-background font-bold text-xs cursor-pointer"
+                      >
+                        Apply
+                      </button>
+                      <button
+                        onClick={() => setIsEditingTitle(false)}
+                        className="px-3 py-1 rounded bg-surface border border-border text-slate-400 text-xs cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <h4 className="text-base sm:text-lg font-bold text-white mt-0.5">
+                      "{dataset.question}"
+                    </h4>
+                    <p className="text-xs text-slate-400 mt-1">{dataset.context}</p>
+                  </>
+                )}
+              </div>
+
+              {/* Authoritative Winner Highlight */}
+              <div className="flex items-center gap-3 bg-surface-card p-3 rounded-xl border border-border shrink-0">
+                <Award className="w-5 h-5 text-signal shrink-0" />
                 <div>
-                  <div className="text-[10px] font-mono text-slate-400 uppercase">
-                    Current Winner
+                  <div className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1.5">
+                    <span>Leading Choice</span>
+                    {isAuthoritative && (
+                      <span className="text-signal flex items-center gap-0.5 font-bold">
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>Verified</span>
+                      </span>
+                    )}
                   </div>
                   <div className="text-sm font-bold text-white">
                     {engineResult.winner.option.name} (
@@ -176,6 +468,72 @@ ${criteria
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Collapsible Option Scoring Matrix Toggle */}
+            <div className="border border-border-subtle rounded-xl bg-surface/50 overflow-hidden">
+              <button
+                onClick={() => setIsScoringOpen((prev) => !prev)}
+                className="w-full p-3 flex items-center justify-between text-xs font-mono font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
+              >
+                <div className="flex items-center gap-2">
+                  <Table className="w-3.5 h-3.5 text-signal" />
+                  <span>Option Scoring Matrix (Raw Scores 0-100)</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-slate-400 font-normal">
+                  <span>{isScoringOpen ? 'Hide Matrix' : 'Inspect & Edit Scores'}</span>
+                  {isScoringOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </div>
+              </button>
+
+              <AnimatePresence>
+                {isScoringOpen && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="p-4 border-t border-border-subtle overflow-x-auto"
+                  >
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="border-b border-border-subtle text-slate-400 font-mono text-[11px]">
+                          <th className="pb-2 font-semibold">Option / Criteria</th>
+                          {criteria.map((c) => (
+                            <th key={c.id} className="pb-2 px-2 font-semibold">
+                              {c.shortName || c.name}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border-subtle/50">
+                        {options.map((opt) => (
+                          <tr key={opt.id} className="hover:bg-surface-subtle/30">
+                            <td className="py-2 font-semibold text-white flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: opt.color }} />
+                              <span>{opt.name}</span>
+                            </td>
+                            {criteria.map((c) => {
+                              const scoreVal = opt.scores[c.id] ?? 0;
+                              return (
+                                <td key={c.id} className="py-2 px-2">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={100}
+                                    value={scoreVal}
+                                    onChange={(e) => updateOptionScore(opt.id, c.id, Number(e.target.value))}
+                                    className="w-16 px-2 py-1 rounded bg-surface border border-border text-center font-mono font-bold text-white focus:outline-none focus:border-signal text-xs"
+                                  />
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             {/* 2-Column: Weights vs Rankings */}
@@ -189,7 +547,7 @@ ${criteria
                   </div>
                   <button
                     onClick={resetToDefaults}
-                    className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1"
+                    className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
                   >
                     <RotateCcw className="w-3 h-3" />
                     <span>Reset</span>
@@ -212,8 +570,16 @@ ${criteria
 
               {/* Right Column: Live Option Results & Explainability */}
               <div className="space-y-4">
-                <div className="text-xs font-mono text-slate-300 font-bold uppercase pb-2 border-b border-border-subtle">
-                  Live Option Scores
+                <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
+                  <span className="text-xs font-mono text-slate-300 font-bold uppercase">
+                    {isAuthoritative ? 'Authoritative Server Rankings' : 'Calculated Option Scores'}
+                  </span>
+                  {isAuthoritative && (
+                    <span className="text-[10px] font-mono text-signal flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      <span>Canonical Engine v1.0.0</span>
+                    </span>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -255,7 +621,7 @@ ${criteria
                       </div>
 
                       <div className="text-[11px] text-slate-400 line-clamp-1">
-                        {item.option.tagline}
+                        {item.option.tagline || item.option.description}
                       </div>
                     </div>
                   ))}
@@ -274,25 +640,65 @@ ${criteria
           </div>
 
           {/* Modal Footer Bar */}
-          <div className="p-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3">
-            <div className="text-xs text-slate-400 font-mono">
-              Deterministic MCDA · Fully Explainable
+          <div className="p-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
+            <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
+              <span>Deterministic MCDA</span>
+              <span className="text-slate-600">·</span>
+              {decisionId ? (
+                <span className="text-signal truncate max-w-[200px]" title={decisionId}>
+                  ID: {decisionId}
+                </span>
+              ) : (
+                <span>Unsaved Sandbox</span>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Save to Server / Persist Button */}
+              <button
+                onClick={handleSaveToServer}
+                disabled={saveStatus === 'in_flight'}
+                className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                  saveStatus === 'in_flight'
+                    ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
+                    : isAuthoritative
+                      ? 'bg-surface hover:bg-surface-subtle border border-signal/50 text-signal hover:shadow-glow-signal-sm'
+                      : 'bg-signal hover:bg-signal-light text-background shadow-glow-signal-sm'
+                }`}
+                title="Persist to MongoDB and compute authoritative MCDA results"
+              >
+                {saveStatus === 'in_flight' ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin text-signal" />
+                    <span>Saving...</span>
+                  </>
+                ) : isAuthoritative ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-signal" />
+                    <span>Saved & Verified</span>
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    <span>{decisionId ? 'Save Changes' : 'Save to Server'}</span>
+                  </>
+                )}
+              </button>
+
+              {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
-                className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-glow-signal-sm"
+                className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
               >
                 {copied ? (
                   <>
-                    <Check className="w-4 h-4 text-background" />
+                    <Check className="w-4 h-4 text-signal" />
                     <span>Briefing Copied!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4 text-background" />
-                    <span>Copy Decision Briefing</span>
+                    <Copy className="w-4 h-4" />
+                    <span>Copy Briefing</span>
                   </>
                 )}
               </button>

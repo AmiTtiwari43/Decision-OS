@@ -22,6 +22,8 @@ export function App() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
 
+  const decisionModel = useDecisionModel();
+
   const {
     dataset,
     criteria,
@@ -30,7 +32,10 @@ export function App() {
     activeOptionIds,
     engineResult,
     setCriterionWeight,
-  } = useDecisionModel();
+    decisionId,
+    isAuthoritative,
+    loadDecision,
+  } = decisionModel;
 
   const { winner, runnerUp, explainability, sensitivity, evaluations } = engineResult;
 
@@ -41,6 +46,23 @@ export function App() {
   const tippingStr = accessibleTipping
     ? `TIPPING: ${accessibleTipping.criterionName} > ${accessibleTipping.tippingPointWeight}% flips to ${accessibleTipping.wouldFlipToOptionName}`
     : 'LEAD IS MATHEMATICALLY STABLE';
+
+  // Support direct URL retrieval via ?decisionId=<mongoId>
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlId = params.get('decisionId');
+      if (urlId && urlId.trim()) {
+        loadDecision(urlId.trim()).then((doc) => {
+          if (doc) {
+            setIsSandboxOpen(true);
+          }
+        });
+      }
+    } catch {
+      // URL parsing failed safely
+    }
+  }, [loadDecision]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -104,6 +126,8 @@ export function App() {
           criteria={criteria}
           weights={weights}
           question={dataset.question}
+          decisionId={decisionId}
+          isAuthoritative={isAuthoritative}
         />
 
         {/* Real Scenario Case Studies */}
@@ -135,6 +159,7 @@ export function App() {
       <InteractiveModal
         isOpen={isSandboxOpen}
         onClose={() => setIsSandboxOpen(false)}
+        model={decisionModel}
       />
 
       {/* Mathematical Audit Terminal Easter Egg */}
