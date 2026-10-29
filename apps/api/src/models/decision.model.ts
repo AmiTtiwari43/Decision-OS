@@ -113,14 +113,28 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
       default: 1,
       min: 1,
     },
+    ownerId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      index: true,
+      default: null,
+    },
   },
   {
     timestamps: true,
+    toJSON: {
+      transform(_doc, ret: Record<string, unknown>) {
+        ret.id = (ret._id as mongoose.Types.ObjectId)?.toString?.() || ret._id;
+        delete ret.__v;
+        return ret;
+      },
+    },
   }
 );
 
-// Indexes: Bounded listings sorted by createdAt
+// Indexes: Bounded listings sorted by createdAt and scoped by owner
 DecisionSchema.index({ createdAt: -1 });
+DecisionSchema.index({ ownerId: 1, createdAt: -1 });
 
 export const DecisionModel =
   (mongoose.models.Decision as Model<DecisionDocument>) ||

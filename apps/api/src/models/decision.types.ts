@@ -33,6 +33,7 @@ export interface IDecision {
   scores: ScoreMatrix;
   analysis: EngineResult | null;
   calculationVersion: number;
+  ownerId?: Types.ObjectId | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -49,6 +50,7 @@ export interface CreateDecisionInput {
   scores?: ScoreMatrix;
   analysis?: EngineResult | null;
   calculationVersion?: number;
+  ownerId?: Types.ObjectId | string | null;
 }
 
 export interface UpdateDecisionInput {
@@ -59,4 +61,5 @@ export interface UpdateDecisionInput {
   scores?: ScoreMatrix;
   analysis?: EngineResult | null;
   calculationVersion?: number;
+  ownerId?: Types.ObjectId | string | null;
 }

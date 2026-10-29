@@ -62,4 +62,15 @@ describe('API Foundation — Environment Validation', () => {
 
     expect(() => validateEnv(invalidRaw)).toThrowError(/NODE_ENV/);
   });
+
+  it('provides safe default for JWT_SECRET and rejects short secrets when provided', () => {
+    const valid = validateEnv({});
+    expect(valid.JWT_SECRET).toBeDefined();
+    expect(valid.JWT_SECRET.length).toBeGreaterThanOrEqual(16);
+
+    const invalidRaw = {
+      JWT_SECRET: 'short',
+    };
+    expect(() => validateEnv(invalidRaw)).toThrowError(/JWT_SECRET/);
+  });
 });

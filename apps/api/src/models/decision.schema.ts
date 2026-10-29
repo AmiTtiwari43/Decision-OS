@@ -41,6 +41,7 @@ export const createDecisionSchema = z
     scores: scoresSchema.default({}),
     analysis: z.any().nullable().default(null),
     calculationVersion: z.number().int().min(1).default(1),
+    ownerId: z.any().optional(),
   })
   .superRefine((data, ctx) => {
     // Validate duplicate criterion IDs
@@ -81,6 +82,7 @@ export const updateDecisionSchema = z
     scores: scoresSchema.optional(),
     analysis: z.any().nullable().optional(),
     calculationVersion: z.number().int().min(1).optional(),
+    ownerId: z.any().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.criteria) {

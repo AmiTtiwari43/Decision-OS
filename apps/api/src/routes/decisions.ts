@@ -77,6 +77,9 @@ function handleServiceError(
 // ─── Route Plugin ─────────────────────────────────────────────────────────────
 
 export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  // Enforce authentication on all /api/decisions routes
+  app.addHook('preHandler', app.authenticate);
+
   // POST /api/decisions — Create a new decision
   app.post('/decisions', async (request: FastifyRequest, reply: FastifyReply) => {
     const body = request.body as Record<string, unknown>;
@@ -93,7 +96,7 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      const doc = await createDecision(parsed.data as Record<string, unknown>);
+      const doc = await createDecision(parsed.data as Record<string, unknown>, request.user);
       return reply.status(201).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);
@@ -113,7 +116,8 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     try {
       const result = await listDecisions(
         search ? { search } : undefined,
-        { page, limit }
+        { page, limit },
+        request.user
       );
       return reply.status(200).send(result);
     } catch (err) {
@@ -136,7 +140,7 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      const doc = await getDecision(id);
+      const doc = await getDecision(id, request.user);
       return reply.status(200).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);
@@ -170,7 +174,7 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      const doc = await updateDecision(id, parsed.data as Record<string, unknown>);
+      const doc = await updateDecision(id, parsed.data as Record<string, unknown>, request.user);
       return reply.status(200).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);
@@ -192,7 +196,7 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      await deleteDecision(id);
+      await deleteDecision(id, request.user);
       return reply.status(204).send();
     } catch (err) {
       return handleServiceError(err, request, reply);
@@ -214,7 +218,7 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      const doc = await analyzeDecision(id);
+      const doc = await analyzeDecision(id, request.user);
       return reply.status(200).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);

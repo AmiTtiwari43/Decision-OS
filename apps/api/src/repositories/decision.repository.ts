@@ -15,6 +15,7 @@ export interface PaginationOptions {
 
 export interface ListDecisionsFilter {
   search?: string;
+  ownerId?: string | null;
 }
 
 export interface PaginatedResult<T> {
@@ -60,6 +61,9 @@ export class DecisionRepository {
     const skip = (page - 1) * limit;
 
     const query: Record<string, unknown> = {};
+    if (filter?.ownerId !== undefined) {
+      query.ownerId = filter.ownerId;
+    }
     if (filter?.search && filter.search.trim().length > 0) {
       // Escape regex special characters to prevent regex injection
       const escaped = filter.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

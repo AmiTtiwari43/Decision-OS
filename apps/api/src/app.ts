@@ -2,7 +2,9 @@ import fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastif
 import cors from '@fastify/cors';
 import { env as defaultEnv, type Env } from './config/env.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
+import { registerAuthPlugin } from './plugins/auth.js';
 import { healthRoutes } from './routes/health.js';
+import { authRoutes } from './routes/auth.js';
 import { decisionRoutes } from './routes/decisions.js';
 import crypto from 'node:crypto';
 
@@ -37,10 +39,16 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // Centralized Error & Not Found Handlers
   registerErrorHandler(app, currentEnv.NODE_ENV);
 
-  // Health Route
+  // Authentication Plugin (JWT & Auth hooks)
+  await registerAuthPlugin(app, { env: currentEnv });
+
+  // Public Health Routes
   await app.register(healthRoutes);
 
-  // Decision Routes
+  // Auth Routes
+  await app.register(authRoutes, { prefix: '/api/auth' });
+
+  // Protected Decision Routes
   await app.register(decisionRoutes, { prefix: '/api' });
 
   return app;

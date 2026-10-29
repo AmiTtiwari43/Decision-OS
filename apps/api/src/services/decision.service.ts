@@ -20,6 +20,12 @@ import {
 } from '../errors/domain.errors.js';
 import type { MissingScorePair } from '../errors/domain.errors.js';
 
+export interface RequesterContext {
+  id: string;
+  role?: 'user' | 'admin' | string;
+  email?: string;
+}
+
 /**
  * Returns every option–criterion pair whose score is missing or out-of-range.
  * A decision is "complete" when:
@@ -129,15 +135,66 @@ function stripServerFields(input: Record<string, unknown>): Record<string, unkno
   delete copy.finalScore;
   delete copy.engineVersion;
   delete copy.calculationVersion;
+  delete copy.ownerId;
   return copy;
+}
+
+/**
+ * Verifies that the requester has permission to view a decision.
+ * Returns 404 (not 403) on unauthorized access to prevent ID enumeration.
+ */
+function assertCanAccessDecision(
+  doc: DecisionDocument,
+  id: string,
+  requester?: RequesterContext
+): void {
+  if (!requester) {
+    return;
+  }
+  if (doc.ownerId) {
+    if (requester.role !== 'admin' && doc.ownerId.toString() !== requester.id) {
+      throw new DecisionNotFoundError(id);
+    }
+  }
+}
+
+/**
+ * Verifies that the requester has permission to mutate (update/delete/analyze) a decision.
+ * Returns 404 (not 403) on unauthorized mutation to prevent ID enumeration.
+ * Unowned legacy decisions cannot be modified by regular HTTP users.
+ */
+function assertCanMutateDecision(
+  doc: DecisionDocument,
+  id: string,
+  requester?: RequesterContext
+): void {
+  if (!requester) {
+    return;
+  }
+  if (doc.ownerId) {
+    if (requester.role !== 'admin' && doc.ownerId.toString() !== requester.id) {
+      throw new DecisionNotFoundError(id);
+    }
+  } else {
+    // Unowned legacy records require admin privileges to mutate via HTTP
+    if (requester.role !== 'admin') {
+      throw new DecisionNotFoundError(id);
+    }
+  }
 }
 
 // ─── Public Service Methods ───────────────────────────────────────────────────
 
 export async function createDecision(
-  input: Record<string, unknown>
+  input: Record<string, unknown>,
+  requester?: RequesterContext | string
 ): Promise<DecisionDocument> {
   const sanitized = stripServerFields(input) as unknown as Parameters<typeof decisionRepository.create>[0];
+
+  const ownerId = typeof requester === 'string' ? requester : requester?.id;
+  if (ownerId && mongoose.isValidObjectId(ownerId)) {
+    sanitized.ownerId = new mongoose.Types.ObjectId(ownerId);
+  }
 
   // Create the base document
   const doc = await decisionRepository.create(sanitized);
@@ -155,7 +212,10 @@ export async function createDecision(
   return doc;
 }
 
-export async function getDecision(id: string): Promise<DecisionDocument> {
+export async function getDecision(
+  id: string,
+  requester?: RequesterContext
+): Promise<DecisionDocument> {
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
@@ -163,23 +223,41 @@ export async function getDecision(id: string): Promise<DecisionDocument> {
   if (!doc) {
     throw new DecisionNotFoundError(id);
   }
+
+  assertCanAccessDecision(doc, id, requester);
   return doc;
 }
 
 export async function listDecisions(
   filter?: ListDecisionsFilter,
-  pagination?: PaginationOptions
+  pagination?: PaginationOptions,
+  requester?: RequesterContext
 ): Promise<PaginatedResult<DecisionDocument>> {
-  return decisionRepository.list(filter, pagination);
+  const effectiveFilter: ListDecisionsFilter = { ...filter };
+
+  // Regular users only see their own decisions
+  if (requester && requester.role !== 'admin') {
+    effectiveFilter.ownerId = requester.id;
+  }
+
+  return decisionRepository.list(effectiveFilter, pagination);
 }
 
 export async function updateDecision(
   id: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  requester?: RequesterContext
 ): Promise<DecisionDocument> {
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
+
+  const existing = await decisionRepository.findById(id);
+  if (!existing) {
+    throw new DecisionNotFoundError(id);
+  }
+
+  assertCanMutateDecision(existing, id, requester);
 
   const sanitized = stripServerFields(data);
 
@@ -202,17 +280,31 @@ export async function updateDecision(
   }
 }
 
-export async function deleteDecision(id: string): Promise<void> {
+export async function deleteDecision(
+  id: string,
+  requester?: RequesterContext
+): Promise<void> {
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
+
+  const existing = await decisionRepository.findById(id);
+  if (!existing) {
+    throw new DecisionNotFoundError(id);
+  }
+
+  assertCanMutateDecision(existing, id, requester);
+
   const deleted = await decisionRepository.delete(id);
   if (!deleted) {
     throw new DecisionNotFoundError(id);
   }
 }
 
-export async function analyzeDecision(id: string): Promise<DecisionDocument> {
+export async function analyzeDecision(
+  id: string,
+  requester?: RequesterContext
+): Promise<DecisionDocument> {
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
@@ -221,6 +313,8 @@ export async function analyzeDecision(id: string): Promise<DecisionDocument> {
   if (!doc) {
     throw new DecisionNotFoundError(id);
   }
+
+  assertCanMutateDecision(doc, id, requester);
 
   const criteria = doc.criteria as DecisionCriterion[];
   const options = doc.options as DecisionOption[];

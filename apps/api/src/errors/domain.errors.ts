@@ -72,5 +72,58 @@ export class EngineValidationError extends Error {
   }
 }
 
+/**
+ * Thrown when login fails due to incorrect email or password.
+ * Generic message prevents account enumeration attacks.
+ */
+export class InvalidCredentialsError extends Error {
+  readonly statusCode = 401;
+
+  constructor(message = 'Invalid email or password') {
+    super(message);
+    this.name = 'InvalidCredentialsError';
+    Object.setPrototypeOf(this, InvalidCredentialsError.prototype);
+  }
+}
+
+/**
+ * Thrown when registration is attempted with an existing email.
+ */
+export class UserAlreadyExistsError extends Error {
+  readonly statusCode = 409;
+
+  constructor(message = 'A user with this email address already exists') {
+    super(message);
+    this.name = 'UserAlreadyExistsError';
+    Object.setPrototypeOf(this, UserAlreadyExistsError.prototype);
+  }
+}
+
+/**
+ * Thrown when an unauthenticated request attempts to access a protected resource.
+ */
+export class UnauthorizedError extends Error {
+  readonly statusCode = 401;
+
+  constructor(message = 'Authentication required') {
+    super(message);
+    this.name = 'UnauthorizedError';
+    Object.setPrototypeOf(this, UnauthorizedError.prototype);
+  }
+}
+
+/**
+ * Thrown when an authenticated user attempts an operation they lack permission for.
+ */
+export class ForbiddenError extends Error {
+  readonly statusCode = 403;
+
+  constructor(message = 'Insufficient permissions') {
+    super(message);
+    this.name = 'ForbiddenError';
+    Object.setPrototypeOf(this, ForbiddenError.prototype);
+  }
+}
+
 // Re-export EngineResult so callers don't need a separate import
 export type { EngineResult };

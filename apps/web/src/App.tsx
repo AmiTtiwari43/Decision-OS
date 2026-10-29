@@ -16,9 +16,11 @@ import { Footer } from './components/Footer';
 import { InteractiveModal } from './components/InteractiveModal';
 import { EasterEgg } from './components/EasterEgg';
 import { ScrollToTop } from './components/ScrollToTop';
+import { AuthModal } from './components/AuthModal';
+import { AuthProvider } from './context/AuthContext';
 import { useDecisionModel } from './hooks/useDecisionModel';
 
-export function App() {
+function AppContent() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
 
@@ -167,7 +169,18 @@ export function App() {
         isOpen={isAuditOpen}
         onClose={() => setIsAuditOpen(false)}
       />
+
+      {/* Centralized Authentication Modal */}
+      <AuthModal />
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 

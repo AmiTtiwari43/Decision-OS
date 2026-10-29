@@ -81,3 +81,28 @@ export interface ApiErrorResponse {
   requestId?: string;
   missingPairs?: MissingScorePairDto[];
 }
+
+export interface UserDto {
+  id: string;
+  email: string;
+  name: string;
+  role: 'user' | 'admin';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuthResponseDto {
+  user: UserDto;
+  token: string;
+}
+
+export interface RegisterPayload {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}

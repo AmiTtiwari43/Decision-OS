@@ -14,7 +14,10 @@ export function registerErrorHandler(app: FastifyInstance, nodeEnv: string): voi
 
     let errorName = 'Internal Server Error';
     if (statusCode === 400) errorName = 'Bad Request';
+    else if (statusCode === 401) errorName = 'Unauthorized';
+    else if (statusCode === 403) errorName = 'Forbidden';
     else if (statusCode === 404) errorName = 'Not Found';
+    else if (statusCode === 409) errorName = 'Conflict';
     else if (statusCode === 422) errorName = 'Unprocessable Entity';
     else if (error.name && error.name !== 'Error') errorName = error.name;
 

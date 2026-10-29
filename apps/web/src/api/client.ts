@@ -7,6 +7,10 @@ import type {
   PaginatedDecisionsDto,
   ApiErrorResponse,
   MissingScorePairDto,
+  UserDto,
+  AuthResponseDto,
+  RegisterPayload,
+  LoginPayload,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -46,6 +50,7 @@ function sanitizePayload<T extends Record<string, unknown>>(data: T): T {
   delete clean.finalScore;
   delete clean.engineVersion;
   delete clean.calculationVersion;
+  delete clean.ownerId;
   return clean;
 }
 
@@ -57,10 +62,26 @@ export interface ApiClientOptions {
 export class DecisionApiClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
+  private token: string | null = null;
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? resolveApiUrl()).replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? 15000;
+  }
+
+  /**
+   * Updates the in-memory bearer token used for authenticated requests.
+   * Credentials are kept strictly in-memory per security requirements.
+   */
+  setToken(token: string | null): void {
+    this.token = token;
+  }
+
+  /**
+   * Retrieves the current in-memory bearer token.
+   */
+  getToken(): string | null {
+    return this.token;
   }
 
   private async request<T>(
@@ -74,6 +95,9 @@ export class DecisionApiClient {
     }
     if (!headers.has('Accept')) {
       headers.set('Accept', 'application/json');
+    }
+    if (this.token && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${this.token}`);
     }
 
     const controller = new AbortController();
@@ -107,6 +131,11 @@ export class DecisionApiClient {
         const message = errorData?.message || response.statusText || `Request failed with status ${response.status}`;
         const errorType = errorData?.error || 'HTTP Error';
         const requestId = errorData?.requestId || response.headers.get('x-request-id') || undefined;
+
+        // If 401 Unauthorized, automatically clear token if it was invalid/expired
+        if (response.status === 401 && this.token) {
+          this.token = null;
+        }
 
         throw new ApiClientError({
           statusCode: response.status,
@@ -146,6 +175,60 @@ export class DecisionApiClient {
       clearTimeout(timeoutId);
     }
   }
+
+  // ─── Authentication API ──────────────────────────────────────────────────────
+
+  /**
+   * POST /api/auth/register — Registers a new user account.
+   */
+  async register(payload: RegisterPayload): Promise<AuthResponseDto> {
+    const res = await this.request<AuthResponseDto>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
+  /**
+   * POST /api/auth/login — Authenticates with email and password.
+   */
+  async login(payload: LoginPayload): Promise<AuthResponseDto> {
+    const res = await this.request<AuthResponseDto>('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) {
+      this.setToken(res.token);
+    }
+    return res;
+  }
+
+  /**
+   * POST /api/auth/logout — Clears the active session.
+   */
+  async logout(): Promise<void> {
+    try {
+      await this.request<void>('/api/auth/logout', {
+        method: 'POST',
+      });
+    } finally {
+      this.setToken(null);
+    }
+  }
+
+  /**
+   * GET /api/auth/me — Retrieves the profile of the current authenticated user.
+   */
+  async getCurrentUser(): Promise<{ user: UserDto }> {
+    return this.request<{ user: UserDto }>('/api/auth/me', {
+      method: 'GET',
+    });
+  }
+
+  // ─── Decisions API ──────────────────────────────────────────────────────────
 
   /**
    * POST /api/decisions — Creates and evaluates a decision document.

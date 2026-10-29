@@ -26,6 +26,7 @@ import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
+import { useAuth } from '../hooks/useAuth.js';
 
 interface InteractiveModalProps {
   isOpen: boolean;
@@ -68,6 +69,8 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     clearApiError,
   } = model;
 
+  const { isAuthenticated, openAuthModal } = useAuth();
+
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
   const [copied, setCopied] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
@@ -91,6 +94,10 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   };
 
   const handleOpenSavedList = async () => {
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      return;
+    }
     setIsSavedListOpen((prev) => !prev);
     if (!isSavedListOpen) {
       setIsLoadingSaved(true);
@@ -125,6 +132,10 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   };
 
   const handleSaveToServer = async () => {
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      return;
+    }
     sound.playTick();
     const result = await saveDecision();
     if (result) {

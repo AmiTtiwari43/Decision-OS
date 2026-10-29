@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Command, Volume2, VolumeX } from 'lucide-react';
+import { Sparkles, Command, Volume2, VolumeX, User, LogOut } from 'lucide-react';
 import { Logo } from './Logo';
 import { sound } from '../utils/audioFx';
+import { useAuth } from '../hooks/useAuth';
 
 interface NavbarProps {
   onOpenSandbox: () => void;
@@ -11,6 +12,7 @@ interface NavbarProps {
 export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit }) => {
   const [scrolled, setScrolled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(sound.isSoundEnabled());
+  const { user, isAuthenticated, logout, openAuthModal } = useAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -84,6 +86,41 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit }) =>
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* User Pill / Sign In Trigger */}
+          {isAuthenticated && user ? (
+            <div className="flex items-center gap-1.5 p-1 pl-2 bg-surface/80 border border-border-subtle rounded-lg text-xs">
+              <div className="w-5 h-5 rounded-full bg-signal/20 text-signal font-mono text-[10px] flex items-center justify-center uppercase font-bold">
+                {user.name.charAt(0) || 'U'}
+              </div>
+              <span className="max-w-[70px] sm:max-w-[110px] truncate text-slate-200 font-medium">
+                {user.name}
+              </span>
+              {user.role === 'admin' && (
+                <span className="px-1 py-0.5 text-[9px] font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded">
+                  ADMIN
+                </span>
+              )}
+              <button
+                onClick={() => logout()}
+                className="p-1 rounded text-slate-400 hover:text-rose-400 hover:bg-surface transition-colors cursor-pointer"
+                title="Sign out"
+                aria-label="Sign out"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => openAuthModal('login')}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-200 hover:text-white bg-surface/70 hover:bg-surface border border-border-subtle hover:border-signal/40 transition-all cursor-pointer shadow-sm"
+              title="Sign in to your account"
+              aria-label="Sign in"
+            >
+              <User className="w-3.5 h-3.5 text-signal" />
+              <span>Sign In</span>
+            </button>
+          )}
+
           {/* Audio Feedback Toggle */}
           <button
             onClick={handleToggleSound}
