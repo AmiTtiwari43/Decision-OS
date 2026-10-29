@@ -6,6 +6,7 @@ import { registerAuthPlugin } from './plugins/auth.js';
 import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { decisionRoutes } from './routes/decisions.js';
+import { sharingRoutes } from './routes/sharing.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -50,6 +51,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Protected Decision Routes
   await app.register(decisionRoutes, { prefix: '/api' });
+
+  // Decision Sharing & Invitation Routes
+  await app.register(sharingRoutes, { prefix: '/api' });
 
   return app;
 }

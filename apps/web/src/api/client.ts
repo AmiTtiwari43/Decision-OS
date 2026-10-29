@@ -11,6 +11,16 @@ import type {
   AuthResponseDto,
   RegisterPayload,
   LoginPayload,
+  InvitationDto,
+  CreateInvitationPayload,
+  CreateInvitationResponseDto,
+  DecisionAccessListDto,
+  AccessGrantCollaboratorDto,
+  UpdateAccessGrantPayload,
+  AcceptInvitationPayload,
+  AcceptInvitationResponseDto,
+  InvitationDetailsDto,
+  PendingInvitationDto,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -336,6 +346,115 @@ export class DecisionApiClient {
 
     return this.request<DecisionDto>(`/api/decisions/${encodeURIComponent(cleanId)}/analyze`, {
       method: 'POST',
+    });
+  }
+
+  // ─── Sharing & Invitation API ──────────────────────────────────────────────
+
+  /**
+   * POST /api/decisions/:id/invitations — Creates an invitation for a decision.
+   */
+  async createInvitation(
+    decisionId: string,
+    payload: CreateInvitationPayload
+  ): Promise<CreateInvitationResponseDto> {
+    return this.request<CreateInvitationResponseDto>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/invitations`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/invitations — Lists invitations for a decision.
+   */
+  async listInvitations(decisionId: string): Promise<{ items: InvitationDto[] }> {
+    return this.request<{ items: InvitationDto[] }>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/invitations`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * DELETE /api/decisions/:id/invitations/:invitationId — Revokes a pending invitation.
+   */
+  async revokeInvitation(
+    decisionId: string,
+    invitationId: string
+  ): Promise<{ message: string; invitation: InvitationDto }> {
+    return this.request<{ message: string; invitation: InvitationDto }>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/invitations/${encodeURIComponent(invitationId)}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/access — Lists users with access to a decision.
+   */
+  async listAccessGrants(decisionId: string): Promise<DecisionAccessListDto> {
+    return this.request<DecisionAccessListDto>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/access`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * PUT /api/decisions/:id/access/:grantId — Updates collaborator access role.
+   */
+  async updateAccessGrant(
+    decisionId: string,
+    grantId: string,
+    payload: UpdateAccessGrantPayload
+  ): Promise<AccessGrantCollaboratorDto> {
+    return this.request<AccessGrantCollaboratorDto>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/access/${encodeURIComponent(grantId)}`,
+      {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * DELETE /api/decisions/:id/access/:grantId — Revokes collaborator access.
+   */
+  async revokeAccess(decisionId: string, grantId: string): Promise<void> {
+    return this.request<void>(
+      `/api/decisions/${encodeURIComponent(decisionId)}/access/${encodeURIComponent(grantId)}`,
+      { method: 'DELETE' }
+    );
+  }
+
+  /**
+   * POST /api/invitations/accept — Accepts an invitation with cryptographic token.
+   */
+  async acceptInvitation(
+    payload: AcceptInvitationPayload
+  ): Promise<AcceptInvitationResponseDto> {
+    return this.request<AcceptInvitationResponseDto>('/api/invitations/accept', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
+   * GET /api/invitations/details?token=... — Retrieves public invitation details.
+   */
+  async getInvitationDetails(token: string): Promise<InvitationDetailsDto> {
+    return this.request<InvitationDetailsDto>(
+      `/api/invitations/details?token=${encodeURIComponent(token)}`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/invitations/pending — Lists pending invitations for authenticated user.
+   */
+  async getPendingInvitations(): Promise<{ items: PendingInvitationDto[] }> {
+    return this.request<{ items: PendingInvitationDto[] }>('/api/invitations/pending', {
+      method: 'GET',
     });
   }
 }

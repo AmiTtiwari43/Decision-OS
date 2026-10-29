@@ -123,6 +123,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
   const [mode, setMode] = useState<DecisionMode>('template');
   const [decisionId, setDecisionId] = useState<string | null>(null);
   const [serverDecision, setServerDecision] = useState<DecisionDto | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<'owner' | 'editor' | 'viewer'>('owner');
   const [isDirty, setIsDirty] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<OperationStatus>('idle');
   const [loadStatus, setLoadStatus] = useState<OperationStatus>('idle');
@@ -329,6 +330,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       setMode('draft');
       setDecisionId(null);
       setServerDecision(null);
+      setCurrentUserRole('owner');
       setIsDirty(true);
       setLockedIds([]);
       setActiveScenarioId(null);
@@ -460,6 +462,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
 
       setServerDecision(doc);
       setDecisionId(doc._id);
+      setCurrentUserRole(doc.currentUserRole || 'owner');
       setMode('saved');
       setIsDirty(false);
       setActiveScenarioId(null);
@@ -517,6 +520,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     mode,
     decisionId,
     serverDecision,
+    currentUserRole,
     isDirty,
     isAuthoritative: mode === 'saved' && !isDirty && serverDecision?.analysis != null,
     saveStatus,

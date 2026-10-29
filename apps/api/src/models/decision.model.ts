@@ -123,9 +123,12 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
   {
     timestamps: true,
     toJSON: {
-      transform(_doc, ret: Record<string, unknown>) {
+      transform(doc, ret: Record<string, unknown>) {
         ret.id = (ret._id as mongoose.Types.ObjectId)?.toString?.() || ret._id;
         delete ret.__v;
+        if ((doc as unknown as { currentUserRole?: string }).currentUserRole) {
+          ret.currentUserRole = (doc as unknown as { currentUserRole?: string }).currentUserRole;
+        }
         return ret;
       },
     },

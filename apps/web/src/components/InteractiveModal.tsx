@@ -19,11 +19,15 @@ import {
   Sparkles,
   ChevronDown,
   ChevronUp,
+  Share2,
+  Eye,
+  Users,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
 import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
+import { ShareModal } from './ShareModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -56,6 +60,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     mode,
     decisionId,
     serverDecision,
+    currentUserRole = 'owner',
     isDirty,
     isAuthoritative,
     saveStatus,
@@ -73,6 +78,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
 
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
   const [copied, setCopied] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -239,6 +245,20 @@ ${criteria
                       <span>Template Demonstration</span>
                     </span>
                   )}
+
+                  {/* Role Indicators */}
+                  {decisionId && currentUserRole === 'viewer' && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-sky-500/15 text-sky-400 border border-sky-500/30 flex items-center gap-1 font-semibold">
+                      <Eye className="w-3 h-3" />
+                      <span>Viewer Mode</span>
+                    </span>
+                  )}
+                  {decisionId && currentUserRole === 'editor' && (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 flex items-center gap-1 font-semibold">
+                      <Users className="w-3 h-3" />
+                      <span>Editor</span>
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -396,6 +416,16 @@ ${criteria
             </div>
           )}
 
+          {/* Viewer Mode Banner */}
+          {decisionId && currentUserRole === 'viewer' && (
+            <div className="p-3 bg-sky-950/40 border-b border-sky-500/30 flex items-center gap-2.5 text-xs text-sky-200">
+              <Eye className="w-4 h-4 text-sky-400 shrink-0" />
+              <span>
+                <strong>Viewer Access (Read-Only):</strong> You have viewer access to this decision and its verified analytical calculations. Input calibrations, score modifications, and saving are restricted.
+              </span>
+            </div>
+          )}
+
           {/* Modal Scrollable Body */}
           <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
             {/* Question Banner & Server Status */}
@@ -405,7 +435,7 @@ ${criteria
                   <span className="text-[10px] font-mono uppercase text-signal tracking-wider">
                     Target Question & Scope
                   </span>
-                  {!isEditingTitle && (
+                  {!isEditingTitle && currentUserRole !== 'viewer' && (
                     <button
                       onClick={handleStartEditTitle}
                       className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
@@ -532,8 +562,11 @@ ${criteria
                                     min={0}
                                     max={100}
                                     value={scoreVal}
+                                    disabled={currentUserRole === 'viewer'}
                                     onChange={(e) => updateOptionScore(opt.id, c.id, Number(e.target.value))}
-                                    className="w-16 px-2 py-1 rounded bg-surface border border-border text-center font-mono font-bold text-white focus:outline-none focus:border-signal text-xs"
+                                    className={`w-16 px-2 py-1 rounded bg-surface border border-border text-center font-mono font-bold text-white focus:outline-none focus:border-signal text-xs ${
+                                      currentUserRole === 'viewer' ? 'opacity-50 cursor-not-allowed' : ''
+                                    }`}
                                   />
                                 </td>
                               );
@@ -556,13 +589,15 @@ ${criteria
                     <Sliders className="w-3.5 h-3.5 text-signal" />
                     <span>Calibrate Weights</span>
                   </div>
-                  <button
-                    onClick={resetToDefaults}
-                    className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>Reset</span>
-                  </button>
+                  {currentUserRole !== 'viewer' && (
+                    <button
+                      onClick={resetToDefaults}
+                      className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span>Reset</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
@@ -572,6 +607,7 @@ ${criteria
                       criterion={c}
                       weight={weights[c.id] ?? 0}
                       isLocked={lockedIds.includes(c.id)}
+                      disabled={currentUserRole === 'viewer'}
                       onWeightChange={(val) => setCriterionWeight(c.id, val)}
                       onToggleLock={() => toggleLock(c.id)}
                     />
@@ -666,35 +702,58 @@ ${criteria
 
             <div className="flex items-center gap-3">
               {/* Save to Server / Persist Button */}
-              <button
-                onClick={handleSaveToServer}
-                disabled={saveStatus === 'in_flight'}
-                className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
-                  saveStatus === 'in_flight'
-                    ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
-                    : isAuthoritative
-                      ? 'bg-surface hover:bg-surface-subtle border border-signal/50 text-signal hover:shadow-glow-signal-sm'
-                      : 'bg-signal hover:bg-signal-light text-background shadow-glow-signal-sm'
-                }`}
-                title="Persist to MongoDB and compute authoritative MCDA results"
-              >
-                {saveStatus === 'in_flight' ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin text-signal" />
-                    <span>Saving...</span>
-                  </>
-                ) : isAuthoritative ? (
-                  <>
-                    <CheckCircle2 className="w-4 h-4 text-signal" />
-                    <span>Saved & Verified</span>
-                  </>
-                ) : (
-                  <>
-                    <Save className="w-4 h-4" />
-                    <span>{decisionId ? 'Save Changes' : 'Save to Server'}</span>
-                  </>
-                )}
-              </button>
+              {currentUserRole === 'viewer' ? (
+                <button
+                  disabled
+                  className="px-4 py-2.5 rounded-xl bg-surface border border-border text-slate-500 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-not-allowed"
+                  title="Viewers are not permitted to save changes"
+                >
+                  <Eye className="w-4 h-4 text-sky-400" />
+                  <span>Read-Only</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handleSaveToServer}
+                  disabled={saveStatus === 'in_flight'}
+                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                    saveStatus === 'in_flight'
+                      ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
+                      : isAuthoritative
+                        ? 'bg-surface hover:bg-surface-subtle border border-signal/50 text-signal hover:shadow-glow-signal-sm'
+                        : 'bg-signal hover:bg-signal-light text-background shadow-glow-signal-sm'
+                  }`}
+                  title="Persist to MongoDB and compute authoritative MCDA results"
+                >
+                  {saveStatus === 'in_flight' ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin text-signal" />
+                      <span>Saving...</span>
+                    </>
+                  ) : isAuthoritative ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 text-signal" />
+                      <span>Saved & Verified</span>
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4" />
+                      <span>{decisionId ? 'Save Changes' : 'Save to Server'}</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Share Decision Button (Owner only) */}
+              {decisionId && currentUserRole === 'owner' && (
+                <button
+                  onClick={() => setIsShareModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-signal/40 text-signal hover:shadow-glow-signal-sm font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  title="Share decision and manage collaborators"
+                >
+                  <Share2 className="w-4 h-4" />
+                  <span>Share</span>
+                </button>
+              )}
 
               {/* Export Briefing Button */}
               <button
@@ -716,6 +775,14 @@ ${criteria
             </div>
           </div>
         </motion.div>
+
+        {/* Phase 6 Share Modal */}
+        <ShareModal
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
+          decisionId={decisionId}
+          decisionTitle={dataset.title}
+        />
       </div>
     </AnimatePresence>
   );

@@ -6,6 +6,7 @@ interface WeightSliderProps {
   criterion: Criterion;
   weight: number;
   isLocked: boolean;
+  disabled?: boolean;
   onWeightChange: (newWeight: number) => void;
   onToggleLock: () => void;
 }
@@ -22,6 +23,7 @@ export const WeightSlider: React.FC<WeightSliderProps> = ({
   criterion,
   weight,
   isLocked,
+  disabled = false,
   onWeightChange,
   onToggleLock,
 }) => {
@@ -46,7 +48,12 @@ export const WeightSlider: React.FC<WeightSliderProps> = ({
           {/* Lock / Unlock Toggle Button */}
           <button
             onClick={onToggleLock}
-            className={`px-2 py-1 rounded-md border text-[11px] font-mono flex items-center gap-1 transition-all cursor-pointer ${
+            disabled={disabled}
+            className={`px-2 py-1 rounded-md border text-[11px] font-mono flex items-center gap-1 transition-all ${
+              disabled
+                ? 'opacity-50 cursor-not-allowed'
+                : 'cursor-pointer'
+            } ${
               isLocked
                 ? 'bg-signal/15 border-signal/40 text-signal shadow-sm'
                 : 'bg-surface-subtle border-border-subtle text-slate-500 hover:text-slate-200'
@@ -84,9 +91,9 @@ export const WeightSlider: React.FC<WeightSliderProps> = ({
           max="80"
           step="1"
           value={weight}
-          disabled={isLocked}
+          disabled={disabled || isLocked}
           onChange={(e) => onWeightChange(Number(e.target.value))}
-          className={`w-full ${isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          className={`w-full ${disabled || isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
           aria-label={`Drag to calibrate weight for ${criterion.name}`}
         />
       </div>

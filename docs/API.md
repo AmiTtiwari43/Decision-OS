@@ -214,3 +214,224 @@ Returns the updated Decision document with the persisted `analysis` snapshot con
 - `404 Not Found`: Decision not found.
 - `422 Unprocessable Entity`: Incomplete decision matrix (e.g. missing scores for certain option-criterion pairs, or missing criteria/options). The error message lists the missing coordinates.
 
+---
+
+## Phase 6 — Sharing & Invitations API
+
+### 7. Create Invitation
+`POST /api/decisions/:id/invitations`
+
+Creates a single-use invitation with a 256-bit cryptographically secure token. Only the decision owner or administrator can create invitations.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Request Body
+```json
+{
+  "email": "colleague@example.com",
+  "role": "editor" // "editor" | "viewer"
+}
+```
+
+#### Response: `201 Created`
+```json
+{
+  "invitation": {
+    "id": "67215c26b8b548b26e95d120",
+    "decisionId": "67215c26b8b548b26e95d11f",
+    "email": "colleague@example.com",
+    "role": "editor",
+    "status": "pending",
+    "expiresAt": "2026-11-05T12:00:00.000Z",
+    "createdAt": "2026-10-29T12:00:00.000Z"
+  },
+  "token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "invitationLink": "/invite?token=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
+```
+
+*Note: The raw token is returned strictly to the creator at creation time and is never stored in plaintext (stored as SHA-256 hash).*
+
+---
+
+### 8. List Invitations
+`GET /api/decisions/:id/invitations`
+
+Lists all invitations associated with the decision. Only the decision owner or administrator can view invitations.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "id": "67215c26b8b548b26e95d120",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "email": "colleague@example.com",
+      "role": "editor",
+      "status": "pending",
+      "expiresAt": "2026-11-05T12:00:00.000Z",
+      "createdAt": "2026-10-29T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 9. Revoke Invitation
+`DELETE /api/decisions/:id/invitations/:invitationId`
+
+Revokes a pending invitation. Once revoked, the invitation can no longer be accepted. Only the decision owner or administrator can revoke invitations.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+```json
+{
+  "message": "Invitation revoked successfully",
+  "invitation": {
+    "id": "67215c26b8b548b26e95d120",
+    "status": "revoked"
+  }
+}
+```
+
+---
+
+### 10. List Access Grants
+`GET /api/decisions/:id/access`
+
+Lists the decision owner and all active collaborators with explicit access grants.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+```json
+{
+  "owner": {
+    "id": "67215c26b8b548b26e95d11e",
+    "name": "Owner Name",
+    "email": "owner@example.com"
+  },
+  "collaborators": [
+    {
+      "id": "67215c26b8b548b26e95d121",
+      "user": {
+        "id": "67215c26b8b548b26e95d11d",
+        "name": "Collaborator Name",
+        "email": "colleague@example.com"
+      },
+      "role": "editor",
+      "createdAt": "2026-10-29T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 11. Update Collaborator Access Role
+`PUT /api/decisions/:id/access/:grantId`
+
+Updates an existing collaborator's role between `'editor'` and `'viewer'`. Only the decision owner or administrator can modify collaborator roles.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Request Body
+```json
+{
+  "role": "viewer" // "editor" | "viewer"
+}
+```
+
+#### Response: `200 OK`
+Returns the updated `DecisionAccessGrant` document.
+
+---
+
+### 12. Revoke Collaborator Access
+`DELETE /api/decisions/:id/access/:grantId`
+
+Immediately deletes the access grant, revoking the collaborator's access to the decision. Subsequent requests by the revoked user receive `404 Not Found`.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `204 No Content`
+
+---
+
+### 13. Accept Invitation
+`POST /api/invitations/accept`
+
+Redeems an invitation using a raw cryptographic token. Enforces single-use redemption and verifies that the authenticated user's email matches the intended recipient email.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Request Body
+```json
+{
+  "token": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}
+```
+
+#### Response: `200 OK`
+```json
+{
+  "message": "Invitation accepted successfully",
+  "decisionId": "67215c26b8b548b26e95d11f",
+  "role": "editor"
+}
+```
+
+#### Error Responses
+- `400 Bad Request`: Token missing or owner attempting to accept own invitation.
+- `403 Forbidden`: Authenticated user email does not match invitation recipient email.
+- `404 Not Found`: Invalid or nonexistent token.
+- `409 Conflict`: Invitation has already been accepted (single-use redemption enforced).
+- `410 Gone`: Invitation has expired or has been revoked by the owner.
+
+---
+
+### 14. Get Invitation Details
+`GET /api/invitations/details?token=<token>`
+
+Retrieves public summary details of an invitation (decision title, inviter name, role) prior to acceptance.
+
+#### Authentication
+Optional
+
+#### Response: `200 OK`
+```json
+{
+  "email": "colleague@example.com",
+  "role": "editor",
+  "status": "pending",
+  "expiresAt": "2026-11-05T12:00:00.000Z",
+  "decisionTitle": "Cloud Provider Migration Matrix",
+  "inviterName": "Owner Name"
+}
+```
+
+---
+
+### 15. List Pending Invitations for User
+`GET /api/invitations/pending`
+
+Lists active pending invitations issued to the authenticated user's email address.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+Returns array of pending invitation objects with decision title and inviter info.
+
+

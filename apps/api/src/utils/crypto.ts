@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 
 const SALT_ROUNDS = 12;
@@ -29,4 +30,19 @@ export async function dummyVerifyPassword(password: string): Promise<boolean> {
   await bcrypt.compare(password, DUMMY_BCRYPT_HASH);
   return false;
 }
+
+/**
+ * Generates a cryptographically secure 256-bit random hex token for invitations.
+ */
+export function generateSecureToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+/**
+ * Hashes an invitation token using SHA-256 for secure database storage.
+ */
+export function hashInvitationToken(token: string): string {
+  return crypto.createHash('sha256').update(token.trim()).digest('hex');
+}
+
 

@@ -35,6 +35,7 @@ export interface DecisionDto {
   scores: ScoreMatrixDto;
   analysis: EngineResult | null;
   calculationVersion: number;
+  currentUserRole?: 'owner' | 'editor' | 'viewer';
   createdAt: string;
   updatedAt: string;
 }
@@ -106,3 +107,96 @@ export interface LoginPayload {
   email: string;
   password: string;
 }
+
+// ─── Sharing & Invitation Types ─────────────────────────────────────────────
+
+export type DecisionCollaboratorRole = 'editor' | 'viewer';
+export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
+
+export interface InvitationDto {
+  id: string;
+  decisionId: string;
+  email: string;
+  role: DecisionCollaboratorRole;
+  status: InvitationStatus;
+  expiresAt: string;
+  acceptedAt?: string | null;
+  revokedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateInvitationPayload {
+  email: string;
+  role: DecisionCollaboratorRole;
+}
+
+export interface CreateInvitationResponseDto {
+  invitation: InvitationDto;
+  token: string;
+  invitationLink: string;
+}
+
+export interface AccessGrantCollaboratorDto {
+  id: string;
+  user: {
+    id: string;
+    name: string;
+    email: string;
+  };
+  role: DecisionCollaboratorRole;
+  createdAt: string;
+}
+
+export interface DecisionAccessListDto {
+  owner: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+  collaborators: AccessGrantCollaboratorDto[];
+}
+
+export interface UpdateAccessGrantPayload {
+  role: DecisionCollaboratorRole;
+}
+
+export interface AcceptInvitationPayload {
+  token: string;
+}
+
+export interface AcceptInvitationResponseDto {
+  message: string;
+  decisionId: string;
+  role: DecisionCollaboratorRole;
+}
+
+export interface InvitationDetailsDto {
+  email: string;
+  role: DecisionCollaboratorRole;
+  status: string;
+  expiresAt: string;
+  decisionTitle: string;
+  inviterName?: string;
+}
+
+export interface PendingInvitationDto {
+  id: string;
+  decisionId: {
+    _id?: string;
+    id?: string;
+    title: string;
+    description?: string;
+  };
+  inviterId: {
+    _id?: string;
+    id?: string;
+    name: string;
+    email: string;
+  };
+  role: DecisionCollaboratorRole;
+  status: InvitationStatus;
+  expiresAt: string;
+  createdAt: string;
+}
+

@@ -16,6 +16,7 @@ export interface PaginationOptions {
 export interface ListDecisionsFilter {
   search?: string;
   ownerId?: string | null;
+  allowedIds?: string[];
 }
 
 export interface PaginatedResult<T> {
@@ -60,15 +61,44 @@ export class DecisionRepository {
     const limit = Math.min(100, Math.max(1, pagination.limit ?? 20));
     const skip = (page - 1) * limit;
 
-    const query: Record<string, unknown> = {};
-    if (filter?.ownerId !== undefined) {
-      query.ownerId = filter.ownerId;
+    const conditions: Record<string, unknown>[] = [];
+    if (filter?.allowedIds !== undefined && filter?.ownerId !== undefined) {
+      conditions.push({
+        $or: [
+          { ownerId: filter.ownerId },
+          {
+            _id: {
+              $in: filter.allowedIds
+                .filter(id => mongoose.isValidObjectId(id))
+                .map(id => new mongoose.Types.ObjectId(id)),
+            },
+          },
+        ],
+      });
+    } else if (filter?.ownerId !== undefined) {
+      conditions.push({ ownerId: filter.ownerId });
+    } else if (filter?.allowedIds !== undefined) {
+      conditions.push({
+        _id: {
+          $in: filter.allowedIds
+            .filter(id => mongoose.isValidObjectId(id))
+            .map(id => new mongoose.Types.ObjectId(id)),
+        },
+      });
     }
+
     if (filter?.search && filter.search.trim().length > 0) {
       // Escape regex special characters to prevent regex injection
       const escaped = filter.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      query.title = { $regex: escaped, $options: 'i' };
+      conditions.push({ title: { $regex: escaped, $options: 'i' } });
     }
+
+    const query =
+      conditions.length === 0
+        ? {}
+        : conditions.length === 1
+        ? conditions[0]
+        : { $and: conditions };
 
     const [items, total] = await Promise.all([
       DecisionModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),

@@ -17,12 +17,14 @@ import { InteractiveModal } from './components/InteractiveModal';
 import { EasterEgg } from './components/EasterEgg';
 import { ScrollToTop } from './components/ScrollToTop';
 import { AuthModal } from './components/AuthModal';
+import { AcceptInvitationModal } from './components/AcceptInvitationModal';
 import { AuthProvider } from './context/AuthContext';
 import { useDecisionModel } from './hooks/useDecisionModel';
 
 function AppContent() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [incomingInviteToken, setIncomingInviteToken] = useState<string | null>(null);
 
   const decisionModel = useDecisionModel();
 
@@ -49,7 +51,7 @@ function AppContent() {
     ? `TIPPING: ${accessibleTipping.criterionName} > ${accessibleTipping.tippingPointWeight}% flips to ${accessibleTipping.wouldFlipToOptionName}`
     : 'LEAD IS MATHEMATICALLY STABLE';
 
-  // Support direct URL retrieval via ?decisionId=<mongoId>
+  // Support direct URL retrieval via ?decisionId=<mongoId> or ?inviteToken=<token>
   useEffect(() => {
     try {
       const params = new URLSearchParams(window.location.search);
@@ -60,6 +62,11 @@ function AppContent() {
             setIsSandboxOpen(true);
           }
         });
+      }
+
+      const inviteToken = params.get('inviteToken') || params.get('token');
+      if (inviteToken && inviteToken.trim()) {
+        setIncomingInviteToken(inviteToken.trim());
       }
     } catch {
       // URL parsing failed safely
@@ -172,6 +179,18 @@ function AppContent() {
 
       {/* Centralized Authentication Modal */}
       <AuthModal />
+
+      {/* Phase 6 Accept Invitation Modal */}
+      <AcceptInvitationModal
+        isOpen={incomingInviteToken != null}
+        onClose={() => setIncomingInviteToken(null)}
+        token={incomingInviteToken}
+        onAccepted={async (newDecisionId) => {
+          setIncomingInviteToken(null);
+          await loadDecision(newDecisionId);
+          setIsSandboxOpen(true);
+        }}
+      />
     </div>
   );
 }

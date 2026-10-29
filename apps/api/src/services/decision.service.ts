@@ -5,6 +5,12 @@ import type {
   EngineResult,
 } from '@decision-os/decision-engine';
 import { decisionRepository } from '../repositories/decision.repository.js';
+import { decisionAccessRepository } from '../repositories/decisionAccess.repository.js';
+import { invitationRepository } from '../repositories/invitation.repository.js';
+import {
+  authorizeDecisionAction,
+  type DecisionRole,
+} from './authorization.service.js';
 import type {
   DecisionCriterion,
   DecisionOption,
@@ -139,50 +145,6 @@ function stripServerFields(input: Record<string, unknown>): Record<string, unkno
   return copy;
 }
 
-/**
- * Verifies that the requester has permission to view a decision.
- * Returns 404 (not 403) on unauthorized access to prevent ID enumeration.
- */
-function assertCanAccessDecision(
-  doc: DecisionDocument,
-  id: string,
-  requester?: RequesterContext
-): void {
-  if (!requester) {
-    return;
-  }
-  if (doc.ownerId) {
-    if (requester.role !== 'admin' && doc.ownerId.toString() !== requester.id) {
-      throw new DecisionNotFoundError(id);
-    }
-  }
-}
-
-/**
- * Verifies that the requester has permission to mutate (update/delete/analyze) a decision.
- * Returns 404 (not 403) on unauthorized mutation to prevent ID enumeration.
- * Unowned legacy decisions cannot be modified by regular HTTP users.
- */
-function assertCanMutateDecision(
-  doc: DecisionDocument,
-  id: string,
-  requester?: RequesterContext
-): void {
-  if (!requester) {
-    return;
-  }
-  if (doc.ownerId) {
-    if (requester.role !== 'admin' && doc.ownerId.toString() !== requester.id) {
-      throw new DecisionNotFoundError(id);
-    }
-  } else {
-    // Unowned legacy records require admin privileges to mutate via HTTP
-    if (requester.role !== 'admin') {
-      throw new DecisionNotFoundError(id);
-    }
-  }
-}
-
 // ─── Public Service Methods ───────────────────────────────────────────────────
 
 export async function createDecision(
@@ -215,7 +177,7 @@ export async function createDecision(
 export async function getDecision(
   id: string,
   requester?: RequesterContext
-): Promise<DecisionDocument> {
+): Promise<DecisionDocument & { currentUserRole?: DecisionRole }> {
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
@@ -224,8 +186,12 @@ export async function getDecision(
     throw new DecisionNotFoundError(id);
   }
 
-  assertCanAccessDecision(doc, id, requester);
-  return doc;
+  const role = await authorizeDecisionAction(doc, 'read', requester);
+
+  // Return document with effective current user role attached
+  const res = doc as DecisionDocument & { currentUserRole?: DecisionRole };
+  res.currentUserRole = role;
+  return res;
 }
 
 export async function listDecisions(
@@ -235,9 +201,11 @@ export async function listDecisions(
 ): Promise<PaginatedResult<DecisionDocument>> {
   const effectiveFilter: ListDecisionsFilter = { ...filter };
 
-  // Regular users only see their own decisions
+  // Regular users only see their own decisions plus decisions explicitly shared with them
   if (requester && requester.role !== 'admin') {
     effectiveFilter.ownerId = requester.id;
+    const sharedIds = await decisionAccessRepository.listSharedDecisionIdsForUser(requester.id);
+    effectiveFilter.allowedIds = sharedIds;
   }
 
   return decisionRepository.list(effectiveFilter, pagination);
@@ -257,7 +225,7 @@ export async function updateDecision(
     throw new DecisionNotFoundError(id);
   }
 
-  assertCanMutateDecision(existing, id, requester);
+  await authorizeDecisionAction(existing, 'edit', requester);
 
   const sanitized = stripServerFields(data);
 
@@ -293,7 +261,13 @@ export async function deleteDecision(
     throw new DecisionNotFoundError(id);
   }
 
-  assertCanMutateDecision(existing, id, requester);
+  await authorizeDecisionAction(existing, 'delete', requester);
+
+  // Cascade delete any access grants and invitations associated with this decision
+  await Promise.all([
+    decisionAccessRepository.deleteByDecisionId(id),
+    invitationRepository.deleteByDecisionId(id),
+  ]);
 
   const deleted = await decisionRepository.delete(id);
   if (!deleted) {
@@ -314,7 +288,7 @@ export async function analyzeDecision(
     throw new DecisionNotFoundError(id);
   }
 
-  assertCanMutateDecision(doc, id, requester);
+  await authorizeDecisionAction(doc, 'analyze', requester);
 
   const criteria = doc.criteria as DecisionCriterion[];
   const options = doc.options as DecisionOption[];

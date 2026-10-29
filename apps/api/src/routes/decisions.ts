@@ -141,7 +141,13 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     try {
       const doc = await getDecision(id, request.user);
-      return reply.status(200).send(doc);
+      const docWithJson = doc as unknown as { toJSON?: () => Record<string, unknown> };
+      const payload: Record<string, unknown> =
+        typeof docWithJson.toJSON === 'function' ? docWithJson.toJSON() : { ...(doc as unknown as Record<string, unknown>) };
+      if (doc.currentUserRole) {
+        payload.currentUserRole = doc.currentUserRole;
+      }
+      return reply.status(200).send(payload);
     } catch (err) {
       return handleServiceError(err, request, reply);
     }
