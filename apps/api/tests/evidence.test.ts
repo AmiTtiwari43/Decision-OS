@@ -760,5 +760,232 @@ describe('Phase 8 — Evidence and Provenance Subsystem', () => {
       expect(after.length).toBe(0);
     });
   });
+
+  // ─── 8. INDEPENDENT AUDIT ADVERSARIAL VECTORS ───────────────────────────────
+
+  describe('Independent Audit Adversarial Vectors', () => {
+    let secondDecisionId: string;
+    let secondOwnerToken: string;
+
+    beforeEach(async () => {
+      // Register second owner
+      const resOwner2 = await app.inject({
+        method: 'POST',
+        url: '/api/auth/register',
+        payload: { email: 'owner2-audit@example.com', password: 'Password123!', name: 'Owner Two' },
+      });
+      secondOwnerToken = resOwner2.json().token;
+
+      // Create second decision
+      const resDec2 = await app.inject({
+        method: 'POST',
+        url: '/api/decisions',
+        headers: { authorization: `Bearer ${secondOwnerToken}` },
+        payload: baseDecisionPayload,
+      });
+      secondDecisionId = resDec2.json()._id || resDec2.json().id;
+    });
+
+    it('prevents direct-ID and nested-route authorization bypass attempts (IDOR)', async () => {
+      // Decision 1 has Evidence 1 (created by Expert Beta)
+      const evidRes = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/evidence`,
+        headers: { authorization: `Bearer ${expertToken}` },
+        payload: {
+          targetType: 'option',
+          targetId: 'aws',
+          type: 'excerpt',
+          title: 'Protected Evidence',
+        },
+      });
+      const evid1Id = evidRes.json()._id || evidRes.json().id;
+
+      // Owner 2 tries to GET Evidence 1 through Decision 2 -> 404 Not Found
+      const crossGet = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${secondDecisionId}/evidence/${evid1Id}`,
+        headers: { authorization: `Bearer ${secondOwnerToken}` },
+      });
+      expect(crossGet.statusCode).toBe(404);
+      expect(crossGet.json().message).toContain('Evidence record not found');
+
+      // Owner 2 tries to PATCH Evidence 1 through Decision 2 -> 404 Not Found
+      const crossPatch = await app.inject({
+        method: 'PATCH',
+        url: `/api/decisions/${secondDecisionId}/evidence/${evid1Id}`,
+        headers: { authorization: `Bearer ${secondOwnerToken}` },
+        payload: { title: 'Hijacked Title' },
+      });
+      expect(crossPatch.statusCode).toBe(404);
+
+      // Owner 2 tries to DELETE Evidence 1 through Decision 2 -> 404 Not Found
+      const crossDelete = await app.inject({
+        method: 'DELETE',
+        url: `/api/decisions/${secondDecisionId}/evidence/${evid1Id}`,
+        headers: { authorization: `Bearer ${secondOwnerToken}` },
+      });
+      expect(crossDelete.statusCode).toBe(404);
+
+      // Verify Evidence 1 in Decision 1 is completely unmodified
+      const original = await DecisionEvidenceModel.findById(evid1Id);
+      expect(original?.title).toBe('Protected Evidence');
+      expect(original?.decisionId.toString()).toBe(decisionId);
+    });
+
+    it('prevents evidence reassignment and mass assignment on PATCH', async () => {
+      const evidRes = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/evidence`,
+        headers: { authorization: `Bearer ${expertToken}` },
+        payload: {
+          targetType: 'option',
+          targetId: 'aws',
+          type: 'excerpt',
+          title: 'Original Title',
+          sourceExcerpt: 'Original quote.',
+        },
+      });
+      const evidId = evidRes.json()._id || evidRes.json().id;
+
+      // Expert attempts to reassign decisionId, targetType, targetId, createdById, provenance
+      const patchRes = await app.inject({
+        method: 'PATCH',
+        url: `/api/decisions/${decisionId}/evidence/${evidId}`,
+        headers: { authorization: `Bearer ${expertToken}` },
+        payload: {
+          title: 'Legitimately Updated Title',
+          decisionId: secondDecisionId,
+          targetType: 'criterion',
+          targetId: 'cost',
+          createdById: '65f1a2b3c4d5e6f7a8b9c0d1',
+          provenance: {
+            createdByName: 'Spoofed Name',
+            createdByEmail: 'spoofed@example.com',
+            capturedVia: 'manual_entry',
+          },
+        },
+      });
+
+      expect(patchRes.statusCode).toBe(200);
+      const data = patchRes.json();
+      expect(data.title).toBe('Legitimately Updated Title');
+      expect(data.decisionId).toBe(decisionId); // Unchanged!
+      expect(data.targetType).toBe('option'); // Unchanged!
+      expect(data.targetId).toBe('aws'); // Unchanged!
+      expect(data.createdById).toBe(expertId); // Unchanged!
+      expect(data.provenance.createdByName).toBe('Expert Beta'); // Unchanged!
+    });
+
+    it('preserves provenance attribution and timestamps across multiple metadata updates', async () => {
+      const evidRes = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/evidence`,
+        headers: { authorization: `Bearer ${expertToken}` },
+        payload: {
+          targetType: 'option',
+          targetId: 'aws',
+          type: 'url',
+          title: 'Title v1',
+          sourceUrl: 'https://aws.amazon.com/benchmark',
+          sourceExcerpt: 'Excerpt v1',
+          userSummary: 'Summary v1',
+        },
+      });
+      const evidId = evidRes.json()._id || evidRes.json().id;
+      const initialCreatedAt = evidRes.json().createdAt;
+      const initialProvenance = evidRes.json().provenance;
+
+      // Owner performs moderation update
+      const updateRes = await app.inject({
+        method: 'PATCH',
+        url: `/api/decisions/${decisionId}/evidence/${evidId}`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: {
+          title: 'Title v2 (Moderated by Owner)',
+          userSummary: 'Summary v2 (Clarified context)',
+        },
+      });
+
+      expect(updateRes.statusCode).toBe(200);
+      const updated = updateRes.json();
+      expect(updated.title).toBe('Title v2 (Moderated by Owner)');
+      expect(updated.userSummary).toBe('Summary v2 (Clarified context)');
+      expect(updated.sourceExcerpt).toBe('Excerpt v1'); // Preserved!
+      expect(updated.sourceUrl).toBe('https://aws.amazon.com/benchmark'); // Preserved!
+      expect(updated.createdAt).toBe(initialCreatedAt); // Preserved!
+      expect(updated.provenance).toEqual(initialProvenance); // Preserved!
+    });
+
+    it('safely handles internal/cloud metadata URLs without outbound SSRF execution', async () => {
+      const startTime = Date.now();
+
+      // Submit AWS EC2 metadata service URL as an evidence reference
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/evidence`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: {
+          targetType: 'decision',
+          targetId: 'decision',
+          type: 'url',
+          title: 'Metadata Reference Note',
+          sourceUrl: 'http://169.254.169.254/latest/meta-data/',
+        },
+      });
+
+      const elapsed = Date.now() - startTime;
+      expect(res.statusCode).toBe(201);
+      expect(res.json().sourceUrl).toBe('http://169.254.169.254/latest/meta-data/');
+      // Must respond instantly in milliseconds without attempting outbound TCP connection or timing out
+      expect(elapsed).toBeLessThan(1500);
+    });
+
+    it('handles concurrent evidence creation on the same decision target', async () => {
+      const results = await Promise.all([
+        app.inject({
+          method: 'POST',
+          url: `/api/decisions/${decisionId}/evidence`,
+          headers: { authorization: `Bearer ${expertToken}` },
+          payload: { targetType: 'option', targetId: 'aws', type: 'excerpt', title: 'Evidence A' },
+        }),
+        app.inject({
+          method: 'POST',
+          url: `/api/decisions/${decisionId}/evidence`,
+          headers: { authorization: `Bearer ${expertToken}` },
+          payload: { targetType: 'option', targetId: 'aws', type: 'excerpt', title: 'Evidence B' },
+        }),
+        app.inject({
+          method: 'POST',
+          url: `/api/decisions/${decisionId}/evidence`,
+          headers: { authorization: `Bearer ${ownerToken}` },
+          payload: { targetType: 'option', targetId: 'aws', type: 'excerpt', title: 'Evidence C' },
+        }),
+      ]);
+
+      for (const res of results) {
+        expect(res.statusCode).toBe(201);
+      }
+
+      // Verify all 3 records were created and are queryable
+      const listRes = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${decisionId}/evidence?targetType=option&targetId=aws`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+      });
+      expect(listRes.statusCode).toBe(200);
+      expect(listRes.json().items.length).toBe(3);
+    });
+
+    it('rejects requests to unsupported file upload endpoints with 404', async () => {
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/evidence/upload`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { file: 'dummy-file-content' },
+      });
+      expect(res.statusCode).toBe(404);
+    });
+  });
 });
 
