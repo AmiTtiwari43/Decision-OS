@@ -102,4 +102,10 @@ export interface EngineResult {
   totalWeight: number;
   sensitivity: SensitivityAnalysis[];
   explainability: ExplainabilitySummary;
+  isAuthoritative?: boolean;
+  engineVersion?: string;
+  evaluatedAt?: string;
+  isTie?: boolean;
+  tiedWinnerIds?: readonly string[];
+  decisionOutcome?: 'decisive' | 'tie';
 }
