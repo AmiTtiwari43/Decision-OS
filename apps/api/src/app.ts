@@ -3,6 +3,7 @@ import cors from '@fastify/cors';
 import { env as defaultEnv, type Env } from './config/env.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
 import { healthRoutes } from './routes/health.js';
+import { decisionRoutes } from './routes/decisions.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -38,6 +39,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Health Route
   await app.register(healthRoutes);
+
+  // Decision Routes
+  await app.register(decisionRoutes, { prefix: '/api' });
 
   return app;
 }
