@@ -24,8 +24,8 @@ export const DecisionAccessGrantSchema = new Schema<
     role: {
       type: String,
       enum: {
-        values: ['editor', 'viewer'],
-        message: "Role must be either 'editor' or 'viewer'",
+        values: ['editor', 'viewer', 'contributor'],
+        message: "Role must be either 'editor' or 'viewer' or 'contributor'",
       },
       required: [true, 'Role is required'],
     },

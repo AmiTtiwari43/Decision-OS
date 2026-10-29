@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const decisionCollaboratorRoleSchema = z.enum(['editor', 'viewer'], {
-  errorMap: () => ({ message: "Role must be either 'editor' or 'viewer'" }),
+export const decisionCollaboratorRoleSchema = z.enum(['editor', 'viewer', 'contributor'], {
+  errorMap: () => ({ message: "Role must be either 'editor' or 'viewer' or 'contributor'" }),
 });
 
 export const createDecisionAccessGrantSchema = z.object({

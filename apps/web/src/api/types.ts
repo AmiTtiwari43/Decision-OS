@@ -35,7 +35,9 @@ export interface DecisionDto {
   scores: ScoreMatrixDto;
   analysis: EngineResult | null;
   calculationVersion: number;
-  currentUserRole?: 'owner' | 'editor' | 'viewer';
+  currentUserRole?: 'owner' | 'editor' | 'viewer' | 'contributor';
+  isContributionRoundLocked?: boolean;
+  contributionRoundLockedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -110,7 +112,7 @@ export interface LoginPayload {
 
 // ─── Sharing & Invitation Types ─────────────────────────────────────────────
 
-export type DecisionCollaboratorRole = 'editor' | 'viewer';
+export type DecisionCollaboratorRole = 'editor' | 'viewer' | 'contributor';
 export type InvitationStatus = 'pending' | 'accepted' | 'revoked' | 'expired';
 
 export interface InvitationDto {
@@ -199,4 +201,63 @@ export interface PendingInvitationDto {
   expiresAt: string;
   createdAt: string;
 }
+
+// ─── Phase 7: Expert Contribution Types ─────────────────────────────────────
+
+export type ContributionStatus = 'draft' | 'submitted' | 'withdrawn';
+
+export interface ContributionPredictionDto {
+  statement?: string;
+  targetDate?: string;
+  probability?: number;
+}
+
+export interface ContributionRecommendationDto {
+  preferredOptionId: string;
+  rationale?: string;
+}
+
+export interface ContributionRevisionSnapshotDto {
+  revision: number;
+  submittedAt: string;
+  recommendation: ContributionRecommendationDto;
+  criterionScores: Record<string, number>;
+  criterionReasoning?: Record<string, string>;
+  confidence?: number;
+  prediction?: ContributionPredictionDto;
+}
+
+export interface DecisionContributionDto {
+  id: string;
+  decisionId: string;
+  contributorId: {
+    id: string;
+    name: string;
+    email: string;
+  } | string;
+  recommendation: ContributionRecommendationDto;
+  criterionScores: Record<string, number>;
+  criterionReasoning: Record<string, string>;
+  confidence: number;
+  prediction?: ContributionPredictionDto;
+  evidenceReferences?: string[];
+  status: ContributionStatus;
+  revision: number;
+  history: ContributionRevisionSnapshotDto[];
+  submittedAt: string | null;
+  withdrawnAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SaveContributionPayload {
+  preferredOptionId: string;
+  rationale?: string;
+  criterionScores?: Record<string, number>;
+  criterionReasoning?: Record<string, string>;
+  confidence?: number;
+  prediction?: ContributionPredictionDto;
+  evidenceReferences?: string[];
+}
+
 

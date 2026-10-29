@@ -434,4 +434,162 @@ Required (`Bearer <JWT>`)
 #### Response: `200 OK`
 Returns array of pending invitation objects with decision title and inviter info.
 
+---
+
+## Phase 7 — Expert Contributions API
+
+### 16. List Decision Contributions
+`GET /api/decisions/:id/contributions`
+
+Lists all submitted and withdrawn contributions for a decision. If the requester has a draft contribution, their draft is also returned.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Owner, Editor, Contributor, Viewer
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "id": "67215c26b8b548b26e95d130",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "contributorId": {
+        "id": "67215c26b8b548b26e95d110",
+        "name": "Expert Name",
+        "email": "expert@example.com"
+      },
+      "recommendation": {
+        "preferredOptionId": "aws",
+        "rationale": "Superior managed service availability"
+      },
+      "criterionScores": {
+        "cost": 75,
+        "perf": 95
+      },
+      "criterionReasoning": {
+        "cost": "Higher base cost offset by reserved pricing"
+      },
+      "confidence": 0.9,
+      "status": "submitted",
+      "revision": 1,
+      "history": [],
+      "submittedAt": "2026-10-29T12:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 17. Get My Contribution
+`GET /api/decisions/:id/contributions/mine`
+
+Retrieves the authenticated user's contribution for this decision (draft, submitted, or withdrawn).
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+Returns `{ "item": DecisionContributionDto | null }`.
+
+---
+
+### 18. Save Contribution Draft
+`POST /api/decisions/:id/contributions`
+
+Saves or updates a draft contribution for the current user. Validates option and criterion IDs against the decision.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Contributor, Editor, Owner (Viewers receive `403 Forbidden`)
+
+#### Request Body
+```json
+{
+  "preferredOptionId": "aws",
+  "rationale": "Detailed trade-off rationale",
+  "criterionScores": {
+    "cost": 80,
+    "perf": 90
+  },
+  "criterionReasoning": {
+    "cost": "Cost estimate",
+    "perf": "Performance assessment"
+  },
+  "confidence": 0.85,
+  "prediction": {
+    "statement": "Option A will achieve KPI within 6 months",
+    "probability": 0.75
+  }
+}
+```
+
+#### Response: `200 OK`
+Returns the saved `DecisionContributionDto`.
+
+---
+
+### 19. Submit Contribution
+`POST /api/decisions/:id/contributions/submit`
+
+Transitions the user's contribution to `'submitted'`. If already submitted, archives the previous state in `history` and increments `revision`.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+Returns the submitted `DecisionContributionDto` with updated revision.
+
+---
+
+### 20. Withdraw Contribution
+`POST /api/decisions/:id/contributions/withdraw`
+
+Transitions the user's contribution to `'withdrawn'`.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+Returns the withdrawn `DecisionContributionDto`.
+
+---
+
+### 21. Lock / Unlock Contribution Round
+`POST /api/decisions/:id/contributions/lock`  
+`POST /api/decisions/:id/contributions/unlock`
+
+Locks or unlocks the contribution round. When locked, contributors cannot create, edit, submit, or withdraw contributions.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Owner or Admin only (`403 Forbidden` for non-owners)
+
+#### Response: `200 OK`
+Returns the updated `DecisionDto` with `isContributionRoundLocked`.
+
+---
+
+### 22. Adopt Expert Scores
+`POST /api/decisions/:id/contributions/:contributionId/adopt`
+
+Explicitly adopts an expert's criterion scores into the decision's core score matrix and re-runs deterministic MCDA analysis.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Owner or Admin only
+
+#### Response: `200 OK`
+Returns the updated `DecisionDto` with authoritative MCDA analysis.
+
+
 

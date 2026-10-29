@@ -22,12 +22,14 @@ import {
   Share2,
   Eye,
   Users,
+  Lock,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
 import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
 import { ShareModal } from './ShareModal.js';
+import { ContributionsModal } from './ContributionsModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -79,6 +81,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
   const [copied, setCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+  const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -755,6 +758,21 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 7: Expert Contributions Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsContributionsModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  title="View and submit expert contributions"
+                >
+                  <Sparkles className="w-4 h-4 text-signal" />
+                  <span>Contributions</span>
+                  {serverDecision?.isContributionRoundLocked && (
+                    <Lock className="w-3 h-3 text-accent-rose" />
+                  )}
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -782,6 +800,18 @@ ${criteria
           onClose={() => setIsShareModalOpen(false)}
           decisionId={decisionId}
           decisionTitle={dataset.title}
+        />
+
+        {/* Phase 7 Contributions Modal */}
+        <ContributionsModal
+          isOpen={isContributionsModalOpen}
+          onClose={() => setIsContributionsModalOpen(false)}
+          decision={serverDecision}
+          onDecisionUpdated={(updated) => {
+            if (model?.loadDecision) {
+              model.loadDecision(updated._id);
+            }
+          }}
         />
       </div>
     </AnimatePresence>

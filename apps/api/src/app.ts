@@ -7,6 +7,7 @@ import { healthRoutes } from './routes/health.js';
 import { authRoutes } from './routes/auth.js';
 import { decisionRoutes } from './routes/decisions.js';
 import { sharingRoutes } from './routes/sharing.js';
+import { contributionRoutes } from './routes/contributions.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -54,6 +55,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Decision Sharing & Invitation Routes
   await app.register(sharingRoutes, { prefix: '/api' });
+
+  // Expert Contribution Routes
+  await app.register(contributionRoutes, { prefix: '/api' });
 
   return app;
 }

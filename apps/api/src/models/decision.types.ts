@@ -34,6 +34,8 @@ export interface IDecision {
   analysis: EngineResult | null;
   calculationVersion: number;
   ownerId?: Types.ObjectId | null;
+  isContributionRoundLocked?: boolean;
+  contributionRoundLockedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -51,6 +53,8 @@ export interface CreateDecisionInput {
   analysis?: EngineResult | null;
   calculationVersion?: number;
   ownerId?: Types.ObjectId | string | null;
+  isContributionRoundLocked?: boolean;
+  contributionRoundLockedAt?: Date | null;
 }
 
 export interface UpdateDecisionInput {
@@ -62,4 +66,6 @@ export interface UpdateDecisionInput {
   analysis?: EngineResult | null;
   calculationVersion?: number;
   ownerId?: Types.ObjectId | string | null;
+  isContributionRoundLocked?: boolean;
+  contributionRoundLockedAt?: Date | null;
 }

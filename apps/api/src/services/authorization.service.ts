@@ -6,8 +6,8 @@ import {
 } from '../errors/domain.errors.js';
 import type { RequesterContext } from './decision.service.js';
 
-export type DecisionRole = 'owner' | 'editor' | 'viewer';
-export type DecisionAction = 'read' | 'edit' | 'analyze' | 'delete' | 'share';
+export type DecisionRole = 'owner' | 'editor' | 'viewer' | 'contributor';
+export type DecisionAction = 'read' | 'edit' | 'analyze' | 'delete' | 'share' | 'contribute' | 'lock_round';
 
 /**
  * Resolves the effective role of a requester for a given decision.
@@ -96,11 +96,17 @@ export async function authorizeDecisionAction(
       if (role === 'viewer') {
         throw new ForbiddenError('Viewers are not permitted to modify decision inputs');
       }
+      if (role === 'contributor') {
+        throw new ForbiddenError('Contributors are not permitted to modify decision inputs');
+      }
       return role;
 
     case 'analyze':
       if (role === 'viewer') {
         throw new ForbiddenError('Viewers are not permitted to run analysis on this decision');
+      }
+      if (role === 'contributor') {
+        throw new ForbiddenError('Contributors are not permitted to run analysis on this decision');
       }
       return role;
 
@@ -113,6 +119,18 @@ export async function authorizeDecisionAction(
     case 'share':
       if (role !== 'owner') {
         throw new ForbiddenError('Only the decision owner can manage sharing permissions and invitations');
+      }
+      return role;
+
+    case 'contribute':
+      if (role === 'viewer') {
+        throw new ForbiddenError('Viewers are not permitted to submit contributions');
+      }
+      return role;
+
+    case 'lock_round':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner can lock or unlock the contribution round');
       }
       return role;
 

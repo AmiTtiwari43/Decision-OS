@@ -42,6 +42,8 @@ export const createDecisionSchema = z
     analysis: z.any().nullable().default(null),
     calculationVersion: z.number().int().min(1).default(1),
     ownerId: z.any().optional(),
+    isContributionRoundLocked: z.boolean().optional().default(false),
+    contributionRoundLockedAt: z.coerce.date().nullable().optional().default(null),
   })
   .superRefine((data, ctx) => {
     // Validate duplicate criterion IDs
@@ -83,6 +85,8 @@ export const updateDecisionSchema = z
     analysis: z.any().nullable().optional(),
     calculationVersion: z.number().int().min(1).optional(),
     ownerId: z.any().optional(),
+    isContributionRoundLocked: z.boolean().optional(),
+    contributionRoundLockedAt: z.coerce.date().nullable().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.criteria) {

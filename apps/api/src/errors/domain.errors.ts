@@ -242,5 +242,57 @@ export class AccessGrantNotFoundError extends Error {
   }
 }
 
+/**
+ * Thrown when a contribution is not found.
+ */
+export class ContributionNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Contribution not found') {
+    super(message);
+    this.name = 'ContributionNotFoundError';
+    Object.setPrototypeOf(this, ContributionNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when attempting to create, revise, or submit a contribution while the round is locked.
+ */
+export class ContributionRoundLockedError extends Error {
+  readonly statusCode = 403;
+
+  constructor(message = 'The contribution round for this decision has been locked by the owner') {
+    super(message);
+    this.name = 'ContributionRoundLockedError';
+    Object.setPrototypeOf(this, ContributionRoundLockedError.prototype);
+  }
+}
+
+/**
+ * Thrown when a preferredOptionId does not match any option in the decision.
+ */
+export class InvalidOptionReferenceError extends Error {
+  readonly statusCode = 400;
+
+  constructor(optionId: string) {
+    super(`Option '${optionId}' does not exist in this decision`);
+    this.name = 'InvalidOptionReferenceError';
+    Object.setPrototypeOf(this, InvalidOptionReferenceError.prototype);
+  }
+}
+
+/**
+ * Thrown when a criterionId in scores or reasoning does not match any criterion in the decision.
+ */
+export class InvalidCriterionReferenceError extends Error {
+  readonly statusCode = 400;
+
+  constructor(criterionId: string) {
+    super(`Criterion '${criterionId}' does not exist in this decision`);
+    this.name = 'InvalidCriterionReferenceError';
+    Object.setPrototypeOf(this, InvalidCriterionReferenceError.prototype);
+  }
+}
+
 // Re-export EngineResult so callers don't need a separate import
 export type { EngineResult };

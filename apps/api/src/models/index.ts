@@ -10,3 +10,6 @@ export * from './decisionAccess.model.js';
 export * from './invitation.types.js';
 export * from './invitation.schema.js';
 export * from './invitation.model.js';
+export * from './contribution.types.js';
+export * from './contribution.schema.js';
+export * from './contribution.model.js';

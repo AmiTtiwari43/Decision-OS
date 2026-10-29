@@ -21,6 +21,8 @@ import type {
   AcceptInvitationResponseDto,
   InvitationDetailsDto,
   PendingInvitationDto,
+  DecisionContributionDto,
+  SaveContributionPayload,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -456,6 +458,114 @@ export class DecisionApiClient {
     return this.request<{ items: PendingInvitationDto[] }>('/api/invitations/pending', {
       method: 'GET',
     });
+  }
+
+  // ─── Phase 7: Expert Contribution API ───────────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/contributions — Lists contributions for a decision.
+   */
+  async listContributions(
+    decisionId: string
+  ): Promise<{ items: DecisionContributionDto[] }> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<{ items: DecisionContributionDto[] }>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/contributions/mine — Gets current user's contribution.
+   */
+  async getMineContribution(
+    decisionId: string
+  ): Promise<{ item: DecisionContributionDto | null }> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<{ item: DecisionContributionDto | null }>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/mine`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions — Saves or updates draft contribution.
+   */
+  async saveContribution(
+    decisionId: string,
+    payload: SaveContributionPayload
+  ): Promise<DecisionContributionDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionContributionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/submit — Submits contribution.
+   */
+  async submitContribution(
+    decisionId: string
+  ): Promise<DecisionContributionDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionContributionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/submit`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/withdraw — Withdraws contribution.
+   */
+  async withdrawContribution(
+    decisionId: string
+  ): Promise<DecisionContributionDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionContributionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/withdraw`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/lock — Locks contribution round (Owner only).
+   */
+  async lockContributionRound(decisionId: string): Promise<DecisionDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/lock`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/unlock — Unlocks contribution round (Owner only).
+   */
+  async unlockContributionRound(decisionId: string): Promise<DecisionDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/unlock`,
+      { method: 'POST' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/:contributionId/adopt — Adopts expert scores into decision.
+   */
+  async adoptExpertScores(
+    decisionId: string,
+    contributionId: string
+  ): Promise<DecisionDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanContribId = (contributionId || '').trim();
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/${encodeURIComponent(cleanContribId)}/adopt`,
+      { method: 'POST' }
+    );
   }
 }
 

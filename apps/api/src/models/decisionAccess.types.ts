@@ -1,6 +1,6 @@
 import type { Types } from 'mongoose';
 
-export type DecisionCollaboratorRole = 'editor' | 'viewer';
+export type DecisionCollaboratorRole = 'editor' | 'viewer' | 'contributor';
 
 export interface IDecisionAccessGrant {
   decisionId: Types.ObjectId;

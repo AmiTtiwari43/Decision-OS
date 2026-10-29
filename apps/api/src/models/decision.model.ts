@@ -119,6 +119,14 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
       index: true,
       default: null,
     },
+    isContributionRoundLocked: {
+      type: Boolean,
+      default: false,
+    },
+    contributionRoundLockedAt: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
