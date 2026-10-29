@@ -13,3 +13,6 @@ export * from './invitation.model.js';
 export * from './contribution.types.js';
 export * from './contribution.schema.js';
 export * from './contribution.model.js';
+export * from './evidence.types.js';
+export * from './evidence.schema.js';
+export * from './evidence.model.js';

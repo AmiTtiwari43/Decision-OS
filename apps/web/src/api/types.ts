@@ -260,4 +260,62 @@ export interface SaveContributionPayload {
   evidenceReferences?: string[];
 }
 
+// ─── Phase 8: Evidence & Provenance Types ───────────────────────────────────
+
+export type EvidenceTargetType = 'decision' | 'option' | 'criterion' | 'contribution';
+export type EvidenceType = 'url' | 'document' | 'excerpt';
+export type EvidenceCapturedVia = 'manual_entry' | 'web_link' | 'document_citation';
+
+export interface EvidenceProvenanceDto {
+  createdByName: string;
+  createdByEmail: string;
+  capturedVia: EvidenceCapturedVia;
+}
+
+export interface DecisionEvidenceDto {
+  id: string;
+  _id?: string;
+  decisionId: string;
+  targetType: EvidenceTargetType;
+  targetId: string;
+  createdById: string;
+  type: EvidenceType;
+  title: string;
+  sourceUrl?: string | null;
+  documentReference?: string | null;
+  sourceExcerpt?: string | null;
+  userSummary?: string | null;
+  publicationDate?: string | null;
+  provenance: EvidenceProvenanceDto;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateEvidencePayload {
+  targetType: EvidenceTargetType;
+  targetId: string;
+  type: EvidenceType;
+  title: string;
+  sourceUrl?: string | null;
+  documentReference?: string | null;
+  sourceExcerpt?: string | null;
+  userSummary?: string | null;
+  publicationDate?: string | null;
+}
+
+export interface UpdateEvidencePayload {
+  title?: string;
+  sourceUrl?: string | null;
+  documentReference?: string | null;
+  sourceExcerpt?: string | null;
+  userSummary?: string | null;
+  publicationDate?: string | null;
+}
+
+export interface ListEvidenceQuery {
+  targetType?: EvidenceTargetType;
+  targetId?: string;
+}
+
+
 

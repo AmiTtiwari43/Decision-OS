@@ -8,6 +8,7 @@ import { decisionRepository } from '../repositories/decision.repository.js';
 import { decisionAccessRepository } from '../repositories/decisionAccess.repository.js';
 import { invitationRepository } from '../repositories/invitation.repository.js';
 import { contributionRepository } from '../repositories/contribution.repository.js';
+import { evidenceRepository } from '../repositories/evidence.repository.js';
 import {
   authorizeDecisionAction,
   type DecisionRole,
@@ -31,6 +32,7 @@ export interface RequesterContext {
   id: string;
   role?: 'user' | 'admin' | string;
   email?: string;
+  name?: string;
 }
 
 /**
@@ -264,11 +266,12 @@ export async function deleteDecision(
 
   await authorizeDecisionAction(existing, 'delete', requester);
 
-  // Cascade delete any access grants, invitations, and contributions associated with this decision
+  // Cascade delete any access grants, invitations, contributions, and evidence associated with this decision
   await Promise.all([
     decisionAccessRepository.deleteByDecisionId(id),
     invitationRepository.deleteByDecisionId(id),
     contributionRepository.deleteByDecisionId(id),
+    evidenceRepository.deleteByDecisionId(id),
   ]);
 
   const deleted = await decisionRepository.delete(id);

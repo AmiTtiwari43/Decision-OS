@@ -294,5 +294,31 @@ export class InvalidCriterionReferenceError extends Error {
   }
 }
 
+/**
+ * Thrown when an evidence document cannot be found.
+ */
+export class EvidenceNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Evidence record not found') {
+    super(message);
+    this.name = 'EvidenceNotFoundError';
+    Object.setPrototypeOf(this, EvidenceNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when an evidence targetId does not exist in the referenced decision.
+ */
+export class InvalidEvidenceTargetError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidEvidenceTargetError';
+    Object.setPrototypeOf(this, InvalidEvidenceTargetError.prototype);
+  }
+}
+
 // Re-export EngineResult so callers don't need a separate import
 export type { EngineResult };

@@ -591,5 +591,131 @@ Owner or Admin only
 #### Response: `200 OK`
 Returns the updated `DecisionDto` with authoritative MCDA analysis.
 
+---
+
+## Evidence and Provenance Endpoints (Phase 8)
+
+### 23. List Evidence
+`GET /api/decisions/:id/evidence`
+
+Lists evidence records associated with a decision. Optional query parameters `targetType` (`decision`, `option`, `criterion`, `contribution`) and `targetId` can filter results.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Decision collaborator (`owner`, `editor`, `viewer`, `contributor`). Non-collaborators receive `404 Not Found`.
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "id": "67216a90b8b548b26e95d130",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "targetType": "option",
+      "targetId": "aws",
+      "createdById": "67215c26b8b548b26e95d11e",
+      "type": "url",
+      "title": "AWS Compute Optimizer Whitepaper",
+      "sourceUrl": "https://aws.amazon.com/whitepapers/compute-optimizer",
+      "documentReference": null,
+      "sourceExcerpt": "EC2 Graviton instances provide up to 40% better price performance.",
+      "userSummary": "Substantiates the 85 performance score assigned to AWS.",
+      "publicationDate": "2026-01-15T00:00:00.000Z",
+      "provenance": {
+        "createdByName": "Expert Contributor",
+        "createdByEmail": "expert@example.com",
+        "capturedVia": "web_link"
+      },
+      "createdAt": "2026-10-30T00:00:00.000Z",
+      "updatedAt": "2026-10-30T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 24. Create Evidence
+`POST /api/decisions/:id/evidence`
+
+Creates a new evidence record attached to the decision, an option, a criterion, or a contribution.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Contributor, Editor, or Owner (`403 Forbidden` for Viewers).
+
+#### Request Body
+```json
+{
+  "targetType": "option", // "decision" | "option" | "criterion" | "contribution"
+  "targetId": "aws",
+  "type": "url", // "url" | "document" | "excerpt"
+  "title": "AWS Compute Optimizer Whitepaper",
+  "sourceUrl": "https://aws.amazon.com/whitepapers/compute-optimizer",
+  "documentReference": "AWS Tech Docs Vol. 4",
+  "sourceExcerpt": "EC2 Graviton instances provide up to 40% better price performance.",
+  "userSummary": "Substantiates the 85 performance score assigned to AWS.",
+  "publicationDate": "2026-01-15T00:00:00.000Z"
+}
+```
+
+#### Response: `201 Created`
+Returns the created `DecisionEvidenceDto`.
+
+---
+
+### 25. Get Evidence Record
+`GET /api/decisions/:id/evidence/:evidenceId`
+
+Retrieves a single evidence record.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `200 OK`
+Returns `DecisionEvidenceDto`.
+
+---
+
+### 26. Update Evidence Record
+`PATCH /api/decisions/:id/evidence/:evidenceId`
+
+Updates permitted metadata on an existing evidence record (title, summary, excerpt, source). Creator, Owner, or Admin only.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Request Body
+```json
+{
+  "title": "Updated Title",
+  "sourceExcerpt": "Updated verbatim excerpt",
+  "userSummary": "Updated user interpretation",
+  "sourceUrl": "https://example.com/updated",
+  "documentReference": "Updated citation ref",
+  "publicationDate": "2026-02-01T00:00:00.000Z"
+}
+```
+
+#### Response: `200 OK`
+Returns the updated `DecisionEvidenceDto`.
+
+---
+
+### 27. Delete Evidence Record
+`DELETE /api/decisions/:id/evidence/:evidenceId`
+
+Deletes an evidence record. Creator, Owner, or Admin only.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Response: `204 No Content`
+
+
 
 

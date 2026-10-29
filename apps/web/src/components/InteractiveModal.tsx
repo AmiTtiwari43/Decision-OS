@@ -23,6 +23,7 @@ import {
   Eye,
   Users,
   Lock,
+  BookOpen,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -30,6 +31,7 @@ import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
 import { ShareModal } from './ShareModal.js';
 import { ContributionsModal } from './ContributionsModal.js';
+import { EvidenceModal } from './EvidenceModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -82,6 +84,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
+  const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -773,6 +776,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 8: Evidence & Provenance Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsEvidenceModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  title="View and attach supporting evidence"
+                >
+                  <BookOpen className="w-4 h-4 text-blue-400" />
+                  <span>Evidence</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -812,6 +827,13 @@ ${criteria
               model.loadDecision(updated._id);
             }
           }}
+        />
+
+        {/* Phase 8 Evidence Modal */}
+        <EvidenceModal
+          isOpen={isEvidenceModalOpen}
+          onClose={() => setIsEvidenceModalOpen(false)}
+          decision={serverDecision}
         />
       </div>
     </AnimatePresence>

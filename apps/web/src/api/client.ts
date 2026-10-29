@@ -23,6 +23,10 @@ import type {
   PendingInvitationDto,
   DecisionContributionDto,
   SaveContributionPayload,
+  DecisionEvidenceDto,
+  CreateEvidencePayload,
+  UpdateEvidencePayload,
+  ListEvidenceQuery,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -565,6 +569,92 @@ export class DecisionApiClient {
     return this.request<DecisionDto>(
       `/api/decisions/${encodeURIComponent(cleanId)}/contributions/${encodeURIComponent(cleanContribId)}/adopt`,
       { method: 'POST' }
+    );
+  }
+
+  // ─── Evidence & Provenance API (Phase 8) ──────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/evidence — Lists evidence attached to a decision.
+   */
+  async listEvidence(
+    decisionId: string,
+    options?: ListEvidenceQuery
+  ): Promise<{ items: DecisionEvidenceDto[] }> {
+    const cleanId = (decisionId || '').trim();
+    const query = new URLSearchParams();
+    if (options?.targetType) query.set('targetType', options.targetType);
+    if (options?.targetId) query.set('targetId', options.targetId);
+
+    const queryString = query.toString();
+    const path = `/api/decisions/${encodeURIComponent(cleanId)}/evidence${queryString ? `?${queryString}` : ''}`;
+
+    return this.request<{ items: DecisionEvidenceDto[] }>(path, { method: 'GET' });
+  }
+
+  /**
+   * GET /api/decisions/:id/evidence/:evidenceId — Retrieves an evidence record.
+   */
+  async getEvidence(
+    decisionId: string,
+    evidenceId: string
+  ): Promise<DecisionEvidenceDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanEvidId = (evidenceId || '').trim();
+    return this.request<DecisionEvidenceDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/evidence/${encodeURIComponent(cleanEvidId)}`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/evidence — Creates an evidence record.
+   */
+  async createEvidence(
+    decisionId: string,
+    payload: CreateEvidencePayload
+  ): Promise<DecisionEvidenceDto> {
+    const cleanId = (decisionId || '').trim();
+    return this.request<DecisionEvidenceDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/evidence`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * PATCH /api/decisions/:id/evidence/:evidenceId — Updates an evidence record.
+   */
+  async updateEvidence(
+    decisionId: string,
+    evidenceId: string,
+    payload: UpdateEvidencePayload
+  ): Promise<DecisionEvidenceDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanEvidId = (evidenceId || '').trim();
+    return this.request<DecisionEvidenceDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/evidence/${encodeURIComponent(cleanEvidId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * DELETE /api/decisions/:id/evidence/:evidenceId — Deletes an evidence record.
+   */
+  async deleteEvidence(
+    decisionId: string,
+    evidenceId: string
+  ): Promise<void> {
+    const cleanId = (decisionId || '').trim();
+    const cleanEvidId = (evidenceId || '').trim();
+    return this.request<void>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/evidence/${encodeURIComponent(cleanEvidId)}`,
+      { method: 'DELETE' }
     );
   }
 }
