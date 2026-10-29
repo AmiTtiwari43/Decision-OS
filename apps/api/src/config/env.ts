@@ -9,6 +9,14 @@ export const envSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+  MONGODB_URI: z
+    .string()
+    .trim()
+    .refine(
+      val => val.startsWith('mongodb://') || val.startsWith('mongodb+srv://'),
+      { message: 'MONGODB_URI must start with mongodb:// or mongodb+srv://' }
+    )
+    .default('mongodb://127.0.0.1:27017/decision_os'),
 });
 
 export type Env = z.infer<typeof envSchema>;

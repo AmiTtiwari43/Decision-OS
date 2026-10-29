@@ -9,6 +9,7 @@ describe('API Foundation — Environment Validation', () => {
       HOST: '0.0.0.0',
       CORS_ORIGIN: 'http://localhost:3000',
       LOG_LEVEL: 'warn',
+      MONGODB_URI: 'mongodb://127.0.0.1:27017/decision_os_test',
     };
 
     const parsed = validateEnv(validRaw);
@@ -17,6 +18,24 @@ describe('API Foundation — Environment Validation', () => {
     expect(parsed.HOST).toBe('0.0.0.0');
     expect(parsed.CORS_ORIGIN).toBe('http://localhost:3000');
     expect(parsed.LOG_LEVEL).toBe('warn');
+    expect(parsed.MONGODB_URI).toBe('mongodb://127.0.0.1:27017/decision_os_test');
+  });
+
+  it('provides safe default for MONGODB_URI when omitted', () => {
+    const validRaw = {
+      NODE_ENV: 'development',
+    };
+
+    const parsed = validateEnv(validRaw);
+    expect(parsed.MONGODB_URI).toBe('mongodb://127.0.0.1:27017/decision_os');
+  });
+
+  it('fails fast on invalid MONGODB_URI protocol', () => {
+    const invalidRaw = {
+      MONGODB_URI: 'postgres://localhost:5432/db',
+    };
+
+    expect(() => validateEnv(invalidRaw)).toThrowError(/MONGODB_URI/);
   });
 
   it('fails fast with readable message on invalid PORT', () => {
