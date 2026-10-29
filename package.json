@@ -8,9 +8,20 @@
     "packages/*"
   ],
   "scripts": {
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "build": "npm run build --workspaces --if-present",
+    "verify": "npm run typecheck && npm run lint && npm run test && npm run build",
     "build:web": "npm run build --workspace=@decision-os/web",
     "test:web": "npm run test --workspace=@decision-os/web",
-    "lint:web": "npm run lint --workspace=@decision-os/web"
+    "lint:web": "npm run lint --workspace=@decision-os/web",
+    "build:api": "npm run build --workspace=@decision-os/api",
+    "test:api": "npm run test --workspace=@decision-os/api",
+    "lint:api": "npm run lint --workspace=@decision-os/api",
+    "build:engine": "npm run build --workspace=@decision-os/decision-engine",
+    "test:engine": "npm run test --workspace=@decision-os/decision-engine",
+    "lint:engine": "npm run lint --workspace=@decision-os/decision-engine"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.12"
