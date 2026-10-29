@@ -320,5 +320,57 @@ export class InvalidEvidenceTargetError extends Error {
   }
 }
 
+/**
+ * Thrown when the AI provider service is unavailable, unconfigured, or unreachable.
+ */
+export class AIProviderUnavailableError extends Error {
+  readonly statusCode = 503;
+
+  constructor(message = 'The AI Analyst service is currently unavailable or unconfigured.') {
+    super(message);
+    this.name = 'AIProviderUnavailableError';
+    Object.setPrototypeOf(this, AIProviderUnavailableError.prototype);
+  }
+}
+
+/**
+ * Thrown when the AI provider request times out.
+ */
+export class AITimeoutError extends Error {
+  readonly statusCode = 504;
+
+  constructor(message = 'The AI Analyst request timed out.') {
+    super(message);
+    this.name = 'AITimeoutError';
+    Object.setPrototypeOf(this, AITimeoutError.prototype);
+  }
+}
+
+/**
+ * Thrown when the AI provider response fails schema validation after bounded retries.
+ */
+export class AIOutputValidationError extends Error {
+  readonly statusCode = 502;
+
+  constructor(message = 'The AI Analyst response did not conform to the required output schema.') {
+    super(message);
+    this.name = 'AIOutputValidationError';
+    Object.setPrototypeOf(this, AIOutputValidationError.prototype);
+  }
+}
+
+/**
+ * Thrown when the AI provider returns a rate limit error.
+ */
+export class AIRateLimitError extends Error {
+  readonly statusCode = 429;
+
+  constructor(message = 'AI Analyst rate limit exceeded. Please try again later.') {
+    super(message);
+    this.name = 'AIRateLimitError';
+    Object.setPrototypeOf(this, AIRateLimitError.prototype);
+  }
+}
+
 // Re-export EngineResult so callers don't need a separate import
 export type { EngineResult };

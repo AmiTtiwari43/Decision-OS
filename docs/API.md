@@ -719,3 +719,56 @@ Required (`Bearer <JWT>`)
 
 
 
+
+
+---
+
+### 28. Request AI Analysis
+`POST /api/decisions/:id/ai/analyze`
+
+Executes structured, evidence-aware advisory AI analysis for a decision.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Collaborator (`viewer`, `contributor`, `editor`, `owner`).
+
+#### Request Body
+```json
+{
+  "capability": "all"
+}
+```
+
+#### Response: `200 OK`
+Returns `AiAnalystResponseDto`.
+
+---
+
+### 29. Apply Advisory Criterion Proposal
+`POST /api/decisions/:id/ai/proposals/apply`
+
+Explicitly applies an advisory AI criterion proposal to the decision. Requires human owner/editor authority.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Owner, Editor, or Admin (`403 Forbidden` for Viewers or Contributors).
+
+#### Request Body
+```json
+{
+  "type": "add_criterion",
+  "criterion": {
+    "id": "compliance",
+    "name": "Regulatory Compliance",
+    "weight": 20,
+    "direction": "benefit"
+  }
+}
+```
+
+#### Response: `200 OK`
+Returns the updated `DecisionDto`.

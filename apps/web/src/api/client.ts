@@ -27,6 +27,9 @@ import type {
   CreateEvidencePayload,
   UpdateEvidencePayload,
   ListEvidenceQuery,
+  AiCapability,
+  AiAnalystResponseDto,
+  ApplyProposalPayload,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -655,6 +658,58 @@ export class DecisionApiClient {
     return this.request<void>(
       `/api/decisions/${encodeURIComponent(cleanId)}/evidence/${encodeURIComponent(cleanEvidId)}`,
       { method: 'DELETE' }
+    );
+  }
+
+  // ─── Phase 9: AI Analyst API ───────────────────────────────────────────────
+
+  /**
+   * POST /api/decisions/:id/ai/analyze — Executes advisory AI analysis for a decision.
+   */
+  async runAiAnalysis(
+    decisionId: string,
+    capability: AiCapability = 'all'
+  ): Promise<AiAnalystResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<AiAnalystResponseDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/ai/analyze`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ capability }),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/ai/proposals/apply — Applies an advisory criterion proposal to a decision.
+   */
+  async applyAiProposal(
+    decisionId: string,
+    payload: ApplyProposalPayload
+  ): Promise<DecisionDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/ai/proposals/apply`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
     );
   }
 }

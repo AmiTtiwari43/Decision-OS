@@ -32,6 +32,7 @@ import { WeightSlider } from './WeightSlider.js';
 import { ShareModal } from './ShareModal.js';
 import { ContributionsModal } from './ContributionsModal.js';
 import { EvidenceModal } from './EvidenceModal.js';
+import { AiAnalystModal } from './AiAnalystModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -85,6 +86,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
+  const [isAiAnalystModalOpen, setIsAiAnalystModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -788,6 +790,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 9: AI Analyst Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsAiAnalystModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Open AI Decision Analyst"
+                >
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <span>AI Analyst</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -834,6 +848,18 @@ ${criteria
           isOpen={isEvidenceModalOpen}
           onClose={() => setIsEvidenceModalOpen(false)}
           decision={serverDecision}
+        />
+
+        {/* Phase 9 AI Analyst Modal */}
+        <AiAnalystModal
+          isOpen={isAiAnalystModalOpen}
+          onClose={() => setIsAiAnalystModalOpen(false)}
+          decision={serverDecision}
+          onDecisionUpdated={(updated) => {
+            if (model?.loadDecision) {
+              model.loadDecision(updated._id);
+            }
+          }}
         />
       </div>
     </AnimatePresence>

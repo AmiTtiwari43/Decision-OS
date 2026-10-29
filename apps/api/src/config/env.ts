@@ -21,6 +21,10 @@ export const envSchema = z.object({
     .string()
     .min(16, 'JWT_SECRET must be at least 16 characters long')
     .default('development_jwt_secret_must_be_at_least_32_characters_long!'),
+  AI_PROVIDER: z.enum(['mock', 'gemini', 'openai', 'anthropic']).default('mock'),
+  AI_API_KEY: z.string().optional(),
+  AI_MODEL: z.string().optional(),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
 });
 
 export type Env = z.infer<typeof envSchema>;

@@ -9,6 +9,7 @@ import { decisionRoutes } from './routes/decisions.js';
 import { sharingRoutes } from './routes/sharing.js';
 import { contributionRoutes } from './routes/contributions.js';
 import { evidenceRoutes } from './routes/evidence.js';
+import { aiRoutes } from './routes/ai.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -62,6 +63,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Evidence & Provenance Routes
   await app.register(evidenceRoutes, { prefix: '/api' });
+
+  // AI Analyst Routes
+  await app.register(aiRoutes, { prefix: '/api' });
 
   return app;
 }
