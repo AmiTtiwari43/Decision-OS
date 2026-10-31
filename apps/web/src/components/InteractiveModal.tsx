@@ -33,19 +33,21 @@ import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
 import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
-import { ShareModal } from './ShareModal.js';
-import { ContributionsModal } from './ContributionsModal.js';
-import { EvidenceModal } from './EvidenceModal.js';
-import { AiAnalystModal } from './AiAnalystModal.js';
-import { AnalyticsModal } from './AnalyticsModal.js';
-import { DisagreementsModal } from './DisagreementsModal.js';
-import { ExpertCalibrationModal } from './ExpertCalibrationModal.js';
-import { AuditExportModal } from './AuditExportModal.js';
 import { RealtimePresenceBar } from './RealtimePresenceBar.js';
 import { useRealtimeCollaboration } from '../hooks/useRealtimeCollaboration.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
+
+// Lazy-load secondary modal dialogs for code-splitting and bundle reduction
+const ShareModal = React.lazy(() => import('./ShareModal.js').then(m => ({ default: m.ShareModal })));
+const ContributionsModal = React.lazy(() => import('./ContributionsModal.js').then(m => ({ default: m.ContributionsModal })));
+const EvidenceModal = React.lazy(() => import('./EvidenceModal.js').then(m => ({ default: m.EvidenceModal })));
+const AiAnalystModal = React.lazy(() => import('./AiAnalystModal.js').then(m => ({ default: m.AiAnalystModal })));
+const AnalyticsModal = React.lazy(() => import('./AnalyticsModal.js').then(m => ({ default: m.AnalyticsModal })));
+const DisagreementsModal = React.lazy(() => import('./DisagreementsModal.js').then(m => ({ default: m.DisagreementsModal })));
+const ExpertCalibrationModal = React.lazy(() => import('./ExpertCalibrationModal.js').then(m => ({ default: m.ExpertCalibrationModal })));
+const AuditExportModal = React.lazy(() => import('./AuditExportModal.js').then(m => ({ default: m.AuditExportModal })));
 
 interface InteractiveModalProps {
   isOpen: boolean;
@@ -925,72 +927,90 @@ ${criteria
           </div>
         </motion.div>
 
-        {/* Phase 6 Share Modal */}
-        <ShareModal
-          isOpen={isShareModalOpen}
-          onClose={() => setIsShareModalOpen(false)}
-          decisionId={decisionId}
-          decisionTitle={dataset.title}
-        />
+        <React.Suspense fallback={null}>
+          {/* Phase 6 Share Modal */}
+          {isShareModalOpen && (
+            <ShareModal
+              isOpen={isShareModalOpen}
+              onClose={() => setIsShareModalOpen(false)}
+              decisionId={decisionId}
+              decisionTitle={dataset.title}
+            />
+          )}
 
-        {/* Phase 7 Contributions Modal */}
-        <ContributionsModal
-          isOpen={isContributionsModalOpen}
-          onClose={() => setIsContributionsModalOpen(false)}
-          decision={serverDecision}
-          onDecisionUpdated={(updated) => {
-            if (model?.loadDecision) {
-              model.loadDecision(updated._id);
-            }
-          }}
-        />
+          {/* Phase 7 Contributions Modal */}
+          {isContributionsModalOpen && (
+            <ContributionsModal
+              isOpen={isContributionsModalOpen}
+              onClose={() => setIsContributionsModalOpen(false)}
+              decision={serverDecision}
+              onDecisionUpdated={(updated) => {
+                if (model?.loadDecision) {
+                  model.loadDecision(updated._id);
+                }
+              }}
+            />
+          )}
 
-        {/* Phase 8 Evidence Modal */}
-        <EvidenceModal
-          isOpen={isEvidenceModalOpen}
-          onClose={() => setIsEvidenceModalOpen(false)}
-          decision={serverDecision}
-        />
+          {/* Phase 8 Evidence Modal */}
+          {isEvidenceModalOpen && (
+            <EvidenceModal
+              isOpen={isEvidenceModalOpen}
+              onClose={() => setIsEvidenceModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
 
-        {/* Phase 9 AI Analyst Modal */}
-        <AiAnalystModal
-          isOpen={isAiAnalystModalOpen}
-          onClose={() => setIsAiAnalystModalOpen(false)}
-          decision={serverDecision}
-          onDecisionUpdated={(updated) => {
-            if (model?.loadDecision) {
-              model.loadDecision(updated._id);
-            }
-          }}
-        />
+          {/* Phase 9 AI Analyst Modal */}
+          {isAiAnalystModalOpen && (
+            <AiAnalystModal
+              isOpen={isAiAnalystModalOpen}
+              onClose={() => setIsAiAnalystModalOpen(false)}
+              decision={serverDecision}
+              onDecisionUpdated={(updated) => {
+                if (model?.loadDecision) {
+                  model.loadDecision(updated._id);
+                }
+              }}
+            />
+          )}
 
-        {/* Phase 10 Advanced Analytics Modal */}
-        <AnalyticsModal
-          isOpen={isAnalyticsModalOpen}
-          onClose={() => setIsAnalyticsModalOpen(false)}
-          decision={serverDecision}
-        />
+          {/* Phase 10 Advanced Analytics Modal */}
+          {isAnalyticsModalOpen && (
+            <AnalyticsModal
+              isOpen={isAnalyticsModalOpen}
+              onClose={() => setIsAnalyticsModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
 
-        {/* Phase 11 Disagreement Intelligence Modal */}
-        <DisagreementsModal
-          isOpen={isDisagreementsModalOpen}
-          onClose={() => setIsDisagreementsModalOpen(false)}
-          decision={serverDecision}
-        />
+          {/* Phase 11 Disagreement Intelligence Modal */}
+          {isDisagreementsModalOpen && (
+            <DisagreementsModal
+              isOpen={isDisagreementsModalOpen}
+              onClose={() => setIsDisagreementsModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
 
-        {/* Phase 12 Expert Calibration Modal */}
-        <ExpertCalibrationModal
-          isOpen={isCalibrationModalOpen}
-          onClose={() => setIsCalibrationModalOpen(false)}
-          decision={serverDecision}
-        />
+          {/* Phase 12 Expert Calibration Modal */}
+          {isCalibrationModalOpen && (
+            <ExpertCalibrationModal
+              isOpen={isCalibrationModalOpen}
+              onClose={() => setIsCalibrationModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
 
-        {/* Phase 13 Decision Audit, History & Export Modal */}
-        <AuditExportModal
-          isOpen={isAuditExportModalOpen}
-          onClose={() => setIsAuditExportModalOpen(false)}
-          decision={serverDecision}
-        />
+          {/* Phase 13 Decision Audit, History & Export Modal */}
+          {isAuditExportModalOpen && (
+            <AuditExportModal
+              isOpen={isAuditExportModalOpen}
+              onClose={() => setIsAuditExportModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
+        </React.Suspense>
       </div>
     </AnimatePresence>
   );

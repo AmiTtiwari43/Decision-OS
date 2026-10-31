@@ -8,7 +8,7 @@ import { DecisionModel } from '../src/models/decision.model.js';
 import { UserModel } from '../src/models/user.model.js';
 import { evaluationCache } from '../src/services/evaluationCache.js';
 import { collaborationService } from '../src/services/collaboration.service.js';
-import { runAnalysis, analyzeDecision, updateDecision, deleteDecision } from '../src/services/decision.service.js';
+import { runAnalysis, updateDecision, deleteDecision } from '../src/services/decision.service.js';
 
 const TEST_MONGODB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
 

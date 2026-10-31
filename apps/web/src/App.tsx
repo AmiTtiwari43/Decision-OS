@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ProblemSection } from './components/ProblemSection';
@@ -13,14 +13,16 @@ import { TransparencySection } from './components/TransparencySection';
 import { Principles } from './components/Principles';
 import { FinalCTA } from './components/FinalCTA';
 import { Footer } from './components/Footer';
-import { InteractiveModal } from './components/InteractiveModal';
-import { EasterEgg } from './components/EasterEgg';
 import { ScrollToTop } from './components/ScrollToTop';
-import { AuthModal } from './components/AuthModal';
-import { AcceptInvitationModal } from './components/AcceptInvitationModal';
-import { WorkspaceAnalyticsModal } from './components/WorkspaceAnalyticsModal';
 import { AuthProvider } from './context/AuthContext';
 import { useDecisionModel } from './hooks/useDecisionModel';
+
+// Lazy-loaded modal components for bundle splitting and faster initial page paint
+const InteractiveModal = lazy(() => import('./components/InteractiveModal').then(m => ({ default: m.InteractiveModal })));
+const EasterEgg = lazy(() => import('./components/EasterEgg').then(m => ({ default: m.EasterEgg })));
+const AuthModal = lazy(() => import('./components/AuthModal').then(m => ({ default: m.AuthModal })));
+const AcceptInvitationModal = lazy(() => import('./components/AcceptInvitationModal').then(m => ({ default: m.AcceptInvitationModal })));
+const WorkspaceAnalyticsModal = lazy(() => import('./components/WorkspaceAnalyticsModal').then(m => ({ default: m.WorkspaceAnalyticsModal })));
 
 function AppContent() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
@@ -167,38 +169,45 @@ function AppContent() {
       {/* Floating Scroll To Top / Start Navigation Arrow */}
       <ScrollToTop />
 
-      {/* Interactive Sandbox Modal */}
-      <InteractiveModal
-        isOpen={isSandboxOpen}
-        onClose={() => setIsSandboxOpen(false)}
-        model={decisionModel}
-      />
+      {/* Code-split and lazy-loaded on-demand modals */}
+      <Suspense fallback={null}>
+        {isSandboxOpen && (
+          <InteractiveModal
+            isOpen={isSandboxOpen}
+            onClose={() => setIsSandboxOpen(false)}
+            model={decisionModel}
+          />
+        )}
 
-      {/* Mathematical Audit Terminal Easter Egg */}
-      <EasterEgg
-        isOpen={isAuditOpen}
-        onClose={() => setIsAuditOpen(false)}
-      />
+        {isAuditOpen && (
+          <EasterEgg
+            isOpen={isAuditOpen}
+            onClose={() => setIsAuditOpen(false)}
+          />
+        )}
 
-      {/* Centralized Authentication Modal */}
-      <AuthModal />
+        <AuthModal />
 
-      {/* Phase 6 Accept Invitation Modal */}
-      <AcceptInvitationModal
-        isOpen={incomingInviteToken != null}
-        onClose={() => setIncomingInviteToken(null)}
-        token={incomingInviteToken}
-        onAccepted={async (newDecisionId) => {
-          setIncomingInviteToken(null);
-          await loadDecision(newDecisionId);
-          setIsSandboxOpen(true);
-        }}
-      />
-      {/* Phase 10 Workspace Analytics Modal */}
-      <WorkspaceAnalyticsModal
-        isOpen={isWorkspaceAnalyticsOpen}
-        onClose={() => setIsWorkspaceAnalyticsOpen(false)}
-      />
+        {incomingInviteToken != null && (
+          <AcceptInvitationModal
+            isOpen={incomingInviteToken != null}
+            onClose={() => setIncomingInviteToken(null)}
+            token={incomingInviteToken}
+            onAccepted={async (newDecisionId) => {
+              setIncomingInviteToken(null);
+              await loadDecision(newDecisionId);
+              setIsSandboxOpen(true);
+            }}
+          />
+        )}
+
+        {isWorkspaceAnalyticsOpen && (
+          <WorkspaceAnalyticsModal
+            isOpen={isWorkspaceAnalyticsOpen}
+            onClose={() => setIsWorkspaceAnalyticsOpen(false)}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }
