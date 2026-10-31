@@ -118,7 +118,11 @@ export class DecisionRepository {
    * Updates an existing Decision document by its ObjectId.
    * Protects immutable fields (_id, createdAt) from alteration.
    */
-  async update(id: string, updateData: UpdateDecisionInput): Promise<DecisionDocument | null> {
+  async update(
+    id: string,
+    updateData: UpdateDecisionInput,
+    expectedVersion?: number
+  ): Promise<DecisionDocument | null> {
     if (!id || typeof id !== 'string' || !mongoose.isValidObjectId(id)) {
       return null;
     }
@@ -129,8 +133,13 @@ export class DecisionRepository {
     delete updatePayload._id;
     delete updatePayload.createdAt;
 
-    const updated = await DecisionModel.findByIdAndUpdate(
-      id,
+    const query: Record<string, unknown> = { _id: id };
+    if (expectedVersion !== undefined) {
+      query.version = expectedVersion;
+    }
+
+    const updated = await DecisionModel.findOneAndUpdate(
+      query,
       { $set: updatePayload },
       { returnDocument: 'after', runValidators: true }
     ).exec();

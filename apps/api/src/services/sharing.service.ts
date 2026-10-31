@@ -25,6 +25,7 @@ import {
 } from '../utils/crypto.js';
 import { authorizeDecisionAction } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { collaborationService } from './collaboration.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionCollaboratorRole,
@@ -364,6 +365,9 @@ export async function revokeAccessGrant(
   }
 
   await decisionAccessRepository.delete(grantId);
+
+  // Terminate any active real-time collaboration streams and presence for the revoked user
+  collaborationService.disconnectUser(decisionId, grant.userId.toString());
 
   await auditService.recordEvent({
     decisionId,

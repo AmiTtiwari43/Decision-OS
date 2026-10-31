@@ -149,6 +149,7 @@ function stripServerFields(input: Record<string, unknown>): Record<string, unkno
   delete copy.calculationVersion;
   delete copy.ownerId;
   delete copy.expectedVersion;
+  delete copy.version;
   return copy;
 }
 
@@ -253,7 +254,9 @@ export async function updateDecision(
   await authorizeDecisionAction(existing, 'edit', requester);
 
   // Optimistic concurrency check
+  let expectedVersion: number | undefined;
   if (data.expectedVersion !== undefined && typeof data.expectedVersion === 'number') {
+    expectedVersion = data.expectedVersion;
     const currentVersion = existing.version || 1;
     if (data.expectedVersion !== currentVersion) {
       throw new DecisionConflictError(
@@ -267,8 +270,21 @@ export async function updateDecision(
   const sanitized = stripServerFields(data);
   (sanitized as any).version = nextVersion;
 
-  const doc = await decisionRepository.update(id, sanitized as Parameters<typeof decisionRepository.update>[1]);
+  const doc = await decisionRepository.update(
+    id,
+    sanitized as Parameters<typeof decisionRepository.update>[1],
+    expectedVersion
+  );
   if (!doc) {
+    if (expectedVersion !== undefined) {
+      const fresh = await decisionRepository.findById(id);
+      if (fresh) {
+        throw new DecisionConflictError(
+          fresh.version || 1,
+          `Decision has been modified by another participant (current version: ${fresh.version || 1}, expected: ${expectedVersion})`
+        );
+      }
+    }
     throw new DecisionNotFoundError(id);
   }
 
@@ -356,6 +372,9 @@ export async function deleteDecision(
   if (!deleted) {
     throw new DecisionNotFoundError(id);
   }
+
+  // Close and cleanup real-time collaboration streams and presence
+  collaborationService.closeDecision(id);
 }
 
 export async function analyzeDecision(

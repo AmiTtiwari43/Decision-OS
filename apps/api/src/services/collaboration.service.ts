@@ -17,6 +17,7 @@ interface SubscriberClient {
 }
 
 const MAX_EVENT_BUFFER_SIZE = 100;
+const MAX_SUBSCRIBERS_PER_DECISION = 100;
 const PRESENCE_TTL_MS = 30_000; // 30 seconds inactivity threshold
 const KEEPALIVE_INTERVAL_MS = 15_000; // 15 seconds SSE comment heartbeat
 
@@ -51,6 +52,19 @@ export class CollaborationService {
     const name = user.name || user.email || 'Collaborator';
     const email = user.email || '';
     const role = (user.role as 'owner' | 'editor' | 'viewer' | 'contributor') || 'viewer';
+
+    // Guard against socket exhaustion / unbounded connection storms
+    if ((this.subscribers.get(decisionId)?.size || 0) >= MAX_SUBSCRIBERS_PER_DECISION) {
+      replyRaw.writeHead(429, { 'Content-Type': 'application/json' });
+      replyRaw.end(
+        JSON.stringify({
+          statusCode: 429,
+          error: 'Too Many Requests',
+          message: 'Maximum active collaboration subscribers reached for this decision',
+        })
+      );
+      return;
+    }
 
     // 1. Setup SSE headers and keepalive
     replyRaw.writeHead(200, {
@@ -249,6 +263,20 @@ export class CollaborationService {
   private replayMissedEvents(decisionId: string, replyRaw: ServerResponse, lastEventId: string): void {
     const buffer = this.eventBuffers.get(decisionId);
     if (!buffer || buffer.length === 0) {
+      // Buffer empty (e.g. server restart) but client has a lastSeenEventId: signal sync_required!
+      const syncRequiredEvent: CollaborationEvent = {
+        eventId: crypto.randomUUID(),
+        type: 'sync_required',
+        decisionId,
+        version: 0,
+        timestamp: new Date().toISOString(),
+        payload: {
+          code: 'reconnection_buffer_overflow',
+          reason: 'Event history unavailable after server restart or channel eviction',
+          lastSeenEventId: lastEventId,
+        },
+      };
+      this.sendSseMessage(replyRaw, syncRequiredEvent);
       return;
     }
 
@@ -275,6 +303,79 @@ export class CollaborationService {
       };
       this.sendSseMessage(replyRaw, syncRequiredEvent);
     }
+  }
+
+  /**
+   * Terminates active SSE connections and clears presence when access is revoked.
+   */
+  disconnectUser(decisionId: string, userId: string): void {
+    const clients = this.subscribers.get(decisionId);
+    if (clients) {
+      for (const client of Array.from(clients)) {
+        if (client.userId === userId) {
+          if (client.keepAliveTimer) {
+            clearInterval(client.keepAliveTimer);
+          }
+          try {
+            this.sendSseMessage(client.replyRaw, {
+              eventId: crypto.randomUUID(),
+              type: 'sync_required',
+              decisionId,
+              version: 0,
+              timestamp: new Date().toISOString(),
+              payload: {
+                code: 'access_revoked',
+                reason: 'Access to this decision has been revoked',
+              },
+            });
+            client.replyRaw.end();
+          } catch {
+            // Ignore if socket already closed
+          }
+          clients.delete(client);
+        }
+      }
+      if (clients.size === 0) {
+        this.subscribers.delete(decisionId);
+      }
+    }
+
+    this.removePresence(decisionId, userId);
+    const updatedList = this.getPresence(decisionId);
+    this.broadcastEvent(decisionId, {
+      type: 'participant.left',
+      decisionId,
+      version: 0,
+      actorId: userId,
+      actorName: 'Revoked Collaborator',
+      payload: {
+        userId,
+        reason: 'access_revoked',
+        activeParticipants: updatedList,
+      },
+    });
+  }
+
+  /**
+   * Closes all active connections and cleans up state when a decision is deleted.
+   */
+  closeDecision(decisionId: string): void {
+    const clients = this.subscribers.get(decisionId);
+    if (clients) {
+      for (const client of clients) {
+        if (client.keepAliveTimer) {
+          clearInterval(client.keepAliveTimer);
+        }
+        try {
+          client.replyRaw.end();
+        } catch {
+          // Ignore
+        }
+      }
+      this.subscribers.delete(decisionId);
+    }
+    this.presence.delete(decisionId);
+    this.eventBuffers.delete(decisionId);
   }
 
   /**

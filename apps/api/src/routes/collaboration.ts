@@ -17,12 +17,12 @@ function isValidObjectId(id: string): boolean {
 
 const presenceHeartbeatSchema = z.object({
   status: z.enum(['active', 'idle']).default('active'),
-  currentView: z.string().optional(),
+  currentView: z.string().max(100).optional(),
 });
 
 const streamQuerySchema = z.object({
   token: z.string().optional(),
-  lastEventId: z.string().optional(),
+  lastEventId: z.string().max(128).optional(),
 });
 
 export const collaborationRoutes: FastifyPluginAsync = async (app) => {
@@ -159,9 +159,16 @@ export const collaborationRoutes: FastifyPluginAsync = async (app) => {
         throw err;
       }
 
-      const parseResult = presenceHeartbeatSchema.safeParse(request.body || {});
-      const status = parseResult.success ? parseResult.data.status : 'active';
-      const currentView = parseResult.success ? parseResult.data.currentView : undefined;
+      const parseResult = presenceHeartbeatSchema.safeParse(request.body ?? {});
+      if (!parseResult.success) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: parseResult.error.errors.map(e => e.message).join('; '),
+        });
+      }
+
+      const { status, currentView } = parseResult.data;
 
       const activeParticipants = collaborationService.updatePresence(id, request.user, status, currentView);
 

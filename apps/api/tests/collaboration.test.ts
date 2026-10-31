@@ -8,7 +8,9 @@ import { assertTestDatabase } from '../src/db/guard';
 import { DecisionModel } from '../src/models/decision.model';
 import { UserModel } from '../src/models/user.model';
 import { DecisionAccessGrantModel } from '../src/models/decisionAccess.model';
+import { AuditEventModel } from '../src/models/audit.model';
 import { createDecision, updateDecision, analyzeDecision } from '../src/services/decision.service';
+import { revokeAccessGrant } from '../src/services/sharing.service';
 import { collaborationService } from '../src/services/collaboration.service';
 import { DecisionConflictError } from '../src/errors/domain.errors';
 
@@ -547,6 +549,256 @@ describe('Phase 14: Real-Time Collaboration & Concurrency', () => {
       expect(streamData).toContain('"engineVersion":"1.0.0"');
       expect(streamData).toContain('opt-a');
       expect(streamData).toContain('opt-b');
+    });
+  });
+
+  // ─── 6. Adversarial Security, Recovery & Concurrency Scenarios ───────────────
+
+  describe('Adversarial & Fault Injection Scenarios', () => {
+    it('prevents cross-decision event leakage between independent channels', async () => {
+      const decisionA = await createTestDecision('Decision A');
+      const decisionB = await createTestDecision('Decision B');
+
+      const mockResA = createMockServerResponse();
+      const mockResB = createMockServerResponse();
+
+      // Subscribe User to Decision A
+      collaborationService.registerClient(
+        decisionA._id.toString(),
+        { id: editorId, email: 'collab-editor@example.com', name: 'Bob Editor', role: 'user' },
+        mockResA
+      );
+
+      // Subscribe User to Decision B
+      collaborationService.registerClient(
+        decisionB._id.toString(),
+        { id: viewerId, email: 'collab-viewer@example.com', name: 'Charlie Viewer', role: 'user' },
+        mockResB
+      );
+
+      // Broadcast mutation on Decision A only
+      collaborationService.publishEvent(decisionA._id.toString(), {
+        type: 'decision.updated',
+        decisionId: decisionA._id.toString(),
+        version: 2,
+        payload: { secretPatch: 'for_decision_A_only' },
+      });
+
+      const dataA = mockResA._written.join('');
+      const dataB = mockResB._written.join('');
+
+      expect(dataA).toContain('for_decision_A_only');
+      expect(dataB).not.toContain('for_decision_A_only');
+    });
+
+    it('terminates active connection and clears presence when access grant is revoked', async () => {
+      const decision = await createTestDecision();
+      const decisionId = decision._id.toString();
+
+      // Retrieve editor's access grant
+      const grant = await DecisionAccessGrantModel.findOne({
+        decisionId: decision._id,
+        userId: editorId,
+      });
+      expect(grant).not.toBeNull();
+
+      // Editor connects to collaboration stream
+      const mockEditorRes = createMockServerResponse();
+      collaborationService.registerClient(
+        decisionId,
+        { id: editorId, email: 'collab-editor@example.com', name: 'Bob Editor', role: 'user' },
+        mockEditorRes
+      );
+
+      // Owner also connected
+      const mockOwnerRes = createMockServerResponse();
+      collaborationService.registerClient(
+        decisionId,
+        { id: ownerId, email: 'collab-owner@example.com', name: 'Alice Owner', role: 'user' },
+        mockOwnerRes
+      );
+
+      expect(collaborationService.getPresence(decisionId).some((p) => p.userId === editorId)).toBe(true);
+
+      // Owner revokes Editor's access grant
+      await revokeAccessGrant(decisionId, grant!._id.toString(), {
+        id: ownerId,
+        email: 'collab-owner@example.com',
+        name: 'Alice Owner',
+        role: 'user',
+      });
+
+      // Verify editor stream was sent terminal event / closed
+      const editorData = mockEditorRes._written.join('');
+      expect(editorData).toContain('access_revoked');
+
+      // Verify editor presence was stripped
+      expect(collaborationService.getPresence(decisionId).some((p) => p.userId === editorId)).toBe(false);
+
+      // Owner received participant.left notification
+      const ownerData = mockOwnerRes._written.join('');
+      expect(ownerData).toContain('event: participant.left');
+    });
+
+    it('rejects malformed and oversized presence payloads with 400 Bad Request', async () => {
+      const decision = await createTestDecision();
+
+      // 1. Invalid status enum value
+      const resInvalidStatus = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decision._id}/collaboration/presence`,
+        headers: { authorization: `Bearer ${editorToken}` },
+        payload: { status: 'super_admin_status' },
+      });
+      expect(resInvalidStatus.statusCode).toBe(400);
+
+      // 2. Oversized currentView string (>100 characters)
+      const oversizedView = 'a'.repeat(150);
+      const resOversized = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decision._id}/collaboration/presence`,
+        headers: { authorization: `Bearer ${editorToken}` },
+        payload: { status: 'active', currentView: oversizedView },
+      });
+      expect(resOversized.statusCode).toBe(400);
+      const body = JSON.parse(resOversized.body);
+      expect(body.error).toBe('Bad Request');
+    });
+
+    it('derives actor identity strictly from authenticated JWT, ignoring spoofed body fields', async () => {
+      const decision = await createTestDecision();
+
+      // Attempt to spoof actor identity in presence payload
+      const res = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decision._id}/collaboration/presence`,
+        headers: { authorization: `Bearer ${viewerToken}` },
+        payload: {
+          status: 'active',
+          currentView: 'matrix',
+          userId: ownerId, // Spoofed user ID
+          role: 'owner', // Spoofed role
+          name: 'Fake Alice', // Spoofed name
+        },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const body = JSON.parse(res.body);
+      const viewerPresence = body.participants.find((p: any) => p.userId === viewerId);
+      expect(viewerPresence).toBeDefined();
+      expect(viewerPresence.userId).toBe(viewerId); // Server-derived, not spoofed
+      expect(viewerPresence.role).toBe('user');
+    });
+
+    it('emits sync_required when client reconnects after server restart (empty ring buffer)', () => {
+      const decisionId = '507f1f77bcf86cd799439099';
+      const mockRes = createMockServerResponse();
+
+      // Simulate client reconnecting with lastEventId to a freshly booted server
+      collaborationService.registerClient(
+        decisionId,
+        { id: viewerId, email: 'collab-viewer@example.com', name: 'Charlie Viewer', role: 'user' },
+        mockRes,
+        'previous-session-event-id'
+      );
+
+      const allData = mockRes._written.join('');
+      expect(allData).toContain('event: sync_required');
+      expect(allData).toContain('reconnection_buffer_overflow');
+    });
+
+    it('prevents concurrent race conditions via atomic compare-and-swap', async () => {
+      const decision = await createTestDecision();
+      const decisionId = decision._id.toString();
+
+      // Two users concurrently attempt to update with expectedVersion: 1
+      const updatePromise1 = updateDecision(
+        decisionId,
+        { title: 'Concurrent Update Winner 1', expectedVersion: 1 },
+        { id: ownerId, email: 'collab-owner@example.com', name: 'Alice Owner', role: 'user' }
+      );
+
+      const updatePromise2 = updateDecision(
+        decisionId,
+        { title: 'Concurrent Update Winner 2', expectedVersion: 1 },
+        { id: editorId, email: 'collab-editor@example.com', name: 'Bob Editor', role: 'user' }
+      );
+
+      // Settle both updates
+      const results = await Promise.allSettled([updatePromise1, updatePromise2]);
+
+      const fulfilled = results.filter((r) => r.status === 'fulfilled');
+      const rejected = results.filter((r) => r.status === 'rejected');
+
+      // Exactly one must succeed and one must be rejected with DecisionConflictError
+      expect(fulfilled.length).toBe(1);
+      expect(rejected.length).toBe(1);
+      expect((rejected[0] as PromiseRejectedResult).reason).toBeInstanceOf(DecisionConflictError);
+
+      const freshDoc = await DecisionModel.findById(decisionId);
+      expect(freshDoc!.version).toBe(2);
+    });
+
+    it('guarantees that persistence failures never publish collaboration events', async () => {
+      const decision = await createTestDecision();
+      const decisionId = decision._id.toString();
+
+      const mockRes = createMockServerResponse();
+      collaborationService.registerClient(
+        decisionId,
+        { id: viewerId, email: 'collab-viewer@example.com', name: 'Charlie Viewer', role: 'user' },
+        mockRes
+      );
+
+      // Attempt update with an invalid criteria structure that fails mongoose validation
+      await expect(
+        updateDecision(
+          decisionId,
+          {
+            title: 'Failed Update',
+            criteria: [{ id: 'invalid', weight: 'not-a-number' as any }],
+          },
+          { id: ownerId, email: 'collab-owner@example.com', name: 'Alice Owner', role: 'user' }
+        )
+      ).rejects.toThrow();
+
+      // Ensure no decision.updated event was published
+      const allData = mockRes._written.join('');
+      expect(allData).not.toContain('event: decision.updated');
+    });
+
+    it('strips client-supplied version and prevents client tampering with monotonic counter', async () => {
+      const decision = await createTestDecision();
+
+      // Pass spoofed version: 999
+      const updated = await updateDecision(
+        decision._id.toString(),
+        {
+          title: 'Tampering Attempt',
+          version: 999 as any,
+          expectedVersion: 1,
+        },
+        { id: ownerId, email: 'collab-owner@example.com', name: 'Alice Owner', role: 'user' }
+      );
+
+      expect(updated.version).toBe(2); // Strictly incremented to 2, ignoring 999
+    });
+
+    it('guarantees that mutations produce audit events with hash chaining before collaboration broadcast', async () => {
+      const decision = await createTestDecision();
+      const decisionId = decision._id.toString();
+
+      await updateDecision(
+        decisionId,
+        { title: 'Audited Collaboration Decision' },
+        { id: ownerId, email: 'collab-owner@example.com', name: 'Alice Owner', role: 'user' }
+      );
+
+      const latestEvent = await AuditEventModel.findOne({ decisionId }).sort({ timestamp: -1 });
+      expect(latestEvent).not.toBeNull();
+      expect(latestEvent!.action).toBe('decision.updated');
+      expect(latestEvent!.eventHash).toBeDefined();
+      expect(latestEvent!.previousEventHash).toBeDefined();
     });
   });
 });

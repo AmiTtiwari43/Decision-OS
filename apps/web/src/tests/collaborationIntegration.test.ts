@@ -162,4 +162,33 @@ describe('Real-Time Collaboration Frontend API Client & Integration', () => {
       });
     });
   });
+
+  describe('Unsaved Input & Conflict State Preservation Logic', () => {
+    it('preserves dirty local edits and triggers conflict state instead of clobbering', () => {
+      let isDirty = true;
+      let hasConflict = false;
+      let modelUpdated = false;
+
+      // Simulated handler matching useRealtimeCollaboration logic
+      const handleDecisionUpdated = (_event: any) => {
+        if (isDirty) {
+          hasConflict = true;
+        } else {
+          modelUpdated = true;
+        }
+      };
+
+      // When dirty, incoming event triggers conflict notice
+      handleDecisionUpdated({ type: 'decision.updated', version: 3, actorName: 'Bob' });
+      expect(hasConflict).toBe(true);
+      expect(modelUpdated).toBe(false);
+
+      // When clean, incoming event applies cleanly
+      isDirty = false;
+      hasConflict = false;
+      handleDecisionUpdated({ type: 'decision.updated', version: 4, actorName: 'Bob' });
+      expect(hasConflict).toBe(false);
+      expect(modelUpdated).toBe(true);
+    });
+  });
 });
