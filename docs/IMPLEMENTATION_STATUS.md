@@ -2,8 +2,8 @@
 
 Last verified commit: Phase 11 Complete & Verified
 Last green verify: npm run verify (typecheck, lint, test, build across all workspaces: apps/web, apps/api, packages/decision-engine)
-Current phase: Phase 11 — Disagreement Intelligence (COMPLETE & VERIFIED)
-Branch: phase-11-disagreement-intelligence
+Current phase: Phase 12 — Expert Calibration (COMPLETE & VERIFIED)
+Branch: phase-12-expert-calibration
 
 ## Phase Matrix
 
@@ -20,4 +20,5 @@ Branch: phase-11-disagreement-intelligence
 | **8** | Evidence and Provenance | **COMPLETE & VERIFIED** | `docs/phases/phase-8.md` |
 | **9** | AI Analyst | **COMPLETE & AUDITED** | `docs/phases/phase-9.md` |
 | **10** | Advanced Analytics | **COMPLETE & AUDITED** | `docs/phases/phase-10.md` |
-| **11** | Disagreement Intelligence | **COMPLETE & VERIFIED** | `docs/phases/phase-11.md` |
+| **11** | Disagreement Intelligence | **COMPLETE & AUDITED** | `docs/phases/phase-11.md` |
+| **12** | Expert Calibration | **COMPLETE & VERIFIED** | `docs/phases/phase-12.md` |

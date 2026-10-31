@@ -6,3 +6,4 @@ export * from './contribution.repository.js';
 export * from './evidence.repository.js';
 export * from './analytics.repository.js';
 export * from './disagreement.repository.js';
+export * from './prediction.repository.js';

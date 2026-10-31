@@ -1164,3 +1164,221 @@ Any authorized collaborator (`owner`, `editor`, `contributor`, `viewer`).
   "disclaimer": "AI explanations are advisory synthesis tools designed for mediation. They do not alter authoritative MCDA evaluations or declare a participant correct."
 }
 ```
+
+---
+
+## Expert Calibration Endpoints (Phase 12)
+
+### 35. List Predictions
+`GET /api/decisions/:id/predictions`
+
+Lists expert predictions submitted for a decision, including prospective forecasts and verified outcomes.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`).
+
+#### Query Parameters
+- `contributorId` (optional): Filter predictions by specific expert user ID.
+- `status` (optional): Filter by prediction status (`submitted`, `awaiting_outcome`, `outcome_recorded`, `verified`, `disputed`, `invalidated`).
+- `domain` (optional): Filter by domain category (e.g. `engineering`, `finance`, `security`).
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "id": "67215c26b8b548b26e95d140",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "contributorId": "67215c26b8b548b26e95d11e",
+      "contributorName": "Expert Alice",
+      "predictionId": "pred_alpha_perf",
+      "statement": "Option Alpha throughput will exceed 50k RPS in production load testing.",
+      "probability": 0.85,
+      "domain": "engineering",
+      "targetDate": "2026-12-01T00:00:00.000Z",
+      "evidenceReferences": ["https://benchmark.local/run-42"],
+      "status": "verified",
+      "submittedAt": "2026-10-31T20:00:00.000Z",
+      "outcome": {
+        "outcomeId": "outc_alpha_perf",
+        "observedOutcome": 1,
+        "verificationStatus": "verified",
+        "verificationSource": "Production load test run report #841",
+        "outcomeDate": "2026-11-20T14:00:00.000Z",
+        "verifiedById": "67215c26b8b548b26e95d11a",
+        "verifiedByName": "Decision Owner",
+        "verifiedAt": "2026-11-20T16:00:00.000Z"
+      },
+      "createdAt": "2026-10-31T20:00:00.000Z",
+      "updatedAt": "2026-11-20T16:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 36. Create Prospective Prediction
+`POST /api/decisions/:id/predictions`
+
+Submits a new prospective empirical prediction for a decision prior to the event outcome.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Decision `contributor`, `editor`, or `owner`.
+
+#### Request Body
+```json
+{
+  "statement": "Option Alpha throughput will exceed 50k RPS in production load testing.",
+  "probability": 0.85,
+  "domain": "engineering",
+  "targetDate": "2026-12-01T00:00:00.000Z",
+  "evidenceReferences": ["https://benchmark.local/run-42"]
+}
+```
+
+#### Response: `201 Created`
+Returns the created prediction record.
+
+---
+
+### 37. Record & Verify Outcome
+`POST /api/decisions/:id/predictions/:predictionId/outcome`
+
+Records an empirical observed outcome for a prediction with verification credentials and source.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Decision `owner` or `editor`. (Standard contributors and viewers receive `403 Forbidden`).
+
+#### Request Body
+```json
+{
+  "observedOutcome": 1,
+  "outcomeDate": "2026-11-20T14:00:00.000Z",
+  "verificationSource": "Production load test run report #841",
+  "verificationStatus": "verified"
+}
+```
+
+#### Response: `200 OK`
+Returns the updated prediction record with verified outcome details.
+
+---
+
+### 38. Dispute Outcome
+`PATCH /api/decisions/:id/predictions/:predictionId/dispute`
+
+Disputes a recorded outcome, providing a governance rationale. Immediately excludes the forecast from calibration scoring.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`).
+
+#### Request Body
+```json
+{
+  "disputeReason": "Load test was run on non-production staging cluster with different CPU specs."
+}
+```
+
+#### Response: `200 OK`
+Returns the updated prediction record with status set to `disputed`.
+
+---
+
+### 39. Get Decision & Expert Calibration
+`GET /api/decisions/:id/calibration`
+
+Calculates deterministic calibration statistics (Brier score, calibration bins, ECE) for participants in this decision, strictly separating calibration, domain, experience, evidence quality, and social popularity signals.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`).
+
+#### Response: `200 OK`
+```json
+{
+  "decisionId": "67215c26b8b548b26e95d11f",
+  "methodologyVersion": "1.0.0",
+  "calculatedAt": "2026-10-31T22:00:00.000Z",
+  "totalPredictions": 10,
+  "verifiedCount": 8,
+  "awaitingOutcomeCount": 1,
+  "disputedCount": 1,
+  "overallBrierScore": 0.082,
+  "climatologyBrierSkillScore": 0.65,
+  "expectedCalibrationError": 0.075,
+  "hasSufficientSample": true,
+  "minimumSampleThreshold": 3,
+  "calibrationBins": [
+    {
+      "binIndex": 0,
+      "range": "[0.0, 0.2)",
+      "count": 2,
+      "meanPredictedProbability": 0.15,
+      "observedFrequency": 0.0,
+      "calibrationError": 0.15
+    },
+    {
+      "binIndex": 4,
+      "range": "[0.8, 1.0]",
+      "count": 6,
+      "meanPredictedProbability": 0.88,
+      "observedFrequency": 0.83,
+      "calibrationError": 0.05
+    }
+  ],
+  "expertProfiles": [
+    {
+      "contributorId": "67215c26b8b548b26e95d11e",
+      "contributorName": "Expert Alice",
+      "calibration": {
+        "hasSufficientSample": true,
+        "eligibleCount": 5,
+        "brierScore": 0.064,
+        "expectedCalibrationError": 0.052,
+        "climatologyBss": 0.72
+      },
+      "domainBreakdown": [
+        { "domain": "engineering", "count": 4, "brierScore": 0.05 }
+      ],
+      "experience": {
+        "totalContributions": 3,
+        "totalPredictions": 6,
+        "verifiedPredictions": 5,
+        "awaitingOutcome": 1
+      },
+      "evidenceQuality": {
+        "citationsProvided": 8,
+        "verifiedReferences": 5
+      },
+      "recency": {
+        "lastPredictionAt": "2026-10-31T20:00:00.000Z",
+        "lastOutcomeAt": "2026-11-20T14:00:00.000Z"
+      },
+      "popularity": {
+        "label": "Social consensus signal (display-only, not an accuracy or calibration metric)",
+        "preferredOptionAgreementRate": 0.67
+      }
+    }
+  ],
+  "formulaDocumentation": {
+    "brierScore": "BS = (1/N) * sum((p_i - o_i)^2)",
+    "ece": "ECE = sum((N_b / N) * |p_bar_b - o_bar_b|)",
+    "bss": "BSS = 1 - (BS / BS_ref)"
+  }
+}
+```

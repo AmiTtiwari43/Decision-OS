@@ -693,3 +693,138 @@ export interface AiDisagreementExplanationDto {
   suggestedClarificationQuestions: string[];
   disclaimer: string;
 }
+
+
+// ─── Phase 12: Expert Calibration Types ─────────────────────────────────────
+
+export type PredictionStatus =
+  | 'submitted'
+  | 'awaiting_outcome'
+  | 'outcome_recorded'
+  | 'verified'
+  | 'disputed'
+  | 'invalidated';
+
+export interface PredictionOutcomeDto {
+  outcomeId: string;
+  observedOutcome: number; // 0 or 1
+  verificationStatus: string;
+  verificationSource: string;
+  outcomeDate: string;
+  verifiedById?: string;
+  verifiedByName?: string;
+  verifiedAt?: string;
+  disputeReason?: string;
+  disputedById?: string;
+  disputedAt?: string;
+}
+
+export interface PredictionDto {
+  id: string;
+  decisionId: string;
+  contributorId: string;
+  contributorName: string;
+  predictionId: string;
+  statement: string;
+  probability: number;
+  domain: string;
+  targetDate: string;
+  evidenceReferences: string[];
+  status: PredictionStatus;
+  submittedAt: string;
+  outcome?: PredictionOutcomeDto;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreatePredictionPayload {
+  statement: string;
+  probability: number;
+  targetDate: string;
+  domain?: string;
+  evidenceReferences?: string[];
+}
+
+export interface RecordOutcomePayload {
+  observedOutcome: number;
+  outcomeDate: string;
+  verificationSource: string;
+  verificationStatus?: 'verified' | 'unverified';
+}
+
+export interface DisputeOutcomePayload {
+  disputeReason: string;
+}
+
+export interface CalibrationBinDto {
+  binIndex: number;
+  range: string;
+  count: number;
+  meanPredictedProbability: number;
+  observedFrequency: number;
+  calibrationError: number;
+}
+
+export interface DomainCalibrationMetricsDto {
+  domain: string;
+  count: number;
+  brierScore: number;
+  expectedCalibrationError: number;
+}
+
+export interface ExpertCalibrationProfileDto {
+  contributorId: string;
+  contributorName: string;
+  calibration: {
+    hasSufficientSample: boolean;
+    eligibleCount: number;
+    brierScore: number | null;
+    expectedCalibrationError: number | null;
+    climatologyBss: number | null;
+  };
+  domainBreakdown: DomainCalibrationMetricsDto[];
+  experience: {
+    totalContributions: number;
+    totalPredictions: number;
+    verifiedPredictions: number;
+    awaitingOutcome: number;
+  };
+  evidenceQuality: {
+    citationsProvided: number;
+    verifiedReferences: number;
+  };
+  recency: {
+    lastPredictionAt: string | null;
+    lastOutcomeAt: string | null;
+  };
+  popularity: {
+    label: string;
+    preferredOptionAgreementRate: number | null;
+  };
+}
+
+export interface DecisionCalibrationDto {
+  decisionId: string;
+  methodologyVersion: string;
+  calculatedAt: string;
+  totalPredictions: number;
+  verifiedCount: number;
+  awaitingOutcomeCount: number;
+  disputedCount: number;
+  hasSufficientSample: boolean;
+  minimumSampleThreshold: number;
+  brierScore: number | null;
+  climatologyBss: number | null;
+  expectedCalibrationError: number | null;
+  calibrationBins: CalibrationBinDto[];
+  domainBreakdown: DomainCalibrationMetricsDto[];
+  summary: string;
+  eligibleCount: number;
+  excludedCount: number;
+  expertProfiles: ExpertCalibrationProfileDto[];
+  formulaDocumentation: {
+    brierScore: string;
+    ece: string;
+    bss: string;
+  };
+}

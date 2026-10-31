@@ -18,3 +18,5 @@ export * from './evidence.schema.js';
 export * from './evidence.model.js';
 export * from './disagreement.types.js';
 export * from './disagreement.model.js';
+export * from './prediction.types.js';
+export * from './prediction.model.js';

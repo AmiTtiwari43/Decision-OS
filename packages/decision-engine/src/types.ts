@@ -192,3 +192,48 @@ export interface DisagreementIntelligenceResult {
   }>;
   readonly summary: string;
 }
+
+
+// ---------------------------------------------------------------------------
+// Phase 12: Expert Calibration Types
+// ---------------------------------------------------------------------------
+
+export interface CalibrationPredictionInput {
+  readonly id: string;
+  readonly probability: number; // 0.0 .. 1.0
+  readonly observedOutcome: number; // 0 or 1
+  readonly domain?: string;
+  readonly submittedAt?: string | Date;
+  readonly outcomeDate?: string | Date;
+}
+
+export interface CalibrationBin {
+  readonly binIndex: number; // 0..4
+  readonly range: string;
+  readonly count: number;
+  readonly meanPredictedProbability: number;
+  readonly observedFrequency: number;
+  readonly calibrationError: number;
+}
+
+export interface DomainCalibrationMetrics {
+  readonly domain: string;
+  readonly count: number;
+  readonly brierScore: number;
+  readonly expectedCalibrationError: number;
+}
+
+export interface ExpertCalibrationResult {
+  readonly methodologyVersion: '1.0.0';
+  readonly totalPredictions: number;
+  readonly eligibleCount: number;
+  readonly excludedCount: number;
+  readonly hasSufficientSample: boolean;
+  readonly minimumSampleThreshold: number;
+  readonly brierScore: number | null;
+  readonly climatologyBss: number | null;
+  readonly expectedCalibrationError: number | null;
+  readonly calibrationBins: ReadonlyArray<CalibrationBin>;
+  readonly domainBreakdown: ReadonlyArray<DomainCalibrationMetrics>;
+  readonly summary: string;
+}

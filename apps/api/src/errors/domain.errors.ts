@@ -384,3 +384,46 @@ export class AIRateLimitError extends Error {
 
 // Re-export EngineResult so callers don't need a separate import
 export type { EngineResult };
+
+/**
+ * Thrown when a prediction is not found by ID.
+ */
+export class PredictionNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Prediction not found') {
+    super(message);
+    this.name = 'PredictionNotFoundError';
+    Object.setPrototypeOf(this, PredictionNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when a prediction is submitted after the target date or outcome date has already passed.
+ */
+export class RetrospectivePredictionError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    message = 'Predictions must be prospective. Submitting a forecast for an outcome that has already occurred is not permitted.'
+  ) {
+    super(message);
+    this.name = 'RetrospectivePredictionError';
+    Object.setPrototypeOf(this, RetrospectivePredictionError.prototype);
+  }
+}
+
+/**
+ * Thrown when an outcome date precedes the prediction submission date.
+ */
+export class InvalidOutcomeDateError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    message = 'Outcome date cannot precede the prediction submission timestamp.'
+  ) {
+    super(message);
+    this.name = 'InvalidOutcomeDateError';
+    Object.setPrototypeOf(this, InvalidOutcomeDateError.prototype);
+  }
+}

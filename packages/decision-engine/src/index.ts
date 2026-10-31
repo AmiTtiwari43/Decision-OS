@@ -26,6 +26,13 @@ export {
   calculateConfidenceWeightedMean,
   analyzeDisagreements,
 } from './disagreement';
+export {
+  calculateBrierScore,
+  calculateClimatologyBss,
+  calculateCalibrationBins,
+  calculateExpectedCalibrationError,
+  calculateExpertCalibration,
+} from './calibration';
 
 export function evaluateDecision(input: EngineEvaluationInput): EngineResult {
   const criteria = input.criteria;

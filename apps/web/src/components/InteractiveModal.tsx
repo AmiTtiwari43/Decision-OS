@@ -26,6 +26,7 @@ import {
   BookOpen,
   BarChart3,
   Scale,
+  Target,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -37,6 +38,7 @@ import { EvidenceModal } from './EvidenceModal.js';
 import { AiAnalystModal } from './AiAnalystModal.js';
 import { AnalyticsModal } from './AnalyticsModal.js';
 import { DisagreementsModal } from './DisagreementsModal.js';
+import { ExpertCalibrationModal } from './ExpertCalibrationModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -93,6 +95,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isAiAnalystModalOpen, setIsAiAnalystModalOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
   const [isDisagreementsModalOpen, setIsDisagreementsModalOpen] = useState(false);
+  const [isCalibrationModalOpen, setIsCalibrationModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -832,6 +835,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 12: Expert Calibration Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsCalibrationModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Open Expert Calibration Intelligence"
+                >
+                  <Target className="w-4 h-4 text-purple-400" />
+                  <span>Calibration</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -903,6 +918,13 @@ ${criteria
         <DisagreementsModal
           isOpen={isDisagreementsModalOpen}
           onClose={() => setIsDisagreementsModalOpen(false)}
+          decision={serverDecision}
+        />
+
+        {/* Phase 12 Expert Calibration Modal */}
+        <ExpertCalibrationModal
+          isOpen={isCalibrationModalOpen}
+          onClose={() => setIsCalibrationModalOpen(false)}
           decision={serverDecision}
         />
       </div>

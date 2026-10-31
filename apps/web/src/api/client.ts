@@ -38,6 +38,12 @@ import type {
   UpdateDisagreementResolutionPayload,
   DisagreementResolutionDto,
   AiDisagreementExplanationDto,
+  PredictionDto,
+  CreatePredictionPayload,
+  RecordOutcomePayload,
+  DisputeOutcomePayload,
+  DecisionCalibrationDto,
+  ExpertCalibrationProfileDto,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -843,6 +849,151 @@ export class DecisionApiClient {
     return this.request<AiDisagreementExplanationDto>(
       `/api/decisions/${encodeURIComponent(cleanId)}/disagreements/${encodeURIComponent(disagreementId)}/ai-explain`,
       { method: 'POST' }
+    );
+  }
+
+  // ─── Phase 12: Expert Calibration Methods ───────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/predictions — Lists predictions for a decision.
+   */
+  async getDecisionPredictions(
+    decisionId: string,
+    filter?: { contributorId?: string; status?: string; domain?: string }
+  ): Promise<{ items: PredictionDto[] }> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    const params = new URLSearchParams();
+    if (filter?.contributorId) params.set('contributorId', filter.contributorId);
+    if (filter?.status) params.set('status', filter.status);
+    if (filter?.domain) params.set('domain', filter.domain);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+
+    return this.request<{ items: PredictionDto[] }>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/predictions${qs}`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/predictions — Submits a new prospective empirical prediction.
+   */
+  async createPrediction(
+    decisionId: string,
+    payload: CreatePredictionPayload
+  ): Promise<PredictionDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<PredictionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/predictions`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/predictions/:predictionId/outcome — Records & verifies outcome.
+   */
+  async recordPredictionOutcome(
+    decisionId: string,
+    predictionId: string,
+    payload: RecordOutcomePayload
+  ): Promise<PredictionDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<PredictionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/predictions/${encodeURIComponent(predictionId)}/outcome`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * PATCH /api/decisions/:id/predictions/:predictionId/dispute — Disputes a recorded outcome.
+   */
+  async disputePredictionOutcome(
+    decisionId: string,
+    predictionId: string,
+    payload: DisputeOutcomePayload
+  ): Promise<PredictionDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<PredictionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/predictions/${encodeURIComponent(predictionId)}/dispute`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/calibration — Retrieves decision calibration and expert profiles.
+   */
+  async getDecisionCalibration(decisionId: string): Promise<DecisionCalibrationDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionCalibrationDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/calibration`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/users/:userId/calibration — Retrieves global expert calibration profile.
+   */
+  async getUserCalibration(userId: string): Promise<ExpertCalibrationProfileDto> {
+    const cleanId = (userId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'User ID is required.',
+      });
+    }
+
+    return this.request<ExpertCalibrationProfileDto>(
+      `/api/users/${encodeURIComponent(cleanId)}/calibration`,
+      { method: 'GET' }
     );
   }
 }
