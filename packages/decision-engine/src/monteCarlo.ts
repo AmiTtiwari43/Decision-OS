@@ -21,6 +21,14 @@ export function createMulberry32(seed: number): () => number {
   };
 }
 
+interface MutableCriterion {
+  id: string;
+  name: string;
+  shortName?: string;
+  weight: number;
+  isLocked?: boolean;
+}
+
 export function runMonteCarloSimulation(
   options: ReadonlyArray<EngineOption>,
   criteria: ReadonlyArray<EngineCriterion>,
@@ -41,58 +49,97 @@ export function runMonteCarloSimulation(
     }
   }
 
-  const winCounts = new Map<string, number>();
-  for (const opt of options) {
-    winCounts.set(opt.id, 0);
+  const numOptions = options.length;
+  const numCriteria = criteria.length;
+
+  // Pre-allocate typed matrices and structures outside simulation loop to eliminate GC pressure
+  const optScoresMatrix: number[][] = new Array(numOptions);
+  for (let o = 0; o < numOptions; o++) {
+    const scores = new Array(numCriteria);
+    const optScores = options[o].scores;
+    for (let c = 0; c < numCriteria; c++) {
+      scores[c] = optScores[criteria[c].id] ?? 0;
+    }
+    optScoresMatrix[o] = scores;
   }
+
+  // Pre-allocate perturbed criteria instances once to avoid repetitive object allocation
+  const perturbedCriteria: MutableCriterion[] = new Array(numCriteria);
+  const isLockedCriteria = new Uint8Array(numCriteria);
+  const baseWeights = new Float64Array(numCriteria);
+  for (let c = 0; c < numCriteria; c++) {
+    const crit = criteria[c];
+    const isLocked = lockedSet.has(crit.id);
+    isLockedCriteria[c] = isLocked ? 1 : 0;
+    baseWeights[c] = baseNormalizedWeights[crit.id] ?? 0;
+    perturbedCriteria[c] = {
+      id: crit.id,
+      name: crit.name,
+      shortName: crit.shortName,
+      weight: baseWeights[c],
+      isLocked,
+    };
+  }
+
+  const optionScores = new Float64Array(numOptions);
+  const optWinCounts = new Float64Array(numOptions);
 
   for (let iter = 0; iter < iterations; iter++) {
     // Generate perturbed weights
-    const perturbedCriteria: EngineCriterion[] = criteria.map(c => {
-      const baseW = baseNormalizedWeights[c.id] ?? 0;
-      if (lockedSet.has(c.id)) {
-        return { ...c, weight: baseW, isLocked: true };
+    for (let c = 0; c < numCriteria; c++) {
+      if (isLockedCriteria[c] === 1) {
+        perturbedCriteria[c].weight = baseWeights[c];
+        perturbedCriteria[c].isLocked = true;
+        continue;
       }
 
-      // Box-Muller Gaussian Noise
+      // Box-Muller Gaussian Noise (exact same deterministic Mulberry32 sequence)
       const u1 = Math.max(1e-15, rng());
       const u2 = rng();
       const z0 = Math.sqrt(-2.0 * Math.log(u1)) * Math.cos(2.0 * Math.PI * u2);
 
+      const baseW = baseWeights[c];
       const perturbedW = Math.max(0.0, baseW + z0 * (sigmaRelative * baseW));
-      return { ...c, weight: perturbedW, isLocked: false };
-    });
+      perturbedCriteria[c].weight = perturbedW;
+      perturbedCriteria[c].isLocked = false;
+    }
 
     // Renormalize perturbed weights
-    const perturbedNormalized = normalizeWeights(perturbedCriteria, lockedIds);
+    const perturbedNormalized = normalizeWeights(perturbedCriteria as unknown as ReadonlyArray<EngineCriterion>, lockedIds);
 
     // Score options under perturbed weights
     let maxScore = -Infinity;
-    const scores: { optionId: string; score: number }[] = [];
-
-    for (const opt of options) {
+    for (let o = 0; o < numOptions; o++) {
       let score = 0;
-      for (const c of criteria) {
-        const w = perturbedNormalized[c.id] ?? 0;
-        score += (w / 100.0) * opt.scores[c.id];
+      const optScores = optScoresMatrix[o];
+      for (let c = 0; c < numCriteria; c++) {
+        const w = perturbedNormalized[criteria[c].id] ?? 0;
+        score += (w / 100.0) * optScores[c];
       }
-      scores.push({ optionId: opt.id, score });
+      optionScores[o] = score;
       if (score > maxScore) {
         maxScore = score;
       }
     }
 
     // Identify winners with fractional win share for ties within 1e-9
-    const winners = scores.filter(s => Math.abs(s.score - maxScore) < 1e-9);
-    const winShare = 1.0 / winners.length;
+    let winnerCount = 0;
+    for (let o = 0; o < numOptions; o++) {
+      if (Math.abs(optionScores[o] - maxScore) < 1e-9) {
+        winnerCount++;
+      }
+    }
+    const winShare = 1.0 / winnerCount;
 
-    for (const w of winners) {
-      winCounts.set(w.optionId, (winCounts.get(w.optionId) ?? 0) + winShare);
+    for (let o = 0; o < numOptions; o++) {
+      if (Math.abs(optionScores[o] - maxScore) < 1e-9) {
+        optWinCounts[o] += winShare;
+      }
     }
   }
 
-  const optionResults: MonteCarloOptionResult[] = options.map(opt => {
-    const count = winCounts.get(opt.id) ?? 0;
+  const optionResults: MonteCarloOptionResult[] = options.map((opt, o) => {
+    const count = optWinCounts[o];
     const prob = round1((count / iterations) * 100);
     return {
       optionId: opt.id,
