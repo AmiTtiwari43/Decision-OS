@@ -44,6 +44,11 @@ import type {
   DisputeOutcomePayload,
   DecisionCalibrationDto,
   ExpertCalibrationProfileDto,
+  AuditHistoryResponseDto,
+  ChainVerificationResultDto,
+  DecisionSnapshotDto,
+  DecisionSnapshotsResponseDto,
+  ExportFormat,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -995,6 +1000,178 @@ export class DecisionApiClient {
       `/api/users/${encodeURIComponent(cleanId)}/calibration`,
       { method: 'GET' }
     );
+  }
+
+  // ─── Phase 13: Audit, History & Export API ───────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/audit — Retrieves paginated audit events.
+   */
+  async getDecisionAuditHistory(
+    decisionId: string,
+    filter?: {
+      page?: number;
+      limit?: number;
+      action?: string;
+      entityType?: string;
+      actorId?: string;
+    }
+  ): Promise<AuditHistoryResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    const params = new URLSearchParams();
+    if (filter?.page) params.append('page', String(filter.page));
+    if (filter?.limit) params.append('limit', String(filter.limit));
+    if (filter?.action) params.append('action', filter.action);
+    if (filter?.entityType) params.append('entityType', filter.entityType);
+    if (filter?.actorId) params.append('actorId', filter.actorId);
+
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    return this.request<AuditHistoryResponseDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/audit${qs}`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/audit/verify — Verifies SHA-256 hash chain integrity.
+   */
+  async verifyAuditChain(decisionId: string): Promise<ChainVerificationResultDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<ChainVerificationResultDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/audit/verify`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/snapshots — Lists preserved historical snapshots.
+   */
+  async getDecisionSnapshots(decisionId: string): Promise<DecisionSnapshotsResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionSnapshotsResponseDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/snapshots`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/snapshots — Captures a new historical milestone snapshot.
+   */
+  async createDecisionSnapshot(
+    decisionId: string,
+    payload?: { reason?: string; note?: string }
+  ): Promise<DecisionSnapshotDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionSnapshotDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/snapshots`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/snapshots/:snapshotId — Retrieves details of a specific snapshot.
+   */
+  async getDecisionSnapshot(
+    decisionId: string,
+    snapshotId: string
+  ): Promise<DecisionSnapshotDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionSnapshotDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/snapshots/${encodeURIComponent(snapshotId)}`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * GET /api/decisions/:id/export — Downloads a decision export package.
+   */
+  async exportDecision(
+    decisionId: string,
+    format: ExportFormat
+  ): Promise<{ content: string; filename: string; contentType: string }> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    const url = `${this.baseUrl}/api/decisions/${encodeURIComponent(cleanId)}/export?format=${encodeURIComponent(format)}`;
+    const headers: Record<string, string> = {};
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    const response = await fetch(url, { headers });
+    if (!response.ok) {
+      let msg = 'Failed to generate export';
+      try {
+        const errJson = await response.json();
+        msg = errJson.message || msg;
+      } catch {
+        // Ignored
+      }
+      throw new ApiClientError({
+        statusCode: response.status,
+        error: response.statusText,
+        message: msg,
+      });
+    }
+
+    const content = await response.text();
+    const disposition = response.headers.get('content-disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^"]+)"?/);
+    const filename = filenameMatch ? filenameMatch[1] : `decision_export.${format}`;
+    const contentType =
+      response.headers.get('content-type') ||
+      (format === 'json' ? 'application/json' : format === 'csv' ? 'text/csv' : 'text/html');
+
+    return { content, filename, contentType };
   }
 }
 

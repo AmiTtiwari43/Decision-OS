@@ -828,3 +828,76 @@ export interface DecisionCalibrationDto {
     bss: string;
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 13: Audit, History & Export DTOs
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface AuditEventDto {
+  eventId: string;
+  decisionId: string;
+  actorId: string;
+  actorEmail?: string;
+  actorName?: string;
+  action: string;
+  entityType: string;
+  entityId: string;
+  summary: string;
+  diff?: {
+    before?: Record<string, unknown> | null;
+    after?: Record<string, unknown> | null;
+    changedFields?: string[];
+  } | null;
+  timestamp: string;
+  eventHash: string;
+  previousEventHash: string;
+  schemaVersion: number;
+}
+
+export interface AuditHistoryResponseDto {
+  items: AuditEventDto[];
+  total: number;
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface ChainVerificationResultDto {
+  decisionId: string;
+  isValid: boolean;
+  totalEventsChecked: number;
+  rootHash: string | null;
+  headHash: string | null;
+  verifiedAt: string;
+  brokenAtEventId?: string;
+  reason?: string;
+}
+
+export interface DecisionSnapshotDto {
+  snapshotId: string;
+  decisionId: string;
+  version: number;
+  title: string;
+  description: string;
+  criteria: DecisionCriterionDto[];
+  options: DecisionOptionDto[];
+  scores: Record<string, Record<string, number>>;
+  analysis: EngineResult | null;
+  metadata: {
+    evidenceCount: number;
+    contributionCount: number;
+    predictionCount: number;
+    disagreementCount: number;
+  };
+  snapshotReason: string;
+  snapshotNote?: string;
+  createdAt: string;
+  createdById: string;
+}
+
+export interface DecisionSnapshotsResponseDto {
+  items: DecisionSnapshotDto[];
+}
+
+export type ExportFormat = 'json' | 'csv' | 'html';
+

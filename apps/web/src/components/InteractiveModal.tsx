@@ -27,6 +27,7 @@ import {
   BarChart3,
   Scale,
   Target,
+  History,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -39,6 +40,7 @@ import { AiAnalystModal } from './AiAnalystModal.js';
 import { AnalyticsModal } from './AnalyticsModal.js';
 import { DisagreementsModal } from './DisagreementsModal.js';
 import { ExpertCalibrationModal } from './ExpertCalibrationModal.js';
+import { AuditExportModal } from './AuditExportModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -96,6 +98,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
   const [isDisagreementsModalOpen, setIsDisagreementsModalOpen] = useState(false);
   const [isCalibrationModalOpen, setIsCalibrationModalOpen] = useState(false);
+  const [isAuditExportModalOpen, setIsAuditExportModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -847,6 +850,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 13: Audit History & Export Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsAuditExportModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Open Decision History, Snapshots & Export Center"
+                >
+                  <History className="w-4 h-4 text-cyan-400" />
+                  <span>History & Export</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -925,6 +940,13 @@ ${criteria
         <ExpertCalibrationModal
           isOpen={isCalibrationModalOpen}
           onClose={() => setIsCalibrationModalOpen(false)}
+          decision={serverDecision}
+        />
+
+        {/* Phase 13 Decision Audit, History & Export Modal */}
+        <AuditExportModal
+          isOpen={isAuditExportModalOpen}
+          onClose={() => setIsAuditExportModalOpen(false)}
           decision={serverDecision}
         />
       </div>

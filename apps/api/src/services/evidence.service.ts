@@ -4,6 +4,7 @@ import { evidenceRepository } from '../repositories/evidence.repository.js';
 import { DecisionContributionModel } from '../models/contribution.model.js';
 import { UserModel } from '../models/user.model.js';
 import { authorizeDecisionAction } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionEvidenceDocument,
@@ -121,7 +122,25 @@ export class EvidenceService {
       capturedVia,
     };
 
-    return evidenceRepository.create(decisionId, requester.id, provenance, input);
+    const created = await evidenceRepository.create(decisionId, requester.id, provenance, input);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'evidence.created',
+      entityType: 'evidence',
+      entityId: created._id.toString(),
+      summary: `Attached evidence "${created.title}" to ${created.targetType}`,
+      diff: {
+        after: {
+          title: created.title,
+          targetType: created.targetType,
+          targetId: created.targetId,
+        },
+      },
+    });
+
+    return created;
   }
 
   /**
@@ -217,6 +236,18 @@ export class EvidenceService {
       throw new EvidenceNotFoundError('Evidence record not found');
     }
 
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'evidence.updated',
+      entityType: 'evidence',
+      entityId: updated._id.toString(),
+      summary: `Updated evidence "${updated.title}"`,
+      diff: {
+        changedFields: Object.keys(data),
+      },
+    });
+
     return updated;
   }
 
@@ -257,6 +288,15 @@ export class EvidenceService {
     }
 
     await evidenceRepository.delete(evidenceId);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'evidence.deleted',
+      entityType: 'evidence',
+      entityId: evidenceId,
+      summary: `Deleted evidence "${doc.title}"`,
+    });
   }
 }
 

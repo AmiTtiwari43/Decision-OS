@@ -7,3 +7,5 @@ export * from './evidence.repository.js';
 export * from './analytics.repository.js';
 export * from './disagreement.repository.js';
 export * from './prediction.repository.js';
+export * from './audit.repository.js';
+export * from './snapshot.repository.js';

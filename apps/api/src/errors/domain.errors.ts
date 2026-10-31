@@ -427,3 +427,16 @@ export class InvalidOutcomeDateError extends Error {
     Object.setPrototypeOf(this, InvalidOutcomeDateError.prototype);
   }
 }
+
+/**
+ * Thrown when a decision snapshot is not found by ID.
+ */
+export class SnapshotNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Decision snapshot not found') {
+    super(message);
+    this.name = 'SnapshotNotFoundError';
+    Object.setPrototypeOf(this, SnapshotNotFoundError.prototype);
+  }
+}

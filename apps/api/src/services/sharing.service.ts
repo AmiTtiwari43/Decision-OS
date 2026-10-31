@@ -24,6 +24,7 @@ import {
   hashInvitationToken,
 } from '../utils/crypto.js';
 import { authorizeDecisionAction } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionCollaboratorRole,
@@ -139,6 +140,18 @@ export async function createInvitation(
     role,
     tokenHash,
     expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+  });
+
+  await auditService.recordEvent({
+    decisionId,
+    actor: requester,
+    action: 'sharing.invitation_created',
+    entityType: 'sharing',
+    entityId: invitation._id.toString(),
+    summary: `Created invitation for "${normalizedEmail}" with role "${role}"`,
+    diff: {
+      after: { email: normalizedEmail, role },
+    },
   });
 
   return {
@@ -306,6 +319,19 @@ export async function updateAccessGrant(
     throw new AccessGrantNotFoundError('Failed to update access grant');
   }
 
+  await auditService.recordEvent({
+    decisionId,
+    actor: requester,
+    action: 'sharing.grant_updated',
+    entityType: 'sharing',
+    entityId: grantId,
+    summary: `Updated collaborator access role to "${role}"`,
+    diff: {
+      before: { role: grant.role },
+      after: { role },
+    },
+  });
+
   return updated;
 }
 
@@ -338,6 +364,18 @@ export async function revokeAccessGrant(
   }
 
   await decisionAccessRepository.delete(grantId);
+
+  await auditService.recordEvent({
+    decisionId,
+    actor: requester,
+    action: 'sharing.grant_revoked',
+    entityType: 'sharing',
+    entityId: grantId,
+    summary: 'Revoked collaborator access grant',
+    diff: {
+      before: { userId: grant.userId.toString(), role: grant.role },
+    },
+  });
 }
 
 /**
@@ -420,6 +458,18 @@ export async function acceptInvitation(
     await invitationRepository.rollbackAcceptance(invitation._id.toString());
     throw err;
   }
+
+  await auditService.recordEvent({
+    decisionId: invitation.decisionId.toString(),
+    actor: requester,
+    action: 'sharing.invitation_redeemed',
+    entityType: 'sharing',
+    entityId: invitation._id.toString(),
+    summary: `Redeemed invitation and joined with role "${invitation.role}"`,
+    diff: {
+      after: { role: invitation.role },
+    },
+  });
 
   return {
     message: 'Invitation accepted successfully',

@@ -13,6 +13,7 @@ import {
   authorizeDecisionAction,
   type DecisionRole,
 } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type {
   DecisionCriterion,
   DecisionOption,
@@ -168,13 +169,31 @@ export async function createDecision(
   const options = doc.options as DecisionOption[];
   const scores = doc.scores as ScoreMatrix;
 
+  let result = doc;
   if (criteria.length > 0 && options.length > 0 && isComplete(criteria, options, scores)) {
     const analysis = runAnalysis(criteria, options, scores);
     const updated = await decisionRepository.update(doc._id.toString(), { analysis });
-    return updated ?? doc;
+    result = updated ?? doc;
   }
 
-  return doc;
+  // Audit event
+  await auditService.recordEvent({
+    decisionId: doc._id.toString(),
+    actor: requester,
+    action: 'decision.created',
+    entityType: 'decision',
+    entityId: doc._id.toString(),
+    summary: `Created decision "${doc.title}"`,
+    diff: {
+      after: {
+        title: doc.title,
+        criteriaCount: criteria.length,
+        optionsCount: options.length,
+      },
+    },
+  });
+
+  return result;
 }
 
 export async function getDecision(
@@ -241,14 +260,30 @@ export async function updateDecision(
   const options = doc.options as DecisionOption[];
   const scores = doc.scores as ScoreMatrix;
 
+  let result = doc;
   if (criteria.length > 0 && options.length > 0 && isComplete(criteria, options, scores)) {
     const analysis = runAnalysis(criteria, options, scores);
     const withAnalysis = await decisionRepository.update(id, { analysis });
-    return withAnalysis ?? doc;
+    result = withAnalysis ?? doc;
   } else {
     const cleared = await decisionRepository.update(id, { analysis: null });
-    return cleared ?? doc;
+    result = cleared ?? doc;
   }
+
+  // Audit event
+  await auditService.recordEvent({
+    decisionId: id,
+    actor: requester,
+    action: 'decision.updated',
+    entityType: 'decision',
+    entityId: id,
+    summary: `Updated decision "${result.title}"`,
+    diff: {
+      changedFields: Object.keys(data),
+    },
+  });
+
+  return result;
 }
 
 export async function deleteDecision(
@@ -265,6 +300,16 @@ export async function deleteDecision(
   }
 
   await authorizeDecisionAction(existing, 'delete', requester);
+
+  // Preserve historical audit record before cascade and deletion
+  await auditService.recordEvent({
+    decisionId: id,
+    actor: requester,
+    action: 'decision.deleted',
+    entityType: 'decision',
+    entityId: id,
+    summary: `Deleted decision "${existing.title}"`,
+  });
 
   // Cascade delete any access grants, invitations, contributions, and evidence associated with this decision
   await Promise.all([
@@ -306,5 +351,25 @@ export async function analyzeDecision(
 
   const analysis = runAnalysis(criteria, options, scores);
   const updated = await decisionRepository.update(id, { analysis });
-  return updated ?? doc;
+  const result = updated ?? doc;
+
+  const winnerName = options.find(o => o.id === analysis.winnerId)?.name || (analysis.isTie ? 'Tie' : 'undetermined');
+
+  await auditService.recordEvent({
+    decisionId: id,
+    actor: requester,
+    action: 'decision.calculated',
+    entityType: 'decision',
+    entityId: id,
+    summary: `Calculated authoritative MCDA analysis (winner: ${winnerName})`,
+    diff: {
+      after: {
+        winnerId: analysis.winnerId,
+        winnerName,
+        engineVersion: analysis.engineVersion,
+      },
+    },
+  });
+
+  return result;
 }

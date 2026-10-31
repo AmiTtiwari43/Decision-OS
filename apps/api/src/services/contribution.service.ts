@@ -14,6 +14,7 @@ import {
   ForbiddenError,
 } from '../errors/domain.errors.js';
 import { authorizeDecisionAction } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionContributionDocument,
@@ -112,6 +113,21 @@ export class ContributionService {
       throw new ContributionNotFoundError('Failed to submit contribution');
     }
 
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'contribution.submitted',
+      entityType: 'contribution',
+      entityId: submitted._id.toString(),
+      summary: `Submitted expert contribution (revision ${submitted.revision})`,
+      diff: {
+        after: {
+          preferredOptionId: submitted.recommendation?.preferredOptionId,
+          revision: submitted.revision,
+        },
+      },
+    });
+
     return submitted;
   }
 
@@ -150,6 +166,15 @@ export class ContributionService {
     if (!withdrawn) {
       throw new ContributionNotFoundError('Failed to withdraw contribution');
     }
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'contribution.withdrawn',
+      entityType: 'contribution',
+      entityId: withdrawn._id.toString(),
+      summary: 'Withdrew expert contribution',
+    });
 
     return withdrawn;
   }
@@ -223,6 +248,15 @@ export class ContributionService {
       throw new DecisionNotFoundError(decisionId);
     }
 
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'decision.round_locked',
+      entityType: 'decision',
+      entityId: decisionId,
+      summary: 'Locked contribution round',
+    });
+
     return updated;
   }
 
@@ -252,6 +286,15 @@ export class ContributionService {
     if (!updated) {
       throw new DecisionNotFoundError(decisionId);
     }
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'decision.round_unlocked',
+      entityType: 'decision',
+      entityId: decisionId,
+      summary: 'Unlocked contribution round',
+    });
 
     return updated;
   }
@@ -304,7 +347,24 @@ export class ContributionService {
     }
 
     // Update decision and re-run canonical MCDA analysis deterministically
-    return updateDecision(decisionId, { scores: newScores }, requester);
+    const updated = await updateDecision(decisionId, { scores: newScores }, requester);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'contribution.adopted',
+      entityType: 'contribution',
+      entityId: contributionId,
+      summary: `Adopted expert scores from contribution for option "${preferredOptionId}"`,
+      diff: {
+        after: {
+          preferredOptionId,
+          expertScores: expertCriterionScores,
+        },
+      },
+    });
+
+    return updated;
   }
 }
 

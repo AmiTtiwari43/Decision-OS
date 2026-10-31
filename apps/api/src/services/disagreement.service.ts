@@ -11,6 +11,7 @@ import {
   userRepository,
 } from '../repositories/index.js';
 import { authorizeDecisionAction } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import {
   DecisionNotFoundError,
@@ -195,6 +196,21 @@ export class DisagreementService {
       resolvedById: isResolvedOrAck && requester?.id ? new mongoose.Types.ObjectId(requester.id) : undefined,
       resolvedByName: isResolvedOrAck ? requester?.name || requester?.email || 'Authorized User' : undefined,
       resolvedAt: isResolvedOrAck ? new Date() : undefined,
+    });
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'disagreement.resolved',
+      entityType: 'disagreement',
+      entityId: disagreementId,
+      summary: `Updated disagreement status to "${input.status}"`,
+      diff: {
+        after: {
+          status: input.status,
+          explanation: input.resolutionExplanation,
+        },
+      },
     });
 
     return {

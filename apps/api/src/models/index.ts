@@ -20,3 +20,7 @@ export * from './disagreement.types.js';
 export * from './disagreement.model.js';
 export * from './prediction.types.js';
 export * from './prediction.model.js';
+export * from './audit.types.js';
+export * from './audit.model.js';
+export * from './snapshot.types.js';
+export * from './snapshot.model.js';

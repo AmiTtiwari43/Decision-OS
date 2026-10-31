@@ -13,6 +13,7 @@ import { aiRoutes } from './routes/ai.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { disagreementRoutes } from './routes/disagreements.js';
 import { calibrationRoutes } from './routes/calibration.js';
+import { auditRoutes } from './routes/audit.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -78,6 +79,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Expert Calibration Routes
   await app.register(calibrationRoutes, { prefix: '/api' });
+
+  // Audit, History and Export Routes
+  await app.register(auditRoutes, { prefix: '/api' });
 
   return app;
 }

@@ -12,6 +12,7 @@ import {
   userRepository,
 } from '../repositories/index.js';
 import { authorizeDecisionAction } from './authorization.service.js';
+import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import {
   DecisionNotFoundError,
@@ -210,7 +211,25 @@ export class CalibrationService {
       submittedAt: new Date(),
     });
 
-    return predictionToDto(doc);
+    const resultDto = predictionToDto(doc);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'prediction.created',
+      entityType: 'prediction',
+      entityId: predictionId,
+      summary: `Submitted prediction: "${doc.statement}" (${(doc.probability * 100).toFixed(0)}%)`,
+      diff: {
+        after: {
+          probability: doc.probability,
+          domain: doc.domain,
+          targetDate: doc.targetDate.toISOString(),
+        },
+      },
+    });
+
+    return resultDto;
   }
 
   async recordOutcome(
@@ -271,7 +290,24 @@ export class CalibrationService {
       throw new PredictionNotFoundError(`Failed to update outcome for prediction "${predictionId}".`);
     }
 
-    return predictionToDto(updated);
+    const resultDto = predictionToDto(updated);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'prediction.outcome_verified',
+      entityType: 'prediction',
+      entityId: predictionId,
+      summary: `Recorded verified outcome (${input.observedOutcome >= 0.5 ? 1 : 0}) for prediction "${prediction.statement}"`,
+      diff: {
+        after: {
+          observedOutcome: input.observedOutcome >= 0.5 ? 1 : 0,
+          verificationStatus: isVerified ? 'verified' : 'outcome_recorded',
+        },
+      },
+    });
+
+    return resultDto;
   }
 
   async disputeOutcome(
@@ -307,7 +343,18 @@ export class CalibrationService {
       throw new PredictionNotFoundError(`Failed to dispute outcome for prediction "${predictionId}".`);
     }
 
-    return predictionToDto(updated);
+    const resultDto = predictionToDto(updated);
+
+    await auditService.recordEvent({
+      decisionId,
+      actor: requester,
+      action: 'prediction.disputed',
+      entityType: 'prediction',
+      entityId: predictionId,
+      summary: `Disputed prediction outcome: "${input.disputeReason.trim()}"`,
+    });
+
+    return resultDto;
   }
 
   async getDecisionCalibration(

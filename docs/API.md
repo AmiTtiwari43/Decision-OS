@@ -1382,3 +1382,170 @@ Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`
   }
 }
 ```
+
+---
+
+## Audit, History and Export Endpoints (Phase 13)
+
+### 40. Get Decision Audit History
+`GET /api/decisions/:id/audit`
+
+Retrieves paginated, chronological audit events for a decision.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`).
+
+#### Query Parameters
+- `page` (number, default: 1)
+- `limit` (number, default: 50, max: 200)
+- `action` (optional string, filter by action prefix or name)
+- `entityType` (optional string, filter by affected entity type)
+- `actorId` (optional string, filter by actor)
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "eventId": "e9a0c8b6-96b7-4a0d-869f-4318d1fae7f9",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "actorId": "67215c26b8b548b26e95d11e",
+      "actorEmail": "alice@example.com",
+      "action": "decision.updated",
+      "entityType": "decision",
+      "entityId": "67215c26b8b548b26e95d11f",
+      "summary": "Updated decision title and description",
+      "diff": {
+        "changedFields": ["title", "description"]
+      },
+      "timestamp": "2026-10-31T22:30:00.000Z",
+      "eventHash": "b2f0a1c...",
+      "previousEventHash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "schemaVersion": 1
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "limit": 50,
+  "hasMore": false
+}
+```
+
+---
+
+### 41. Verify Decision Audit Hash Chain
+`GET /api/decisions/:id/audit/verify`
+
+Verifies the cryptographic SHA-256 hash linkage of all events in the decision's audit history.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Response: `200 OK`
+```json
+{
+  "decisionId": "67215c26b8b548b26e95d11f",
+  "isValid": true,
+  "totalEventsChecked": 15,
+  "rootHash": "a1b2c3d...",
+  "headHash": "e5f6g7h...",
+  "verifiedAt": "2026-10-31T22:35:00.000Z"
+}
+```
+
+---
+
+### 42. List Decision Snapshots
+`GET /api/decisions/:id/snapshots`
+
+Lists historical snapshots captured for a decision.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "snapshotId": "f7a3c8b6-96b7-4a0d-869f-4318d1fae7f9",
+      "decisionId": "67215c26b8b548b26e95d11f",
+      "version": 1,
+      "title": "Cloud Architecture Selection",
+      "snapshotReason": "calculation",
+      "createdAt": "2026-10-31T22:15:00.000Z",
+      "createdById": "67215c26b8b548b26e95d11e"
+    }
+  ]
+}
+```
+
+---
+
+### 43. Create Decision Milestone Snapshot
+`POST /api/decisions/:id/snapshots`
+
+Manually captures an immutable snapshot of the current decision state, options, criteria, scores, and MCDA engine analysis.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Owner or Editor only (`403 Forbidden` for contributors or viewers).
+
+#### Request Body
+```json
+{
+  "reason": "Pre-deployment stakeholder signoff"
+}
+```
+
+#### Response: `201 Created`
+Returns the created `DecisionSnapshotDto`.
+
+---
+
+### 44. Get Decision Snapshot Details
+`GET /api/decisions/:id/snapshots/:snapshotId`
+
+Retrieves the complete preserved historical state of a snapshot.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Response: `200 OK`
+Returns the complete `DecisionSnapshotDto` including preserved `criteria`, `options`, `scores`, and `analysis` (engineVersion, specificationHash, winnerId, rankings).
+
+---
+
+### 45. Export Decision Package
+`GET /api/decisions/:id/export`
+
+Generates and downloads a portable decision export in JSON, CSV, or HTML format.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Query Parameters
+- `format` (`json` | `csv` | `html`, required)
+
+#### Content-Type:
+- `format=json`: `application/json`
+- `format=csv`: `text/csv` (with CSV formula injection defense applied)
+- `format=html`: `text/html` (self-contained printable executive briefing)
+

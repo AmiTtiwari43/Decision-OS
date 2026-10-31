@@ -1,9 +1,9 @@
 # Decision OS — Implementation Status
 
-Last verified commit: Phase 11 Complete & Verified
+Last verified commit: Phase 12 Complete & Verified
 Last green verify: npm run verify (typecheck, lint, test, build across all workspaces: apps/web, apps/api, packages/decision-engine)
-Current phase: Phase 12 — Expert Calibration (COMPLETE & VERIFIED)
-Branch: phase-12-expert-calibration
+Current phase: Phase 13 — Audit, History and Export (COMPLETE & VERIFIED)
+Branch: phase-13-audit-history-export
 
 ## Phase Matrix
 
@@ -22,3 +22,4 @@ Branch: phase-12-expert-calibration
 | **10** | Advanced Analytics | **COMPLETE & AUDITED** | `docs/phases/phase-10.md` |
 | **11** | Disagreement Intelligence | **COMPLETE & AUDITED** | `docs/phases/phase-11.md` |
 | **12** | Expert Calibration | **COMPLETE & VERIFIED** | `docs/phases/phase-12.md` |
+| **13** | Audit, History and Export | **COMPLETE & VERIFIED** | `docs/phases/phase-13.md` |
