@@ -90,7 +90,6 @@ export class AuditService {
   async recordEvent(input: RecordAuditInput): Promise<AuditEventDocument> {
     const { decisionId, action, entityType, entityId, summary, diff } = input;
     const eventId = crypto.randomUUID();
-    const timestamp = input.timestamp || new Date();
 
     let actorId = 'system';
     let actorEmail: string | undefined;
@@ -126,6 +125,9 @@ export class AuditService {
         const latestEvent = await auditRepository.getLatestByDecisionId(decisionId);
         const previousEventHash = latestEvent?.eventHash || GENESIS_PREVIOUS_HASH;
         const schemaVersion = 1;
+        const eventTimestamp =
+          input.timestamp ||
+          (latestEvent ? new Date(Math.max(Date.now(), latestEvent.timestamp.getTime() + 1)) : new Date());
 
         const eventHash = computeCanonicalEventHash({
           eventId,
@@ -136,7 +138,7 @@ export class AuditService {
           entityId,
           summary,
           diff,
-          timestamp,
+          timestamp: eventTimestamp,
           previousEventHash,
           schemaVersion,
         });
@@ -152,7 +154,7 @@ export class AuditService {
           entityId,
           summary,
           diff,
-          timestamp,
+          timestamp: eventTimestamp,
           eventHash,
           previousEventHash,
           schemaVersion,
@@ -247,10 +249,10 @@ export class AuditService {
 
     await authorizeDecisionAction(decision, 'read', requester);
 
-    const events = await auditRepository.getAllForDecision(decisionId);
+    const rawEvents = await auditRepository.getAllForDecision(decisionId);
     const nowIso = new Date().toISOString();
 
-    if (events.length === 0) {
+    if (rawEvents.length === 0) {
       return {
         decisionId,
         isValid: true,
@@ -260,6 +262,20 @@ export class AuditService {
         verifiedAt: nowIso,
       };
     }
+
+    // Order by cryptographic chain linkage if a complete chain exists, protecting against millisecond sort ties
+    const eventsByPrev = new Map<string, AuditEventDocument>();
+    for (const ev of rawEvents) {
+      eventsByPrev.set(ev.previousEventHash, ev);
+    }
+    const chainedEvents: AuditEventDocument[] = [];
+    let curHash = GENESIS_PREVIOUS_HASH;
+    while (eventsByPrev.has(curHash)) {
+      const nextEv = eventsByPrev.get(curHash)!;
+      chainedEvents.push(nextEv);
+      curHash = nextEv.eventHash;
+    }
+    const events = chainedEvents.length === rawEvents.length ? chainedEvents : rawEvents;
 
     let expectedPrevHash = GENESIS_PREVIOUS_HASH;
 
