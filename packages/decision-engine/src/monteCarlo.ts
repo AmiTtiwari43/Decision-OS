@@ -53,9 +53,9 @@ export function runMonteCarloSimulation(
   const numCriteria = criteria.length;
 
   // Pre-allocate typed matrices and structures outside simulation loop to eliminate GC pressure
-  const optScoresMatrix: number[][] = new Array(numOptions);
+  const optScoresMatrix: number[][] = Array.from({ length: numOptions });
   for (let o = 0; o < numOptions; o++) {
-    const scores = new Array(numCriteria);
+    const scores: number[] = Array.from({ length: numCriteria });
     const optScores = options[o].scores;
     for (let c = 0; c < numCriteria; c++) {
       scores[c] = optScores[criteria[c].id] ?? 0;
@@ -64,7 +64,7 @@ export function runMonteCarloSimulation(
   }
 
   // Pre-allocate perturbed criteria instances once to avoid repetitive object allocation
-  const perturbedCriteria: MutableCriterion[] = new Array(numCriteria);
+  const perturbedCriteria: MutableCriterion[] = Array.from({ length: numCriteria });
   const isLockedCriteria = new Uint8Array(numCriteria);
   const baseWeights = new Float64Array(numCriteria);
   for (let c = 0; c < numCriteria; c++) {

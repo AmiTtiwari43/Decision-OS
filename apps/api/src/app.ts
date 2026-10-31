@@ -1,5 +1,7 @@
 import fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import cors from '@fastify/cors';
+import compress from '@fastify/compress';
+import rateLimit from '@fastify/rate-limit';
 import { env as defaultEnv, type Env } from './config/env.js';
 import { registerErrorHandler } from './plugins/errorHandler.js';
 import { registerAuthPlugin } from './plugins/auth.js';
@@ -29,10 +31,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       level: currentEnv.LOG_LEVEL,
       ...(currentEnv.NODE_ENV === 'test' ? { level: 'silent' } : {}),
     },
+    bodyLimit: 1048576, // 1MB payload limit protects against unbounded memory ingestion
     genReqId: req => (req.headers['x-request-id'] as string) || crypto.randomUUID(),
     requestIdHeader: 'x-request-id',
     ...options,
   });
+
+  // Payload Compression (gzip & deflate with 1KB threshold)
+  await app.register(compress, {
+    threshold: 1024,
+    encodings: ['gzip', 'deflate'],
+  });
+
+  // Global Rate Limiting
+  if (currentEnv.NODE_ENV !== 'test') {
+    await app.register(rateLimit, {
+      max: 1000,
+      timeWindow: '1 minute',
+    });
+  }
 
   // CORS
   await app.register(cors, {

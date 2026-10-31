@@ -445,6 +445,25 @@ export class CollaborationService {
   }
 
   /**
+   * Operational real-time connection and presence telemetry.
+   */
+  getMetrics(): { activeSubscribersCount: number; activeChannelsCount: number; activePresenceCount: number } {
+    let subscriberCount = 0;
+    for (const clients of this.subscribers.values()) {
+      subscriberCount += clients.size;
+    }
+    let presenceCount = 0;
+    for (const map of this.presence.values()) {
+      presenceCount += map.size;
+    }
+    return {
+      activeSubscribersCount: subscriberCount,
+      activeChannelsCount: this.subscribers.size,
+      activePresenceCount: presenceCount,
+    };
+  }
+
+  /**
    * For testing: clear all active subscribers and presence.
    */
   reset(): void {

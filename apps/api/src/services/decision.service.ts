@@ -15,6 +15,7 @@ import {
 } from './authorization.service.js';
 import { auditService } from './audit.service.js';
 import { collaborationService } from './collaboration.service.js';
+import { evaluationCache } from './evaluationCache.js';
 import type {
   DecisionCriterion,
   DecisionOption,
@@ -103,20 +104,35 @@ export function mapToEngineInput(
 
 /**
  * Runs the decision engine and wraps engine ValidationError in EngineValidationError.
+ * Supports bounded deterministic in-memory caching validated against input hash and version.
  */
 export function runAnalysis(
   criteria: DecisionCriterion[],
   options: DecisionOption[],
   scores: ScoreMatrix,
-  lockedIds?: string[]
+  lockedIds?: string[],
+  cacheContext?: { decisionId: string; version: number }
 ): EngineResult {
   const input = mapToEngineInput(criteria, options, scores);
   const inputWithLocks: EngineEvaluationInput = lockedIds && lockedIds.length > 0
     ? { ...input, lockedIds }
     : input;
 
+  let inputHash: string | null = null;
+  if (cacheContext?.decisionId && cacheContext.version !== undefined) {
+    inputHash = evaluationCache.computeInputHash(inputWithLocks);
+    const cached = evaluationCache.get(cacheContext.decisionId, cacheContext.version, inputHash);
+    if (cached) {
+      return cached;
+    }
+  }
+
   try {
-    return evaluateDecision(inputWithLocks);
+    const result = evaluateDecision(inputWithLocks);
+    if (cacheContext?.decisionId && cacheContext.version !== undefined && inputHash) {
+      evaluationCache.set(cacheContext.decisionId, cacheContext.version, inputHash, result);
+    }
+    return result;
   } catch (err) {
     if (err instanceof ValidationError) {
       throw new EngineValidationError(err);
@@ -292,9 +308,15 @@ export async function updateDecision(
   const options = doc.options as DecisionOption[];
   const scores = doc.scores as ScoreMatrix;
 
+  // Invalidate any cached engine evaluation on decision mutation
+  evaluationCache.invalidate(id);
+
   let result = doc;
   if (criteria.length > 0 && options.length > 0 && isComplete(criteria, options, scores)) {
-    const analysis = runAnalysis(criteria, options, scores);
+    const analysis = runAnalysis(criteria, options, scores, undefined, {
+      decisionId: id,
+      version: nextVersion,
+    });
     const withAnalysis = await decisionRepository.update(id, { analysis, version: nextVersion });
     result = withAnalysis ?? doc;
   } else {
@@ -373,7 +395,8 @@ export async function deleteDecision(
     throw new DecisionNotFoundError(id);
   }
 
-  // Close and cleanup real-time collaboration streams and presence
+  // Invalidate cached engine calculations and cleanup real-time streams
+  evaluationCache.invalidate(id);
   collaborationService.closeDecision(id);
 }
 
@@ -401,7 +424,10 @@ export async function analyzeDecision(
     throw new IncompleteScoresError(missingPairs);
   }
 
-  const analysis = runAnalysis(criteria, options, scores);
+  const analysis = runAnalysis(criteria, options, scores, undefined, {
+    decisionId: id,
+    version: doc.version || 1,
+  });
   const nextVersion = (doc.version || 1) + 1;
   const updated = await decisionRepository.update(id, { analysis, version: nextVersion });
   const result = updated ?? doc;

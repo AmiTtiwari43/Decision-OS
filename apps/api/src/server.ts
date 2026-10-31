@@ -1,6 +1,7 @@
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
 import { connectToDatabase, disconnectFromDatabase } from './db/connection.js';
+import { collaborationService } from './services/collaboration.service.js';
 
 export async function startServer(): Promise<void> {
   // Connect to MongoDB before accepting network requests
@@ -27,6 +28,8 @@ export async function startServer(): Promise<void> {
   for (const signal of signals) {
     process.on(signal, async () => {
       app.log.info(`Received ${signal}, closing server gracefully...`);
+      // Disconnect all active real-time subscribers cleanly
+      collaborationService.reset();
       await app.close();
       await disconnectFromDatabase();
       process.exit(0);
