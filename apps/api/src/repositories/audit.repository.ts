@@ -40,6 +40,7 @@ export class AuditRepository {
       decisionId: new mongoose.Types.ObjectId(decisionId),
     })
       .sort({ timestamp: 1, _id: 1 })
+      .lean<AuditEventDocument[]>()
       .exec();
   }
 
@@ -88,6 +89,7 @@ export class AuditRepository {
         .sort({ timestamp: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
+        .lean<AuditEventDocument[]>()
         .exec(),
       AuditEventModel.countDocuments(query).exec(),
     ]);

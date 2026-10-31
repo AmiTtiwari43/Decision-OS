@@ -101,7 +101,7 @@ export class DecisionRepository {
         : { $and: conditions };
 
     const [items, total] = await Promise.all([
-      DecisionModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).exec(),
+      DecisionModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean<DecisionDocument[]>().exec(),
       DecisionModel.countDocuments(query).exec(),
     ]);
 

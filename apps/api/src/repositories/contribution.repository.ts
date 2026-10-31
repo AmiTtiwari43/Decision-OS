@@ -66,6 +66,7 @@ export class ContributionRepository {
     return DecisionContributionModel.find({ $and: conditions })
       .populate('contributorId', 'id name email')
       .sort({ createdAt: -1 })
+      .lean<DecisionContributionDocument[]>()
       .exec();
   }
 

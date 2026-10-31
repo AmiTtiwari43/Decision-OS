@@ -1,14 +1,23 @@
 import mongoose, { type Connection, type ConnectOptions } from 'mongoose';
 import { sanitizeMongoUri } from './guard.js';
+import { env } from '../config/env.js';
 
 export interface DatabaseConnectionOptions extends ConnectOptions {
   serverSelectionTimeoutMS?: number;
   connectTimeoutMS?: number;
+  socketTimeoutMS?: number;
+  maxPoolSize?: number;
+  minPoolSize?: number;
+  maxIdleTimeMS?: number;
 }
 
 const DEFAULT_CONNECT_OPTIONS: ConnectOptions = {
   serverSelectionTimeoutMS: 5000,
   connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  maxIdleTimeMS: 30000,
+  maxPoolSize: env.MONGODB_MAX_POOL_SIZE,
+  minPoolSize: env.MONGODB_MIN_POOL_SIZE,
   autoIndex: true,
 };
 

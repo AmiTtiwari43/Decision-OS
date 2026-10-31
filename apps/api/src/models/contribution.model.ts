@@ -114,6 +114,7 @@ DecisionContributionSchema.index({ decisionId: 1, contributorId: 1 }, { unique: 
 
 // Scoped listing index
 DecisionContributionSchema.index({ decisionId: 1, status: 1 });
+DecisionContributionSchema.index({ decisionId: 1, createdAt: -1 });
 DecisionContributionSchema.index({ contributorId: 1, createdAt: -1 });
 
 export const DecisionContributionModel: Model<DecisionContributionDocument> =

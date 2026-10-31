@@ -63,7 +63,7 @@ export class EvidenceRepository {
       query.targetId = filter.targetId;
     }
 
-    return DecisionEvidenceModel.find(query).sort({ createdAt: -1 }).exec();
+    return DecisionEvidenceModel.find(query).sort({ createdAt: -1 }).lean<DecisionEvidenceDocument[]>().exec();
   }
 
   /**

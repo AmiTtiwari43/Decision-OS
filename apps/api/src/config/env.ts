@@ -17,6 +17,8 @@ export const envSchema = z.object({
       { message: 'MONGODB_URI must start with mongodb:// or mongodb+srv://' }
     )
     .default('mongodb://127.0.0.1:27017/decision_os'),
+  MONGODB_MAX_POOL_SIZE: z.coerce.number().int().min(1).max(500).default(50),
+  MONGODB_MIN_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(5),
   JWT_SECRET: z
     .string()
     .min(16, 'JWT_SECRET must be at least 16 characters long')
