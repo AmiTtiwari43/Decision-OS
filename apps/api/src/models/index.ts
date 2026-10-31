@@ -24,3 +24,4 @@ export * from './audit.types.js';
 export * from './audit.model.js';
 export * from './snapshot.types.js';
 export * from './snapshot.model.js';
+export * from './collaboration.types.js';

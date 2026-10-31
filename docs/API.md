@@ -1549,3 +1549,96 @@ Any authorized decision collaborator.
 - `format=csv`: `text/csv` (with CSV formula injection defense applied)
 - `format=html`: `text/html` (self-contained printable executive briefing)
 
+---
+
+## Phase 14 — Real-Time Collaboration API
+
+### 46. Real-Time Collaboration Event Stream (Server-Sent Events)
+`GET /api/decisions/:id/collaboration/stream`
+
+Establishes an authenticated real-time Server-Sent Events (SSE) stream for a decision. Emits live updates for decision inputs, MCDA calculations, contributions, evidence, presence, and concurrency conflicts. Supports automatic reconnection with missed-event replay via `Last-Event-ID` or `?lastEventId=<id>`.
+
+#### Authentication
+Required (`Bearer <JWT>` in `Authorization` header, or `?token=<JWT>` query parameter for EventSource).
+
+#### Permission
+Any authorized decision collaborator (`owner`, `editor`, `contributor`, `viewer`). Unrelated users receive `404 Not Found` (enumeration prevention).
+
+#### Query Parameters
+- `token` (optional, string): JWT token if client cannot set custom HTTP headers.
+- `lastEventId` (optional, string): Last event ID received by client for missed-event replay.
+
+#### Event Stream Format (`text/event-stream`)
+```text
+id: 550e8400-e29b-41d4-a716-446655440000
+event: decision.updated
+data: {"eventId":"550e8400-e29b-41d4-a716-446655440000","type":"decision.updated","decisionId":"67215c26b8b548b26e95d11f","version":2,"actorId":"67215c26b8b548b26e95d110","actorName":"Alice","timestamp":"2026-11-01T00:52:00.000Z","payload":{"title":"Updated Title"}}
+
+```
+
+---
+
+### 47. Participant Presence Heartbeat
+`POST /api/decisions/:id/collaboration/presence`
+
+Updates the authenticated collaborator's presence status for this decision and broadcasts presence changes to connected peers. Automatically expires if no heartbeat is received within 30 seconds.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Request Body
+```json
+{
+  "status": "active"
+}
+```
+
+#### Response: `200 OK`
+```json
+{
+  "status": "ok",
+  "activeParticipants": [
+    {
+      "userId": "67215c26b8b548b26e95d110",
+      "name": "Alice",
+      "email": "alice@example.com",
+      "role": "owner",
+      "status": "active",
+      "lastSeenAt": "2026-11-01T00:52:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+### 48. Get Active Participants
+`GET /api/decisions/:id/collaboration/presence`
+
+Retrieves currently active online collaborators for this decision.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized decision collaborator.
+
+#### Response: `200 OK`
+```json
+{
+  "items": [
+    {
+      "userId": "67215c26b8b548b26e95d110",
+      "name": "Alice",
+      "email": "alice@example.com",
+      "role": "owner",
+      "status": "active",
+      "lastSeenAt": "2026-11-01T00:52:00.000Z"
+    }
+  ]
+}
+```
+

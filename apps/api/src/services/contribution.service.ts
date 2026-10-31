@@ -15,6 +15,7 @@ import {
 } from '../errors/domain.errors.js';
 import { authorizeDecisionAction } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { collaborationService } from './collaboration.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionContributionDocument,
@@ -125,6 +126,20 @@ export class ContributionService {
           preferredOptionId: submitted.recommendation?.preferredOptionId,
           revision: submitted.revision,
         },
+      },
+    });
+
+    collaborationService.publishEvent(decisionId, {
+      type: 'contribution.submitted',
+      decisionId,
+      version: decision.version || 1,
+      actorId: requester.id,
+      actorName: requester.name || requester.email,
+      payload: {
+        contributionId: submitted._id.toString(),
+        contributorId: requester.id,
+        preferredOptionId: submitted.recommendation?.preferredOptionId,
+        revision: submitted.revision,
       },
     });
 

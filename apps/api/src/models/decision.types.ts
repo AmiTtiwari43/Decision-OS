@@ -33,6 +33,7 @@ export interface IDecision {
   scores: ScoreMatrix;
   analysis: EngineResult | null;
   calculationVersion: number;
+  version: number;
   ownerId?: Types.ObjectId | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;
@@ -52,6 +53,7 @@ export interface CreateDecisionInput {
   scores?: ScoreMatrix;
   analysis?: EngineResult | null;
   calculationVersion?: number;
+  version?: number;
   ownerId?: Types.ObjectId | string | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;
@@ -65,6 +67,8 @@ export interface UpdateDecisionInput {
   scores?: ScoreMatrix;
   analysis?: EngineResult | null;
   calculationVersion?: number;
+  version?: number;
+  expectedVersion?: number;
   ownerId?: Types.ObjectId | string | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;

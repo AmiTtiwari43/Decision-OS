@@ -113,6 +113,11 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
       default: 1,
       min: 1,
     },
+    version: {
+      type: Number,
+      default: 1,
+      min: 1,
+    },
     ownerId: {
       type: Schema.Types.ObjectId,
       ref: 'User',

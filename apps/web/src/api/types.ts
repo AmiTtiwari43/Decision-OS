@@ -35,6 +35,7 @@ export interface DecisionDto {
   scores: ScoreMatrixDto;
   analysis: EngineResult | null;
   calculationVersion: number;
+  version?: number;
   currentUserRole?: 'owner' | 'editor' | 'viewer' | 'contributor';
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: string | null;
@@ -56,6 +57,7 @@ export interface UpdateDecisionPayload {
   criteria?: DecisionCriterionDto[];
   options?: DecisionOptionDto[];
   scores?: ScoreMatrixDto;
+  expectedVersion?: number;
 }
 
 export interface ListDecisionsQuery {
@@ -900,4 +902,49 @@ export interface DecisionSnapshotsResponseDto {
 }
 
 export type ExportFormat = 'json' | 'csv' | 'html';
+
+export type CollaborationEventType =
+  | 'decision.updated'
+  | 'decision.calculation.updated'
+  | 'contribution.submitted'
+  | 'evidence.created'
+  | 'disagreement.resolved'
+  | 'participant.joined'
+  | 'participant.left'
+  | 'presence.sync'
+  | 'stream.connected'
+  | 'sync_required';
+
+export interface ParticipantPresenceDto {
+  userId: string;
+  name: string;
+  email: string;
+  role: 'owner' | 'editor' | 'viewer' | 'contributor';
+  status: 'active' | 'idle';
+  currentView?: string;
+  joinedAt: string;
+  lastSeenAt: string;
+}
+
+export interface CollaborationEventDto<T = unknown> {
+  eventId: string;
+  type: CollaborationEventType;
+  decisionId: string;
+  version: number;
+  actorId?: string;
+  actorName?: string;
+  timestamp: string;
+  payload: T;
+}
+
+export interface PresenceResponseDto {
+  decisionId: string;
+  items: ParticipantPresenceDto[];
+  participants?: ParticipantPresenceDto[];
+}
+
+export interface PresenceHeartbeatPayload {
+  status?: 'active' | 'idle';
+  currentView?: string;
+}
 

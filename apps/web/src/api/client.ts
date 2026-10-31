@@ -49,6 +49,8 @@ import type {
   DecisionSnapshotDto,
   DecisionSnapshotsResponseDto,
   ExportFormat,
+  PresenceResponseDto,
+  PresenceHeartbeatPayload,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -1172,6 +1174,61 @@ export class DecisionApiClient {
       (format === 'json' ? 'application/json' : format === 'csv' ? 'text/csv' : 'text/html');
 
     return { content, filename, contentType };
+  }
+
+  /**
+   * Helper to construct authenticated SSE URL for real-time collaboration.
+   */
+  getCollaborationStreamUrl(decisionId: string, lastEventId?: string): string {
+    const cleanId = (decisionId || '').trim();
+    const tokenParam = this.token ? `token=${encodeURIComponent(this.token)}` : '';
+    const lastEventParam = lastEventId ? `&lastEventId=${encodeURIComponent(lastEventId)}` : '';
+    const query = [tokenParam, lastEventParam].filter(Boolean).join('');
+    return `${this.baseUrl}/api/decisions/${encodeURIComponent(cleanId)}/collaboration/stream${query ? `?${query}` : ''}`;
+  }
+
+  /**
+   * GET /api/decisions/:id/collaboration/presence — Retrieves active participants.
+   */
+  async getDecisionPresence(decisionId: string): Promise<PresenceResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<PresenceResponseDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/collaboration/presence`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/collaboration/presence — Sends presence heartbeat.
+   */
+  async sendPresenceHeartbeat(
+    decisionId: string,
+    payload: PresenceHeartbeatPayload = { status: 'active' }
+  ): Promise<PresenceResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<PresenceResponseDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/collaboration/presence`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
   }
 }
 

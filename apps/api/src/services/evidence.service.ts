@@ -5,6 +5,7 @@ import { DecisionContributionModel } from '../models/contribution.model.js';
 import { UserModel } from '../models/user.model.js';
 import { authorizeDecisionAction } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { collaborationService } from './collaboration.service.js';
 import type { RequesterContext } from './decision.service.js';
 import type {
   DecisionEvidenceDocument,
@@ -137,6 +138,20 @@ export class EvidenceService {
           targetType: created.targetType,
           targetId: created.targetId,
         },
+      },
+    });
+
+    collaborationService.publishEvent(decisionId, {
+      type: 'evidence.created',
+      decisionId,
+      version: decision.version || 1,
+      actorId: requester.id,
+      actorName: createdByName || requester.email,
+      payload: {
+        evidenceId: created._id.toString(),
+        title: created.title,
+        targetType: created.targetType,
+        targetId: created.targetId,
       },
     });
 

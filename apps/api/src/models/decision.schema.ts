@@ -84,6 +84,8 @@ export const updateDecisionSchema = z
     scores: scoresSchema.optional(),
     analysis: z.any().nullable().optional(),
     calculationVersion: z.number().int().min(1).optional(),
+    version: z.number().int().min(1).optional(),
+    expectedVersion: z.number().int().min(1).optional(),
     ownerId: z.any().optional(),
     isContributionRoundLocked: z.boolean().optional(),
     contributionRoundLockedAt: z.coerce.date().nullable().optional(),

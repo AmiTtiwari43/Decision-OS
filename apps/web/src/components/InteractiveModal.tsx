@@ -41,6 +41,8 @@ import { AnalyticsModal } from './AnalyticsModal.js';
 import { DisagreementsModal } from './DisagreementsModal.js';
 import { ExpertCalibrationModal } from './ExpertCalibrationModal.js';
 import { AuditExportModal } from './AuditExportModal.js';
+import { RealtimePresenceBar } from './RealtimePresenceBar.js';
+import { useRealtimeCollaboration } from '../hooks/useRealtimeCollaboration.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -106,6 +108,29 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [editContext, setEditContext] = useState(dataset.context);
   const [savedDecisions, setSavedDecisions] = useState<DecisionDto[]>([]);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+
+  const {
+    connectionStatus,
+    activeParticipants,
+    conflictState,
+    dismissConflict,
+    reconnect,
+  } = useRealtimeCollaboration({
+    decisionId,
+    enabled: isOpen && !!decisionId && mode === 'saved',
+    isDirty,
+    currentView: 'workspace',
+    onDecisionUpdated: () => {
+      if (decisionId) {
+        loadDecision(decisionId);
+      }
+    },
+    onCalculationUpdated: () => {
+      if (decisionId) {
+        loadDecision(decisionId);
+      }
+    },
+  });
 
   const handleStartEditTitle = () => {
     setEditTitle(dataset.title);
@@ -295,6 +320,23 @@ ${criteria
               <X className="w-5 h-5" />
             </button>
           </div>
+
+          {/* Realtime Collaboration Presence Bar */}
+          {decisionId && mode === 'saved' && (
+            <RealtimePresenceBar
+              connectionStatus={connectionStatus}
+              activeParticipants={activeParticipants}
+              conflictState={conflictState}
+              onDismissConflict={dismissConflict}
+              onReviewConflict={() => {
+                if (decisionId) {
+                  loadDecision(decisionId);
+                  dismissConflict();
+                }
+              }}
+              onReconnect={reconnect}
+            />
+          )}
 
           {/* Selector & Action Ribbon */}
           <div className="p-3 sm:p-4 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 shrink-0">

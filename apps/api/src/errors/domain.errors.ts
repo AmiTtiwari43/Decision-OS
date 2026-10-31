@@ -440,3 +440,21 @@ export class SnapshotNotFoundError extends Error {
     Object.setPrototypeOf(this, SnapshotNotFoundError.prototype);
   }
 }
+
+/**
+ * Thrown when an optimistic concurrency conflict is detected.
+ */
+export class DecisionConflictError extends Error {
+  readonly statusCode = 409;
+  readonly currentVersion: number;
+
+  constructor(
+    currentVersion: number,
+    message = `Decision has been modified by another participant (current version: ${currentVersion})`
+  ) {
+    super(message);
+    this.name = 'DecisionConflictError';
+    this.currentVersion = currentVersion;
+    Object.setPrototypeOf(this, DecisionConflictError.prototype);
+  }
+}

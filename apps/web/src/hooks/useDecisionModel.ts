@@ -367,8 +367,12 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       let savedDoc: DecisionDto;
 
       if (decisionId) {
-        // Update existing decision
-        savedDoc = await apiClient.updateDecision(decisionId, payload as UpdateDecisionPayload);
+        // Update existing decision with optimistic concurrency check
+        const updatePayload: UpdateDecisionPayload = {
+          ...(payload as UpdateDecisionPayload),
+          expectedVersion: serverDecision?.version,
+        };
+        savedDoc = await apiClient.updateDecision(decisionId, updatePayload);
         // If analysis is null on the returned doc, explicitly trigger analysis
         if (!savedDoc.analysis) {
           savedDoc = await apiClient.analyzeDecision(decisionId);
@@ -413,7 +417,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       // Preserves dataset and weights intact for user correction/retry
       return null;
     }
-  }, [saveStatus, dataset, weights, lockedIds, decisionId]);
+  }, [saveStatus, dataset, weights, lockedIds, decisionId, serverDecision]);
 
   /**
    * Retrieves an authoritative persisted decision by ID via GET /api/decisions/:id.

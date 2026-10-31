@@ -14,6 +14,7 @@ import {
   type DecisionRole,
 } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { collaborationService } from './collaboration.service.js';
 import type {
   DecisionCriterion,
   DecisionOption,
@@ -26,6 +27,7 @@ import {
   InvalidDecisionIdError,
   IncompleteScoresError,
   EngineValidationError,
+  DecisionConflictError,
 } from '../errors/domain.errors.js';
 import type { MissingScorePair } from '../errors/domain.errors.js';
 
@@ -146,6 +148,7 @@ function stripServerFields(input: Record<string, unknown>): Record<string, unkno
   delete copy.engineVersion;
   delete copy.calculationVersion;
   delete copy.ownerId;
+  delete copy.expectedVersion;
   return copy;
 }
 
@@ -249,7 +252,20 @@ export async function updateDecision(
 
   await authorizeDecisionAction(existing, 'edit', requester);
 
+  // Optimistic concurrency check
+  if (data.expectedVersion !== undefined && typeof data.expectedVersion === 'number') {
+    const currentVersion = existing.version || 1;
+    if (data.expectedVersion !== currentVersion) {
+      throw new DecisionConflictError(
+        currentVersion,
+        `Decision has been modified by another participant (current version: ${currentVersion}, expected: ${data.expectedVersion})`
+      );
+    }
+  }
+
+  const nextVersion = (existing.version || 1) + 1;
   const sanitized = stripServerFields(data);
+  (sanitized as any).version = nextVersion;
 
   const doc = await decisionRepository.update(id, sanitized as Parameters<typeof decisionRepository.update>[1]);
   if (!doc) {
@@ -263,10 +279,10 @@ export async function updateDecision(
   let result = doc;
   if (criteria.length > 0 && options.length > 0 && isComplete(criteria, options, scores)) {
     const analysis = runAnalysis(criteria, options, scores);
-    const withAnalysis = await decisionRepository.update(id, { analysis });
+    const withAnalysis = await decisionRepository.update(id, { analysis, version: nextVersion });
     result = withAnalysis ?? doc;
   } else {
-    const cleared = await decisionRepository.update(id, { analysis: null });
+    const cleared = await decisionRepository.update(id, { analysis: null, version: nextVersion });
     result = cleared ?? doc;
   }
 
@@ -280,6 +296,23 @@ export async function updateDecision(
     summary: `Updated decision "${result.title}"`,
     diff: {
       changedFields: Object.keys(data),
+    },
+  });
+
+  // Broadcast real-time collaboration event
+  collaborationService.publishEvent(id, {
+    type: 'decision.updated',
+    decisionId: id,
+    version: result.version || nextVersion,
+    actorId: requester?.id,
+    actorName: requester?.name || requester?.email,
+    payload: {
+      title: result.title,
+      description: result.description,
+      criteria: result.criteria,
+      options: result.options,
+      scores: result.scores,
+      version: result.version || nextVersion,
     },
   });
 
@@ -350,7 +383,8 @@ export async function analyzeDecision(
   }
 
   const analysis = runAnalysis(criteria, options, scores);
-  const updated = await decisionRepository.update(id, { analysis });
+  const nextVersion = (doc.version || 1) + 1;
+  const updated = await decisionRepository.update(id, { analysis, version: nextVersion });
   const result = updated ?? doc;
 
   const winnerName = options.find(o => o.id === analysis.winnerId)?.name || (analysis.isTie ? 'Tie' : 'undetermined');
@@ -368,6 +402,24 @@ export async function analyzeDecision(
         winnerName,
         engineVersion: analysis.engineVersion,
       },
+    },
+  });
+
+  // Broadcast real-time calculation update
+  collaborationService.publishEvent(id, {
+    type: 'decision.calculation.updated',
+    decisionId: id,
+    version: result.version || nextVersion,
+    actorId: requester?.id,
+    actorName: requester?.name || requester?.email,
+    payload: {
+      winnerId: analysis.winnerId,
+      winnerName,
+      engineVersion: analysis.engineVersion,
+      normalizedWeights: analysis.normalizedWeights,
+      evaluations: analysis.evaluations,
+      isTie: analysis.isTie,
+      version: result.version || nextVersion,
     },
   });
 

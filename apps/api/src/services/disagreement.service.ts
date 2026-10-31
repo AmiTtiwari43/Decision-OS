@@ -12,6 +12,7 @@ import {
 } from '../repositories/index.js';
 import { authorizeDecisionAction } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { collaborationService } from './collaboration.service.js';
 import type { RequesterContext } from './decision.service.js';
 import {
   DecisionNotFoundError,
@@ -212,6 +213,21 @@ export class DisagreementService {
         },
       },
     });
+
+    if (input.status === 'resolved') {
+      collaborationService.publishEvent(decisionId, {
+        type: 'disagreement.resolved',
+        decisionId,
+        version: decision.version || 1,
+        actorId: requester?.id,
+        actorName: requester?.name || requester?.email,
+        payload: {
+          disagreementId,
+          explanation: input.resolutionExplanation,
+          resolvedByName: updatedDoc.resolvedByName,
+        },
+      });
+    }
 
     return {
       status: updatedDoc.status,

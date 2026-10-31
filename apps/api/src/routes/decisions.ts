@@ -14,6 +14,7 @@ import {
   InvalidDecisionIdError,
   IncompleteScoresError,
   EngineValidationError,
+  DecisionConflictError,
 } from '../errors/domain.errors.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -65,6 +66,17 @@ function handleServiceError(
       statusCode: 422,
       error: 'Unprocessable Entity',
       message: err.message,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof DecisionConflictError) {
+    reply.status(409).send({
+      statusCode: 409,
+      error: 'Conflict',
+      message: err.message,
+      currentVersion: err.currentVersion,
       requestId,
     });
     return;
