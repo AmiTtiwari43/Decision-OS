@@ -541,6 +541,199 @@ describe('Analytics API — /api/analytics and /api/decisions/:id/analytics', ()
       expect(res.statusCode).toBe(400);
       expect(res.json().message).toContain('startDate cannot be after endDate');
     });
+
+    it('rejects malformed date strings with 400 Bad Request', async () => {
+      const res = await app.inject({
+        method: 'GET',
+        url: '/api/analytics/overview?startDate=not-a-date',
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain('startDate must be a valid ISO 8601 date string');
+    });
+
+    it('handles ISO dates with explicit timezone offsets correctly', async () => {
+      // 2026-10-31T00:00:00+05:30 is equivalent to 2026-10-30T18:30:00.000Z
+      const startDateWithTz = '2026-10-01T00:00:00+05:30';
+      const endDateWithTz = '2026-10-31T23:59:59+05:30';
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/analytics/overview?startDate=${encodeURIComponent(startDateWithTz)}&endDate=${encodeURIComponent(endDateWithTz)}`,
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.json().timeframe.startDate).not.toBeNull();
+    });
+  });
+
+  describe('Adversarial & Guardrail Verification', () => {
+    it('rejects out-of-range simulation iterations (<100 or >10000) with 400', async () => {
+      const doc = await createDecision(
+        {
+          title: 'Guardrail Test Decision',
+          criteria: [{ id: 'c1', name: 'C1', weight: 100 }],
+          options: [{ id: 'o1', name: 'O1' }, { id: 'o2', name: 'O2' }],
+          scores: { o1: { c1: 90 }, o2: { c1: 80 } },
+        },
+        { id: userAId, email: 'analytics-user-a@example.com', name: 'User A', role: 'user' }
+      );
+
+      // iterations = 50 (< 100)
+      const resLow = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${doc._id.toString()}/analytics?iterations=50`,
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+      expect(resLow.statusCode).toBe(400);
+      expect(resLow.json().message).toContain('iterations must be an integer between 100 and 10000');
+
+      // iterations = 50000 (> 10000)
+      const resHigh = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${doc._id.toString()}/analytics?iterations=50000`,
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+      expect(resHigh.statusCode).toBe(400);
+      expect(resHigh.json().message).toContain('iterations must be an integer between 100 and 10000');
+    });
+
+    it('rejects out-of-range sigmaRelative (<0.01 or >0.50) with 400', async () => {
+      const doc = await createDecision(
+        {
+          title: 'Sigma Guardrail Decision',
+          criteria: [{ id: 'c1', name: 'C1', weight: 100 }],
+          options: [{ id: 'o1', name: 'O1' }, { id: 'o2', name: 'O2' }],
+          scores: { o1: { c1: 90 }, o2: { c1: 80 } },
+        },
+        { id: userAId, email: 'analytics-user-a@example.com', name: 'User A', role: 'user' }
+      );
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${doc._id.toString()}/analytics?sigmaRelative=0.9`,
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+      expect(res.statusCode).toBe(400);
+      expect(res.json().message).toContain('sigmaRelative must be a number between 0.01 and 0.50');
+    });
+
+    it('guarantees repeated analytics calls do NOT mutate source records', async () => {
+      const doc = await createDecision(
+        {
+          title: 'Immutability Verification Decision',
+          criteria: [
+            { id: 'c1', name: 'C1', weight: 60 },
+            { id: 'c2', name: 'C2', weight: 40 },
+          ],
+          options: [
+            { id: 'o1', name: 'Opt 1' },
+            { id: 'o2', name: 'Opt 2' },
+          ],
+          scores: {
+            o1: { c1: 85, c2: 75 },
+            o2: { c1: 65, c2: 95 },
+          },
+        },
+        { id: userAId, email: 'analytics-user-a@example.com', name: 'User A', role: 'user' }
+      );
+
+      const initialDoc = await DecisionModel.findById(doc._id).lean();
+      const initialUpdatedAt = initialDoc?.updatedAt;
+      const initialVersion = initialDoc?.calculationVersion;
+
+      // Execute 3 consecutive analytics calls with varying Monte Carlo parameters
+      for (let i = 0; i < 3; i++) {
+        const res = await app.inject({
+          method: 'GET',
+          url: `/api/decisions/${doc._id.toString()}/analytics?iterations=500&seed=${100 + i}`,
+          headers: { authorization: `Bearer ${userAToken}` },
+        });
+        expect(res.statusCode).toBe(200);
+      }
+
+      const finalDoc = await DecisionModel.findById(doc._id).lean();
+      expect(finalDoc?.calculationVersion).toBe(initialVersion);
+      expect(finalDoc?.updatedAt?.getTime()).toBe(initialUpdatedAt?.getTime());
+      expect(finalDoc?.scores).toEqual(initialDoc?.scores);
+      expect(finalDoc?.criteria).toEqual(initialDoc?.criteria);
+    });
+
+    it('accurately computes multi-expert criterion score spreads and tallies', async () => {
+      const doc = await createDecision(
+        {
+          title: 'Deliberation Spread Decision',
+          criteria: [
+            { id: 'tech', name: 'Technical Merit', weight: 60 },
+            { id: 'cost', name: 'Budget Feasibility', weight: 40 },
+          ],
+          options: [
+            { id: 'alpha', name: 'Alpha' },
+            { id: 'beta', name: 'Beta' },
+          ],
+          scores: {
+            alpha: { tech: 80, cost: 70 },
+            beta: { tech: 75, cost: 85 },
+          },
+        },
+        { id: userAId, email: 'analytics-user-a@example.com', name: 'User A', role: 'user' }
+      );
+
+      // Expert 1 submits: tech: 90, cost: 60, recommends alpha
+      await DecisionContributionModel.create({
+        decisionId: doc._id,
+        contributorId: userAId,
+        contributorName: 'User A',
+        contributorEmail: 'analytics-user-a@example.com',
+        status: 'submitted',
+        revision: 1,
+        recommendation: { preferredOptionId: 'alpha', rationale: 'Stronger technical foundation' },
+        criterionScores: { tech: 90, cost: 60 },
+      });
+
+      // Expert 2 submits: tech: 70, cost: 90, recommends beta
+      await DecisionContributionModel.create({
+        decisionId: doc._id,
+        contributorId: userBId,
+        contributorName: 'User B',
+        contributorEmail: 'analytics-user-b@example.com',
+        status: 'submitted',
+        revision: 1,
+        recommendation: { preferredOptionId: 'beta', rationale: 'Cost efficiency is critical' },
+        criterionScores: { tech: 70, cost: 90 },
+      });
+
+      const res = await app.inject({
+        method: 'GET',
+        url: `/api/decisions/${doc._id.toString()}/analytics`,
+        headers: { authorization: `Bearer ${userAToken}` },
+      });
+
+      expect(res.statusCode).toBe(200);
+      const data = res.json();
+      const techSpread = data.expertParticipation.scoreSpreadByCriterion.find((s: any) => s.criterionId === 'tech');
+      expect(techSpread.minScore).toBe(70);
+      expect(techSpread.maxScore).toBe(90);
+      expect(techSpread.averageScore).toBe(80);
+      expect(techSpread.scoreRange).toBe(20);
+
+      const costSpread = data.expertParticipation.scoreSpreadByCriterion.find((s: any) => s.criterionId === 'cost');
+      expect(costSpread.minScore).toBe(60);
+      expect(costSpread.maxScore).toBe(90);
+      expect(costSpread.averageScore).toBe(75);
+      expect(costSpread.scoreRange).toBe(30);
+
+      // Recommendation tally contains both
+      expect(data.expertParticipation.recommendationTally).toContainEqual({
+        optionId: 'alpha',
+        optionName: 'Alpha',
+        count: 1,
+      });
+      expect(data.expertParticipation.recommendationTally).toContainEqual({
+        optionId: 'beta',
+        optionName: 'Beta',
+        count: 1,
+      });
+    });
   });
 });
 
