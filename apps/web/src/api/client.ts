@@ -30,6 +30,10 @@ import type {
   AiCapability,
   AiAnalystResponseDto,
   ApplyProposalPayload,
+  DecisionAnalyticsDto,
+  DecisionAnalyticsQueryOptions,
+  WorkspaceAnalyticsDto,
+  WorkspaceAnalyticsQueryOptions,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -711,6 +715,62 @@ export class DecisionApiClient {
         body: JSON.stringify(payload),
       }
     );
+  }
+
+  // ─── Phase 10: Advanced Analytics API ───────────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/analytics — Retrieves multi-dimensional analytics for a specific decision.
+   */
+  async getDecisionAnalytics(
+    decisionId: string,
+    options: DecisionAnalyticsQueryOptions = {}
+  ): Promise<DecisionAnalyticsDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    const params = new URLSearchParams();
+    if (options.includeMonteCarlo !== undefined) {
+      params.set('includeMonteCarlo', String(options.includeMonteCarlo));
+    }
+    if (options.iterations !== undefined) {
+      params.set('iterations', String(options.iterations));
+    }
+    if (options.seed !== undefined) {
+      params.set('seed', String(options.seed));
+    }
+    if (options.sigmaRelative !== undefined) {
+      params.set('sigmaRelative', String(options.sigmaRelative));
+    }
+
+    const qs = params.toString();
+    const endpoint = `/api/decisions/${encodeURIComponent(cleanId)}/analytics${qs ? `?${qs}` : ''}`;
+    return this.request<DecisionAnalyticsDto>(endpoint, {
+      method: 'GET',
+    });
+  }
+
+  /**
+   * GET /api/analytics/overview — Retrieves portfolio-level analytics across accessible decisions.
+   */
+  async getWorkspaceAnalytics(
+    query: WorkspaceAnalyticsQueryOptions = {}
+  ): Promise<WorkspaceAnalyticsDto> {
+    const params = new URLSearchParams();
+    if (query.startDate) params.set('startDate', query.startDate);
+    if (query.endDate) params.set('endDate', query.endDate);
+
+    const qs = params.toString();
+    const endpoint = `/api/analytics/overview${qs ? `?${qs}` : ''}`;
+    return this.request<WorkspaceAnalyticsDto>(endpoint, {
+      method: 'GET',
+    });
   }
 }
 

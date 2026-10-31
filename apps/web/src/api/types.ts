@@ -392,3 +392,213 @@ export interface ApplyProposalPayload {
   type: 'add_criterion';
   criterion: ApplyProposalCriterionInput;
 }
+
+// ─── Phase 10: Advanced Analytics Types ─────────────────────────────────────
+
+export interface DecisionAnalyticsQueryOptions {
+  includeMonteCarlo?: boolean;
+  iterations?: number;
+  seed?: number;
+  sigmaRelative?: number;
+}
+
+export interface WorkspaceAnalyticsQueryOptions {
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface DecisionAnalyticsDto {
+  decisionId: string;
+  title: string;
+  description: string;
+  evaluatedAt: string | null;
+  outcome: 'decisive' | 'tie' | 'unscored';
+  isAuthoritative: boolean;
+  pointLead: number;
+  winner: { id: string; name: string } | null;
+  runnerUp: { id: string; name: string } | null;
+  criteriaImportance: Array<{
+    id: string;
+    name: string;
+    weight: number;
+    isLocked: boolean;
+    direction: 'benefit' | 'cost';
+    relativeShare: number;
+  }>;
+  optionsPerformance: Array<{
+    id: string;
+    name: string;
+    rank: number;
+    weightedScore: number;
+    unroundedScore: number;
+    contributions: Array<{
+      criterionId: string;
+      criterionName: string;
+      rawScore: number;
+      weightedPoints: number;
+      percentageOfTotal: number;
+    }>;
+  }>;
+  sensitivityAnalysis: {
+    analyticalTippingPoints: Array<{
+      criterionId: string;
+      criterionName: string;
+      currentWeight: number;
+      tippingPointWeight: number | null;
+      weightDeltaNeeded: number | null;
+      direction: 'increase' | 'decrease' | 'none';
+      feasibility: 'low-threshold' | 'medium-threshold' | 'unreachable';
+      wouldFlipToOptionId: string | null;
+      wouldFlipToOptionName: string | null;
+      summary: string;
+    }>;
+    optionScoreSensitivity: Array<{
+      criterionId: string;
+      criterionName: string;
+      weight: number;
+      scoreDeltaNeeded: number | null;
+      leaderThresholdScore: number | null;
+      challengerThresholdScore: number | null;
+      feasibility: 'feasible' | 'unreachable';
+      summary: string;
+    }>;
+    multiParameterCounterfactual: {
+      isFeasible: boolean;
+      totalWeightShiftL1: number;
+      netShiftAmount: number;
+      shifts: Array<{
+        criterionId: string;
+        criterionName: string;
+        currentWeight: number;
+        counterfactualWeight: number;
+        delta: number;
+      }>;
+      targetOptionId: string | null;
+      targetOptionName: string | null;
+      summary: string;
+    };
+  };
+  uncertaintyAnalysis: {
+    hasMonteCarlo: boolean;
+    iterations: number;
+    seed: number;
+    sigmaRelative: number;
+    distributionModel: 'Gaussian Box-Muller on unlocked weights';
+    metricInterpretation: 'win probability under the specified uncertainty model';
+    robustnessRating: 'robust' | 'moderate' | 'sensitive' | 'unavailable';
+    dominantOptionId: string | null;
+    dominantWinProbability: number | null;
+    optionResults: Array<{
+      optionId: string;
+      optionName: string;
+      winCount: number;
+      winProbability: number;
+    }>;
+  };
+  evidenceCoverage: {
+    totalEvidenceCount: number;
+    byTargetType: {
+      decision: number;
+      option: number;
+      criterion: number;
+      contribution: number;
+    };
+    bySourceType: {
+      url: number;
+      document: number;
+      excerpt: number;
+    };
+    optionsCoverage: Array<{
+      optionId: string;
+      optionName: string;
+      evidenceCount: number;
+      hasEvidence: boolean;
+    }>;
+    criteriaCoverage: Array<{
+      criterionId: string;
+      criterionName: string;
+      evidenceCount: number;
+      hasEvidence: boolean;
+    }>;
+    missingEvidenceTargets: {
+      options: Array<{ id: string; name: string }>;
+      criteria: Array<{ id: string; name: string }>;
+    };
+    methodologyDisclaimer: string;
+  };
+  expertParticipation: {
+    totalContributions: number;
+    submittedCount: number;
+    draftCount: number;
+    withdrawnCount: number;
+    isRoundLocked: boolean;
+    roundLockedAt: string | null;
+    recommendationTally: Array<{
+      optionId: string;
+      optionName: string;
+      count: number;
+    }>;
+    scoreSpreadByCriterion: Array<{
+      criterionId: string;
+      criterionName: string;
+      minScore: number | null;
+      maxScore: number | null;
+      averageScore: number | null;
+      scoreRange: number | null;
+    }>;
+    methodologyDisclaimer: string;
+  };
+}
+
+export interface WorkspaceAnalyticsDto {
+  generatedAt: string;
+  timeframe: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  decisionMetrics: {
+    totalDecisions: number;
+    statusDistribution: {
+      decisive: number;
+      tie: number;
+      unscored: number;
+    };
+    roundLockDistribution: {
+      locked: number;
+      open: number;
+    };
+    completionRate: number;
+    averagePointLead: number | null;
+  };
+  activityTrends: Array<{
+    period: string;
+    createdCount: number;
+  }>;
+  criteriaAndOptionsMetrics: {
+    totalCriteriaDefined: number;
+    averageCriteriaPerDecision: number;
+    totalOptionsDefined: number;
+    averageOptionsPerDecision: number;
+    topCriteriaNames: Array<{ name: string; count: number }>;
+  };
+  evidenceMetrics: {
+    totalEvidenceRecords: number;
+    decisionsWithEvidenceCount: number;
+    decisionEvidenceCoverageRate: number;
+    sourceTypeBreakdown: {
+      url: number;
+      document: number;
+      excerpt: number;
+    };
+    methodologyDisclaimer: string;
+  };
+  deliberationMetrics: {
+    totalContributions: number;
+    submittedContributions: number;
+    draftContributions: number;
+    withdrawnContributions: number;
+    decisionsWithContributionsCount: number;
+    averageContributionsPerDecision: number;
+    methodologyDisclaimer: string;
+  };
+}

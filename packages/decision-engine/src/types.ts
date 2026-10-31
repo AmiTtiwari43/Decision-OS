@@ -73,6 +73,35 @@ export interface EngineEvaluationInput {
   readonly monteCarloConfig?: MonteCarloConfig;
 }
 
+export interface OptionScoreSensitivityResult {
+  readonly criterionId: string;
+  readonly criterionName: string;
+  readonly weight: number;
+  readonly scoreDeltaNeeded: number | null;
+  readonly leaderThresholdScore: number | null;
+  readonly challengerThresholdScore: number | null;
+  readonly feasibility: 'feasible' | 'unreachable';
+  readonly summary: string;
+}
+
+export interface CounterfactualWeightShift {
+  readonly criterionId: string;
+  readonly criterionName: string;
+  readonly currentWeight: number;
+  readonly counterfactualWeight: number;
+  readonly delta: number;
+}
+
+export interface MultiParameterCounterfactualResult {
+  readonly isFeasible: boolean;
+  readonly totalWeightShiftL1: number;
+  readonly netShiftAmount: number;
+  readonly shifts: ReadonlyArray<CounterfactualWeightShift>;
+  readonly targetOptionId: string | null;
+  readonly targetOptionName: string | null;
+  readonly summary: string;
+}
+
 export interface EngineResult {
   readonly engineVersion: '1.0.0';
   readonly evaluatedAt: string;

@@ -24,6 +24,7 @@ import {
   Users,
   Lock,
   BookOpen,
+  BarChart3,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -33,6 +34,7 @@ import { ShareModal } from './ShareModal.js';
 import { ContributionsModal } from './ContributionsModal.js';
 import { EvidenceModal } from './EvidenceModal.js';
 import { AiAnalystModal } from './AiAnalystModal.js';
+import { AnalyticsModal } from './AnalyticsModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -87,6 +89,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
   const [isAiAnalystModalOpen, setIsAiAnalystModalOpen] = useState(false);
+  const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -802,6 +805,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 10: Advanced Analytics Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsAnalyticsModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Open Advanced Decision Analytics"
+                >
+                  <BarChart3 className="w-4 h-4 text-cyan-400" />
+                  <span>Analytics</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -860,6 +875,13 @@ ${criteria
               model.loadDecision(updated._id);
             }
           }}
+        />
+
+        {/* Phase 10 Advanced Analytics Modal */}
+        <AnalyticsModal
+          isOpen={isAnalyticsModalOpen}
+          onClose={() => setIsAnalyticsModalOpen(false)}
+          decision={serverDecision}
         />
       </div>
     </AnimatePresence>

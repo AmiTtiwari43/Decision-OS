@@ -18,12 +18,14 @@ import { EasterEgg } from './components/EasterEgg';
 import { ScrollToTop } from './components/ScrollToTop';
 import { AuthModal } from './components/AuthModal';
 import { AcceptInvitationModal } from './components/AcceptInvitationModal';
+import { WorkspaceAnalyticsModal } from './components/WorkspaceAnalyticsModal';
 import { AuthProvider } from './context/AuthContext';
 import { useDecisionModel } from './hooks/useDecisionModel';
 
 function AppContent() {
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [isWorkspaceAnalyticsOpen, setIsWorkspaceAnalyticsOpen] = useState(false);
   const [incomingInviteToken, setIncomingInviteToken] = useState<string | null>(null);
 
   const decisionModel = useDecisionModel();
@@ -95,6 +97,7 @@ function AppContent() {
       <Navbar
         onOpenSandbox={() => setIsSandboxOpen(true)}
         onOpenAudit={() => setIsAuditOpen(true)}
+        onOpenAnalytics={() => setIsWorkspaceAnalyticsOpen(true)}
       />
 
       {/* Main Narrative Structure */}
@@ -190,6 +193,11 @@ function AppContent() {
           await loadDecision(newDecisionId);
           setIsSandboxOpen(true);
         }}
+      />
+      {/* Phase 10 Workspace Analytics Modal */}
+      <WorkspaceAnalyticsModal
+        isOpen={isWorkspaceAnalyticsOpen}
+        onClose={() => setIsWorkspaceAnalyticsOpen(false)}
       />
     </div>
   );

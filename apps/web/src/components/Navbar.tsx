@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, Command, Volume2, VolumeX, User, LogOut } from 'lucide-react';
+import { Sparkles, Command, Volume2, VolumeX, User, LogOut, PieChart } from 'lucide-react';
 import { Logo } from './Logo';
 import { sound } from '../utils/audioFx';
 import { useAuth } from '../hooks/useAuth';
@@ -7,9 +7,10 @@ import { useAuth } from '../hooks/useAuth';
 interface NavbarProps {
   onOpenSandbox: () => void;
   onOpenAudit: () => void;
+  onOpenAnalytics?: () => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit }) => {
+export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit, onOpenAnalytics }) => {
   const [scrolled, setScrolled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(sound.isSoundEnabled());
   const { user, isAuthenticated, logout, openAuthModal } = useAuth();
@@ -86,6 +87,19 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit }) =>
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Workspace Analytics Button */}
+          {isAuthenticated && onOpenAnalytics && (
+            <button
+              onClick={onOpenAnalytics}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-200 hover:text-white bg-surface/70 hover:bg-surface border border-border-subtle hover:border-signal/40 transition-all cursor-pointer shadow-sm"
+              title="Open Workspace Analytics"
+              aria-label="Open Workspace Analytics"
+            >
+              <PieChart className="w-3.5 h-3.5 text-signal" />
+              <span className="hidden sm:inline">Analytics</span>
+            </button>
+          )}
+
           {/* User Pill / Sign In Trigger */}
           {isAuthenticated && user ? (
             <div className="flex items-center gap-1.5 p-1 pl-2 bg-surface/80 border border-border-subtle rounded-lg text-xs">

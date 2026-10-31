@@ -16,6 +16,10 @@ export { validateInput } from './validation';
 export { evaluateOptions } from './scoring';
 export { calculateSensitivity } from './sensitivity';
 export { runMonteCarloSimulation, createMulberry32 } from './monteCarlo';
+export {
+  calculateOptionScoreSensitivity,
+  calculateMultiParameterCounterfactual,
+} from './counterfactual';
 
 export function evaluateDecision(input: EngineEvaluationInput): EngineResult {
   const criteria = input.criteria;

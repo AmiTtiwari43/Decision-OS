@@ -772,3 +772,257 @@ Owner, Editor, or Admin (`403 Forbidden` for Viewers or Contributors).
 
 #### Response: `200 OK`
 Returns the updated `DecisionDto`.
+
+
+---
+
+## Phase 10: Advanced Analytics Endpoints
+
+### 30. Get Decision Analytics
+`GET /api/decisions/:id/analytics`
+
+Retrieves multi-dimensional analytics for a specific decision, combining authoritative MCDA engine outputs, criterion importance, option performance breakdown, analytical single-criterion tipping points, option-score sensitivity, minimal combined weight counterfactuals ($L_1$ optimization), seeded Gaussian Monte Carlo uncertainty simulation, empirical evidence coverage with missing-evidence indicators, and expert deliberation participation patterns.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Collaborator (`viewer`, `contributor`, `editor`, `owner`). Unrelated users receive `404 Not Found` (enumeration defense).
+
+#### Query Parameters
+- `includeMonteCarlo` (boolean, optional, default: `true`): Whether to include Monte Carlo robustness simulations.
+- `iterations` (integer, optional, default: `1000`, min: `100`, max: `10000`): Simulation sample size.
+- `seed` (integer, optional, default: `42`): Mulberry32 deterministic PRNG seed.
+- `sigmaRelative` (number, optional, default: `0.15`, min: `0.01`, max: `0.50`): Relative standard deviation for Gaussian weight perturbations.
+
+#### Response: `200 OK`
+```json
+{
+  "decisionId": "6512bd...",
+  "title": "Cloud Architecture Evaluation",
+  "description": "AWS vs GCP comparison",
+  "evaluatedAt": "2026-10-31T00:00:00.000Z",
+  "outcome": "decisive",
+  "isAuthoritative": true,
+  "pointLead": 5.5,
+  "winner": { "id": "gcp", "name": "Google Cloud Platform" },
+  "runnerUp": { "id": "aws", "name": "Amazon Web Services" },
+  "criteriaImportance": [
+    {
+      "id": "perf",
+      "name": "Performance",
+      "weight": 40,
+      "isLocked": false,
+      "direction": "benefit",
+      "relativeShare": 40.0
+    }
+  ],
+  "optionsPerformance": [
+    {
+      "id": "gcp",
+      "name": "Google Cloud Platform",
+      "rank": 1,
+      "weightedScore": 78.5,
+      "unroundedScore": 78.502,
+      "contributions": [
+        {
+          "criterionId": "perf",
+          "criterionName": "Performance",
+          "rawScore": 80,
+          "weightedPoints": 32.0,
+          "percentageOfTotal": 40.8
+        }
+      ]
+    }
+  ],
+  "sensitivityAnalysis": {
+    "analyticalTippingPoints": [
+      {
+        "criterionId": "perf",
+        "criterionName": "Performance",
+        "currentWeight": 40,
+        "tippingPointWeight": 52.3,
+        "weightDeltaNeeded": 12.3,
+        "direction": "increase",
+        "feasibility": "low-threshold",
+        "wouldFlipToOptionId": "aws",
+        "wouldFlipToOptionName": "Amazon Web Services",
+        "summary": "Shifting Performance to 52.3% flips winner to AWS."
+      }
+    ],
+    "optionScoreSensitivity": [
+      {
+        "criterionId": "perf",
+        "criterionName": "Performance",
+        "weight": 40,
+        "scoreDeltaNeeded": 13.8,
+        "leaderThresholdScore": 66.2,
+        "challengerThresholdScore": 83.8,
+        "feasibility": "feasible",
+        "summary": "Tie reached via score shift."
+      }
+    ],
+    "multiParameterCounterfactual": {
+      "isFeasible": true,
+      "totalWeightShiftL1": 15.0,
+      "netShiftAmount": 7.5,
+      "shifts": [
+        {
+          "criterionId": "perf",
+          "criterionName": "Performance",
+          "currentWeight": 40,
+          "counterfactualWeight": 47.5,
+          "delta": 7.5
+        }
+      ],
+      "targetOptionId": "aws",
+      "targetOptionName": "Amazon Web Services",
+      "summary": "Smallest counterfactual shift: 7.5% weight relocated inverts winner."
+    }
+  },
+  "uncertaintyAnalysis": {
+    "hasMonteCarlo": true,
+    "iterations": 1000,
+    "seed": 42,
+    "sigmaRelative": 0.15,
+    "distributionModel": "Gaussian Box-Muller on unlocked weights",
+    "metricInterpretation": "win probability under the specified uncertainty model",
+    "robustnessRating": "robust",
+    "dominantOptionId": "gcp",
+    "dominantWinProbability": 82.4,
+    "optionResults": [
+      {
+        "optionId": "gcp",
+        "optionName": "Google Cloud Platform",
+        "winCount": 824,
+        "winProbability": 82.4
+      }
+    ]
+  },
+  "evidenceCoverage": {
+    "totalEvidenceCount": 3,
+    "byTargetType": { "decision": 1, "option": 1, "criterion": 1, "contribution": 0 },
+    "bySourceType": { "url": 2, "document": 1, "excerpt": 0 },
+    "optionsCoverage": [
+      {
+        "optionId": "gcp",
+        "optionName": "Google Cloud Platform",
+        "evidenceCount": 1,
+        "hasEvidence": true
+      }
+    ],
+    "criteriaCoverage": [
+      {
+        "criterionId": "perf",
+        "criterionName": "Performance",
+        "evidenceCount": 1,
+        "hasEvidence": true
+      }
+    ],
+    "missingEvidenceTargets": {
+      "options": [{ "id": "aws", "name": "Amazon Web Services" }],
+      "criteria": [{ "id": "cost", "name": "Cost" }]
+    },
+    "methodologyDisclaimer": "Evidence coverage reflects the presence of documented citations and excerpts. Evidence quantity does NOT imply evidence credibility, accuracy, or quality."
+  },
+  "expertParticipation": {
+    "totalContributions": 2,
+    "submittedCount": 2,
+    "draftCount": 0,
+    "withdrawnCount": 0,
+    "isRoundLocked": false,
+    "roundLockedAt": null,
+    "recommendationTally": [
+      { "optionId": "gcp", "optionName": "Google Cloud Platform", "count": 2 }
+    ],
+    "scoreSpreadByCriterion": [
+      {
+        "criterionId": "perf",
+        "criterionName": "Performance",
+        "minScore": 75,
+        "maxScore": 85,
+        "averageScore": 80.0,
+        "scoreRange": 10.0
+      }
+    ],
+    "methodologyDisclaimer": "Participation metrics measure submitted expert perspectives. Expert signals are descriptive and do not constitute reputation, calibration, or truth scores."
+  }
+}
+```
+
+---
+
+### 31. Get Workspace Portfolio Analytics
+`GET /api/analytics/overview`
+
+Retrieves portfolio-level aggregation metrics across all decisions owned by or shared with the authenticated user.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Authenticated User.
+
+#### Query Parameters
+- `startDate` (string, optional, ISO 8601): Filters decisions created on or after this date.
+- `endDate` (string, optional, ISO 8601): Filters decisions created on or before this date.
+
+#### Response: `200 OK`
+```json
+{
+  "generatedAt": "2026-10-31T00:00:00.000Z",
+  "timeframe": {
+    "startDate": "2026-10-01T00:00:00.000Z",
+    "endDate": null
+  },
+  "decisionMetrics": {
+    "totalDecisions": 4,
+    "statusDistribution": {
+      "decisive": 3,
+      "tie": 1,
+      "unscored": 0
+    },
+    "roundLockDistribution": {
+      "locked": 1,
+      "open": 3
+    },
+    "completionRate": 100.0,
+    "averagePointLead": 6.2
+  },
+  "activityTrends": [
+    {
+      "period": "2026-10",
+      "createdCount": 4
+    }
+  ],
+  "criteriaAndOptionsMetrics": {
+    "totalCriteriaDefined": 16,
+    "averageCriteriaPerDecision": 4.0,
+    "totalOptionsDefined": 10,
+    "averageOptionsPerDecision": 2.5,
+    "topCriteriaNames": [
+      { "name": "Performance", "count": 3 }
+    ]
+  },
+  "evidenceMetrics": {
+    "totalEvidenceRecords": 8,
+    "decisionsWithEvidenceCount": 3,
+    "decisionEvidenceCoverageRate": 75.0,
+    "sourceTypeBreakdown": {
+      "url": 5,
+      "document": 2,
+      "excerpt": 1
+    },
+    "methodologyDisclaimer": "Evidence coverage rate measures decisions that possess documented supporting citations or excerpts. High coverage does not guarantee evidence credibility or accuracy."
+  },
+  "deliberationMetrics": {
+    "totalContributions": 6,
+    "submittedContributions": 5,
+    "draftContributions": 1,
+    "withdrawnContributions": 0,
+    "decisionsWithContributionsCount": 3,
+    "averageContributionsPerDecision": 1.5,
+    "methodologyDisclaimer": "Deliberation metrics reflect stakeholder participation counts. Scores are unweighted by reputation in Phase 10."
+  }
+}
+```
