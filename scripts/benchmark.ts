@@ -278,7 +278,7 @@ export async function runBenchmarks(): Promise<Record<string, unknown>> {
   // 3. FASTIFY API ENDPOINT BENCHMARKS
   // -----------------------------------------------------------------
   console.log('--- 3. Fastify API Response Latency Profiling ---');
-  const app = await buildApp();
+  const app = await buildApp({ enableRateLimit: false });
   await app.ready();
 
   const userToken = app.jwt.sign({

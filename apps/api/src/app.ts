@@ -21,6 +21,7 @@ import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
   env?: Env;
+  enableRateLimit?: boolean;
 }
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
@@ -44,7 +45,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   // Global Rate Limiting
-  if (currentEnv.NODE_ENV !== 'test') {
+  if (options.enableRateLimit !== false && currentEnv.NODE_ENV !== 'test' && !process.env.BENCHMARK) {
     await app.register(rateLimit, {
       max: 1000,
       timeWindow: '1 minute',
