@@ -173,9 +173,10 @@ export class SnapshotService {
     }
 
     const decision = await decisionRepository.findById(snapshot.decisionId.toString());
-    if (decision) {
-      await authorizeDecisionAction(decision, 'read', requester);
+    if (!decision) {
+      throw new DecisionNotFoundError(snapshot.decisionId.toString());
     }
+    await authorizeDecisionAction(decision, 'read', requester);
 
     return {
       snapshotId: snapshot.snapshotId,

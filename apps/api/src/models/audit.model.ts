@@ -89,6 +89,7 @@ AuditEventSchema.index({ decisionId: 1, timestamp: -1 });
 AuditEventSchema.index({ decisionId: 1, action: 1 });
 AuditEventSchema.index({ decisionId: 1, entityType: 1 });
 AuditEventSchema.index({ decisionId: 1, timestamp: 1 });
+AuditEventSchema.index({ decisionId: 1, previousEventHash: 1 }, { unique: true });
 
 // Strictly enforce append-only semantics: prevent updates and deletions on audit records
 AuditEventSchema.pre('updateOne', function () {

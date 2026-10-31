@@ -66,7 +66,7 @@ export class ExportService {
     const [evidenceList, contributionsList, disagreementsList, predictionsList, chainCheck] =
       await Promise.all([
         evidenceRepository.list({ decisionId }),
-        contributionRepository.listByDecision(decisionId),
+        contributionRepository.listByDecision(decisionId, requester?.id),
         disagreementRepository.listByDecision(decisionId),
         predictionRepository.listByDecision(decisionId),
         auditService.verifyChainIntegrity(decisionId, requester),
@@ -74,8 +74,12 @@ export class ExportService {
 
     // Privacy filter: Only show submitted contributions, or contributor's own draft
     const sanitizedContributions = contributionsList.filter(
-      (c: { status: string; contributorId: { toString(): string } }) =>
-        c.status === 'submitted' || (requester && c.contributorId.toString() === requester.id)
+      (c: { status: string; contributorId: unknown }) => {
+        const cId = (c.contributorId as { _id?: { toString(): string } })?._id
+          ? (c.contributorId as { _id: { toString(): string } })._id.toString()
+          : String(c.contributorId);
+        return c.status === 'submitted' || (requester && cId === requester.id);
+      }
     );
 
     // Fetch calibration overview if predictions exist
@@ -136,17 +140,22 @@ export class ExportService {
             summary: e.userSummary,
             createdAt: e.createdAt,
           })),
-          expertContributions: sanitizedContributions.map(c => ({
-            id: c._id.toString(),
-            contributorId: c.contributorId.toString(),
-            status: c.status,
-            preferredOptionId: c.recommendation?.preferredOptionId,
-            rationale: c.recommendation?.rationale,
-            criterionScores: c.criterionScores,
-            confidence: c.confidence,
-            revision: c.revision,
-            submittedAt: c.submittedAt,
-          })),
+          expertContributions: sanitizedContributions.map(c => {
+            const cId = (c.contributorId as { _id?: { toString(): string } })?._id
+              ? (c.contributorId as { _id: { toString(): string } })._id.toString()
+              : String(c.contributorId);
+            return {
+              id: c._id.toString(),
+              contributorId: cId,
+              status: c.status,
+              preferredOptionId: c.recommendation?.preferredOptionId,
+              rationale: c.recommendation?.rationale,
+              criterionScores: c.criterionScores,
+              confidence: c.confidence,
+              revision: c.revision,
+              submittedAt: c.submittedAt,
+            };
+          }),
           disagreements: disagreementsList.map(d => ({
             id: d.disagreementId,
             status: d.status,

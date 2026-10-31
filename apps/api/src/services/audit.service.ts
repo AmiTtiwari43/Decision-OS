@@ -35,6 +35,21 @@ export interface RecordAuditInput {
   timestamp?: Date;
 }
 
+function canonicalizeJson(obj: unknown): unknown {
+  if (obj === null || typeof obj !== 'object') {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(canonicalizeJson);
+  }
+  const sortedKeys = Object.keys(obj as Record<string, unknown>).sort();
+  const result: Record<string, unknown> = {};
+  for (const key of sortedKeys) {
+    result[key] = canonicalizeJson((obj as Record<string, unknown>)[key]);
+  }
+  return result;
+}
+
 export function computeCanonicalEventHash(event: {
   eventId: string;
   decisionId: string;
@@ -49,19 +64,21 @@ export function computeCanonicalEventHash(event: {
   schemaVersion: number;
 }): string {
   const ts = event.timestamp instanceof Date ? event.timestamp.toISOString() : new Date(event.timestamp).toISOString();
-  const canonical = JSON.stringify({
-    action: event.action,
-    actorId: event.actorId,
-    decisionId: event.decisionId,
-    diff: event.diff ?? null,
-    entityId: event.entityId,
-    entityType: event.entityType,
-    eventId: event.eventId,
-    previousEventHash: event.previousEventHash,
-    schemaVersion: event.schemaVersion || 1,
-    summary: event.summary,
-    timestamp: ts,
-  });
+  const canonical = JSON.stringify(
+    canonicalizeJson({
+      action: event.action,
+      actorId: event.actorId,
+      decisionId: event.decisionId,
+      diff: event.diff ?? null,
+      entityId: event.entityId,
+      entityType: event.entityType,
+      eventId: event.eventId,
+      previousEventHash: event.previousEventHash,
+      schemaVersion: event.schemaVersion || 1,
+      summary: event.summary,
+      timestamp: ts,
+    })
+  );
 
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
@@ -102,43 +119,59 @@ export class AuditService {
       }
     }
 
-    // Determine previousEventHash from the latest audit record for this decision
-    const latestEvent = await auditRepository.getLatestByDecisionId(decisionId);
-    const previousEventHash = latestEvent?.eventHash || GENESIS_PREVIOUS_HASH;
-    const schemaVersion = 1;
+    // Determine previousEventHash from the latest audit record for this decision with retry on concurrent contention
+    const maxAttempts = 5;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        const latestEvent = await auditRepository.getLatestByDecisionId(decisionId);
+        const previousEventHash = latestEvent?.eventHash || GENESIS_PREVIOUS_HASH;
+        const schemaVersion = 1;
 
-    const eventHash = computeCanonicalEventHash({
-      eventId,
-      decisionId,
-      actorId,
-      action,
-      entityType,
-      entityId,
-      summary,
-      diff,
-      timestamp,
-      previousEventHash,
-      schemaVersion,
-    });
+        const eventHash = computeCanonicalEventHash({
+          eventId,
+          decisionId,
+          actorId,
+          action,
+          entityType,
+          entityId,
+          summary,
+          diff,
+          timestamp,
+          previousEventHash,
+          schemaVersion,
+        });
 
-    const eventPayload: Omit<IAuditEvent, 'createdAt' | 'updatedAt'> = {
-      eventId,
-      decisionId: new mongoose.Types.ObjectId(decisionId),
-      actorId,
-      actorEmail,
-      actorName,
-      action,
-      entityType,
-      entityId,
-      summary,
-      diff,
-      timestamp,
-      eventHash,
-      previousEventHash,
-      schemaVersion,
-    };
+        const eventPayload: Omit<IAuditEvent, 'createdAt' | 'updatedAt'> = {
+          eventId,
+          decisionId: new mongoose.Types.ObjectId(decisionId),
+          actorId,
+          actorEmail,
+          actorName,
+          action,
+          entityType,
+          entityId,
+          summary,
+          diff,
+          timestamp,
+          eventHash,
+          previousEventHash,
+          schemaVersion,
+        };
 
-    return auditRepository.create(eventPayload);
+        return await auditRepository.create(eventPayload);
+      } catch (err: unknown) {
+        // If MongoDB duplicate key on { decisionId, previousEventHash } occurred due to concurrent writes, retry with new chain head
+        const isDuplicateKey =
+          err && typeof err === 'object' && ('code' in err || 'errorLabels' in err) && (err as { code?: number }).code === 11000;
+        if (isDuplicateKey && attempt < maxAttempts - 1) {
+          await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    throw new Error(`Failed to record audit event for decision ${decisionId} after ${maxAttempts} attempts.`);
   }
 
   /**

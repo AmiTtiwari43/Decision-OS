@@ -8,9 +8,10 @@ import { UserModel } from '../src/models/user.model';
 import { DecisionAccessGrantModel } from '../src/models/decisionAccess.model';
 import { AuditEventModel } from '../src/models/audit.model';
 import { DecisionSnapshotModel } from '../src/models/snapshot.model';
-import { createDecision, analyzeDecision } from '../src/services/decision.service';
+import { createDecision, analyzeDecision, updateDecision } from '../src/services/decision.service';
 import { auditService, GENESIS_PREVIOUS_HASH } from '../src/services/audit.service';
 import { sanitizeCsvCell } from '../src/services/export.service';
+import { contributionRepository } from '../src/repositories/index';
 
 const TEST_MONGODB_URI =
   process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
@@ -504,6 +505,175 @@ describe('Phase 13: Audit, History & Export System', () => {
 
     const refreshed = await DecisionModel.findById(decision._id);
     expect(JSON.stringify(refreshed?.analysis)).toBe(initialAnalysis);
+  });
+
+  // ─── 5. Adversarial Audit & Security Verification ───────────────────────────
+
+  it('prevents audit event creation on failed domain operations', async () => {
+    const decision = await createTestDecision();
+    const countBefore = await AuditEventModel.countDocuments({ decisionId: decision._id });
+
+    // Attempt invalid update with negative criterion weight
+    await expect(
+      updateDecision(
+        decision._id.toString(),
+        {
+          criteria: [{ id: 'cost', name: 'Cost', weight: -10 }],
+        },
+        { id: ownerId, email: 'audit-owner@example.com' }
+      )
+    ).rejects.toThrow();
+
+    const countAfter = await AuditEventModel.countDocuments({ decisionId: decision._id });
+    expect(countAfter).toBe(countBefore);
+  });
+
+  it('detects tampering when an event is deleted or corrupted in the middle of the chain', async () => {
+    const decision = await createTestDecision();
+    await analyzeDecision(decision._id.toString(), {
+      id: ownerId,
+      email: 'audit-owner@example.com',
+    });
+    await updateDecision(
+      decision._id.toString(),
+      { description: 'Updated description for chaining' },
+      { id: ownerId, email: 'audit-owner@example.com' }
+    );
+
+    const events = await AuditEventModel.find({ decisionId: decision._id }).sort({ timestamp: 1 });
+    expect(events.length).toBe(3);
+
+    // Tamper: delete the middle event directly in raw Mongo collection
+    await AuditEventModel.collection.deleteOne({ eventId: events[1].eventId });
+
+    const verification = await auditService.verifyChainIntegrity(decision._id.toString(), {
+      id: ownerId,
+      email: 'audit-owner@example.com',
+    });
+
+    expect(verification.isValid).toBe(false);
+    expect(verification.reason).toContain('Previous hash linkage broken');
+    expect(verification.brokenAtEventId).toBe(events[2].eventId);
+  });
+
+  it('handles concurrent audit event creation without breaking the hash chain (optimistic concurrency)', async () => {
+    const decision = await createTestDecision();
+
+    // Fire 4 concurrent audit events
+    await Promise.all([
+      auditService.recordEvent({
+        decisionId: decision._id.toString(),
+        actor: { id: ownerId, email: 'audit-owner@example.com' },
+        action: 'decision.updated',
+        entityType: 'decision',
+        entityId: decision._id.toString(),
+        summary: 'Concurrent Event A',
+      }),
+      auditService.recordEvent({
+        decisionId: decision._id.toString(),
+        actor: { id: editorId, email: 'audit-editor@example.com' },
+        action: 'decision.updated',
+        entityType: 'decision',
+        entityId: decision._id.toString(),
+        summary: 'Concurrent Event B',
+      }),
+      auditService.recordEvent({
+        decisionId: decision._id.toString(),
+        actor: { id: viewerId, email: 'audit-viewer@example.com' },
+        action: 'decision.updated',
+        entityType: 'decision',
+        entityId: decision._id.toString(),
+        summary: 'Concurrent Event C',
+      }),
+      auditService.recordEvent({
+        decisionId: decision._id.toString(),
+        actor: { id: ownerId, email: 'audit-owner@example.com' },
+        action: 'decision.updated',
+        entityType: 'decision',
+        entityId: decision._id.toString(),
+        summary: 'Concurrent Event D',
+      }),
+    ]);
+
+    const verification = await auditService.verifyChainIntegrity(decision._id.toString(), {
+      id: ownerId,
+      email: 'audit-owner@example.com',
+    });
+
+    expect(verification.isValid).toBe(true);
+    // 1 root event + 4 concurrent events = 5 total events
+    expect(verification.totalEventsChecked).toBe(5);
+  });
+
+  it('strictly blocks unauthorized users from accessing snapshot details of deleted decisions (orphaned snapshot protection)', async () => {
+    const decision = await createTestDecision();
+
+    const snap = await app.inject({
+      method: 'POST',
+      url: `/api/decisions/${decision._id}/snapshots`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: { reason: 'milestone', note: 'Pre-delete Snapshot' },
+    });
+    const snapshotId = JSON.parse(snap.payload).snapshotId;
+
+    // Delete the decision directly in MongoDB collection (simulating deleted decision with retained snapshot)
+    await DecisionModel.collection.deleteOne({ _id: decision._id });
+
+    // Unauthorized query must receive 404 (not leak snapshot)
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/decisions/${decision._id}/snapshots/${snapshotId}`,
+      headers: { authorization: `Bearer ${unrelatedToken}` },
+    });
+
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('filters unsubmitted drafts of other contributors from JSON exports while preserving contributor own draft', async () => {
+    const decision = await createTestDecision();
+
+    // Editor saves a draft contribution (unsubmitted)
+    await contributionRepository.saveDraft(decision._id.toString(), editorId, {
+      preferredOptionId: 'aws',
+      rationale: 'Editor confidential draft reasoning',
+      confidence: 0.85,
+    });
+
+    // 1. Viewer exports decision -> Editor draft must NOT be leaked
+    const viewerExportRes = await app.inject({
+      method: 'GET',
+      url: `/api/decisions/${decision._id}/export?format=json`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    expect(viewerExportRes.statusCode).toBe(200);
+    const viewerExport = JSON.parse(viewerExportRes.payload);
+    expect(viewerExport.expertContributions.length).toBe(0);
+
+    // 2. Editor exports decision -> Editor sees their own draft
+    const editorExportRes = await app.inject({
+      method: 'GET',
+      url: `/api/decisions/${decision._id}/export?format=json`,
+      headers: { authorization: `Bearer ${editorToken}` },
+    });
+    expect(editorExportRes.statusCode).toBe(200);
+    const editorExport = JSON.parse(editorExportRes.payload);
+    expect(editorExport.expertContributions.length).toBe(1);
+    expect(editorExport.expertContributions[0].contributorId).toBe(editorId);
+    expect(editorExport.expertContributions[0].status).toBe('draft');
+  });
+
+  it('rejects unsupported export format with 400 Bad Request', async () => {
+    const decision = await createTestDecision();
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/decisions/${decision._id}/export?format=unsupported_xml`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+    });
+
+    expect(res.statusCode).toBe(400);
+    const body = JSON.parse(res.payload);
+    expect(body.message).toMatch(/Expected 'json' \| 'csv' \| 'html'/);
   });
 });
 
