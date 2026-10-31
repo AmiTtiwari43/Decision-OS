@@ -34,6 +34,10 @@ import type {
   DecisionAnalyticsQueryOptions,
   WorkspaceAnalyticsDto,
   WorkspaceAnalyticsQueryOptions,
+  DecisionDisagreementsDto,
+  UpdateDisagreementResolutionPayload,
+  DisagreementResolutionDto,
+  AiDisagreementExplanationDto,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -771,6 +775,75 @@ export class DecisionApiClient {
     return this.request<WorkspaceAnalyticsDto>(endpoint, {
       method: 'GET',
     });
+  }
+
+  // ─── Phase 11: Disagreement Intelligence API ────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/disagreements — Retrieves structured disagreement analysis.
+   */
+  async getDecisionDisagreements(decisionId: string): Promise<DecisionDisagreementsDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDisagreementsDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/disagreements`,
+      { method: 'GET' }
+    );
+  }
+
+  /**
+   * PATCH /api/decisions/:id/disagreements/:disagreementId/resolution — Updates human governance resolution state.
+   */
+  async updateDisagreementResolution(
+    decisionId: string,
+    disagreementId: string,
+    payload: UpdateDisagreementResolutionPayload
+  ): Promise<DisagreementResolutionDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DisagreementResolutionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/disagreements/${encodeURIComponent(disagreementId)}/resolution`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/disagreements/:disagreementId/ai-explain — Generates neutral advisory AI mediation synthesis.
+   */
+  async explainDisagreementWithAi(
+    decisionId: string,
+    disagreementId: string
+  ): Promise<AiDisagreementExplanationDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<AiDisagreementExplanationDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/disagreements/${encodeURIComponent(disagreementId)}/ai-explain`,
+      { method: 'POST' }
+    );
   }
 }
 

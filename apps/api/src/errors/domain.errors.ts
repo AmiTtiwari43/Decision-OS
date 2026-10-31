@@ -307,6 +307,16 @@ export class EvidenceNotFoundError extends Error {
   }
 }
 
+export class DisagreementNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Disagreement not found') {
+    super(message);
+    this.name = 'DisagreementNotFoundError';
+    Object.setPrototypeOf(this, DisagreementNotFoundError.prototype);
+  }
+}
+
 /**
  * Thrown when an evidence targetId does not exist in the referenced decision.
  */

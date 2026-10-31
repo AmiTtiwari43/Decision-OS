@@ -602,3 +602,94 @@ export interface WorkspaceAnalyticsDto {
     methodologyDisclaimer: string;
   };
 }
+
+// ─── Phase 11: Disagreement Intelligence Types ────────────────────────────────
+
+export type DisagreementCategory = 'score' | 'priority' | 'evidence' | 'assumption' | 'interpretation';
+
+export type DisagreementResolutionStatus = 'open' | 'acknowledged' | 'resolved';
+
+export interface CriterionDisagreementMetricsDto {
+  criterionId: string;
+  criterionName: string;
+  weight: number;
+  sampleCount: number;
+  minScore: number | null;
+  maxScore: number | null;
+  scoreRange: number | null;
+  meanScore: number | null;
+  sampleStdDev: number | null;
+  medianScore: number | null;
+  confidenceWeightedMean: number | null;
+  isDecisionCritical: boolean;
+  tippingDeltaThreshold: number | null;
+  criticalReason?: string;
+  scenarioResults: {
+    minScenarioWinnerId: string | null;
+    minScenarioWinnerFlips: boolean;
+    medianScenarioWinnerId: string | null;
+    medianScenarioWinnerFlips: boolean;
+    maxScenarioWinnerId: string | null;
+    maxScenarioWinnerFlips: boolean;
+  };
+}
+
+export interface DisagreementResolutionDto {
+  status: DisagreementResolutionStatus;
+  explanation?: string;
+  resolvedByName?: string;
+  resolvedAt?: string;
+}
+
+export interface DisagreementItemDto {
+  id: string;
+  category: DisagreementCategory;
+  title: string;
+  criterionId?: string;
+  criterionName?: string;
+  optionId?: string;
+  optionName?: string;
+  isDecisionCritical: boolean;
+  scoreMetrics?: CriterionDisagreementMetricsDto;
+  description: string;
+  numericalExplanation: string;
+  participants: Array<{
+    contributorId: string;
+    contributorName?: string;
+    value: string | number;
+    confidence?: number;
+    reasoning?: string;
+  }>;
+  suggestedClarificationQuestions: string[];
+  resolution: DisagreementResolutionDto;
+}
+
+export interface DecisionDisagreementsDto {
+  decisionId: string;
+  hasSufficientData: boolean;
+  totalContributors: number;
+  totalDisagreements: number;
+  decisionCriticalCount: number;
+  items: DisagreementItemDto[];
+  criteriaMetrics: CriterionDisagreementMetricsDto[];
+  priorityBreakdown: Array<{
+    optionId: string;
+    optionName: string;
+    recommendationCount: number;
+    percentage: number;
+  }>;
+  summary: string;
+}
+
+export interface UpdateDisagreementResolutionPayload {
+  status: DisagreementResolutionStatus;
+  resolutionExplanation?: string;
+}
+
+export interface AiDisagreementExplanationDto {
+  disagreementId: string;
+  neutralSummary: string;
+  underlyingAssumptions: string[];
+  suggestedClarificationQuestions: string[];
+  disclaimer: string;
+}

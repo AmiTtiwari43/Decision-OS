@@ -20,6 +20,12 @@ export {
   calculateOptionScoreSensitivity,
   calculateMultiParameterCounterfactual,
 } from './counterfactual';
+export {
+  calculateSampleStdDev,
+  calculateMedian,
+  calculateConfidenceWeightedMean,
+  analyzeDisagreements,
+} from './disagreement';
 
 export function evaluateDecision(input: EngineEvaluationInput): EngineResult {
   const criteria = input.criteria;

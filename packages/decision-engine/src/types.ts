@@ -116,3 +116,79 @@ export interface EngineResult {
   readonly sensitivity: ReadonlyArray<TippingPointResult>;
   readonly monteCarlo?: MonteCarloResult;
 }
+
+export type DisagreementCategory = 'score' | 'priority' | 'evidence' | 'assumption' | 'interpretation';
+
+export interface ContributorSubmissionInput {
+  readonly contributorId: string;
+  readonly contributorName?: string;
+  readonly preferredOptionId?: string;
+  readonly scores: Record<string, number>; // criterionId -> score (0..100)
+  readonly reasoning?: Record<string, string>; // criterionId -> reasoning
+  readonly confidence?: number; // 0..1
+  readonly predictionStatement?: string;
+  readonly evidenceReferences?: ReadonlyArray<string>;
+}
+
+export interface CriterionDisagreementMetrics {
+  readonly criterionId: string;
+  readonly criterionName: string;
+  readonly weight: number;
+  readonly sampleCount: number;
+  readonly minScore: number | null;
+  readonly maxScore: number | null;
+  readonly scoreRange: number | null;
+  readonly meanScore: number | null;
+  readonly sampleStdDev: number | null;
+  readonly medianScore: number | null;
+  readonly confidenceWeightedMean: number | null;
+  readonly isDecisionCritical: boolean;
+  readonly tippingDeltaThreshold: number | null;
+  readonly criticalReason?: string;
+  readonly scenarioResults: {
+    readonly minScenarioWinnerId: string | null;
+    readonly minScenarioWinnerFlips: boolean;
+    readonly medianScenarioWinnerId: string | null;
+    readonly medianScenarioWinnerFlips: boolean;
+    readonly maxScenarioWinnerId: string | null;
+    readonly maxScenarioWinnerFlips: boolean;
+  };
+}
+
+export interface DisagreementIntelligenceItem {
+  readonly id: string;
+  readonly category: DisagreementCategory;
+  readonly title: string;
+  readonly criterionId?: string;
+  readonly criterionName?: string;
+  readonly optionId?: string;
+  readonly optionName?: string;
+  readonly isDecisionCritical: boolean;
+  readonly scoreMetrics?: CriterionDisagreementMetrics;
+  readonly description: string;
+  readonly numericalExplanation: string;
+  readonly participants: ReadonlyArray<{
+    contributorId: string;
+    contributorName?: string;
+    value: string | number;
+    confidence?: number;
+    reasoning?: string;
+  }>;
+  readonly suggestedClarificationQuestions: ReadonlyArray<string>;
+}
+
+export interface DisagreementIntelligenceResult {
+  readonly hasSufficientData: boolean;
+  readonly totalContributors: number;
+  readonly totalDisagreements: number;
+  readonly decisionCriticalCount: number;
+  readonly criteriaMetrics: ReadonlyArray<CriterionDisagreementMetrics>;
+  readonly items: ReadonlyArray<DisagreementIntelligenceItem>;
+  readonly priorityBreakdown: ReadonlyArray<{
+    optionId: string;
+    optionName: string;
+    recommendationCount: number;
+    percentage: number;
+  }>;
+  readonly summary: string;
+}

@@ -1026,3 +1026,141 @@ Authenticated User.
   }
 }
 ```
+
+
+---
+
+## Disagreement Intelligence Endpoints (Phase 11)
+
+### 32. Get Decision Disagreements
+`GET /api/decisions/:id/disagreements`
+
+Retrieves structured disagreement intelligence for a decision, including score dispersion (Range, StdDev, Median, Confidence-Weighted Mean), decision-critical classification, scenario evaluations (Min, Median, Max), and human governance resolution state.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized collaborator (`owner`, `editor`, `contributor`, `viewer`). Unrelated users receive `404 Not Found` (enumeration defense).
+
+#### Response: `200 OK`
+```json
+{
+  "decisionId": "6512bd...",
+  "hasSufficientData": true,
+  "totalContributors": 2,
+  "totalDisagreements": 2,
+  "decisionCriticalCount": 1,
+  "items": [
+    {
+      "id": "disag_score_crit_growth",
+      "category": "score",
+      "title": "Score Disagreement on 'Growth'",
+      "criterionId": "crit_growth",
+      "criterionName": "Growth",
+      "isDecisionCritical": true,
+      "scoreMetrics": {
+        "criterionId": "crit_growth",
+        "criterionName": "Growth",
+        "weight": 50,
+        "sampleCount": 2,
+        "minScore": 60,
+        "maxScore": 90,
+        "scoreRange": 30,
+        "meanScore": 75,
+        "sampleStdDev": 21.2,
+        "medianScore": 75,
+        "confidenceWeightedMean": 76.5,
+        "isDecisionCritical": true,
+        "tippingDeltaThreshold": 10,
+        "criticalReason": "Score range (30 pts) exceeds tipping threshold (10 pts)",
+        "scenarioResults": {
+          "minScenarioWinnerId": "opt_beta",
+          "minScenarioWinnerFlips": true,
+          "medianScenarioWinnerId": "opt_alpha",
+          "medianScenarioWinnerFlips": false,
+          "maxScenarioWinnerId": "opt_alpha",
+          "maxScenarioWinnerFlips": false
+        }
+      },
+      "description": "Experts differ by 30 points on criterion 'Growth'.",
+      "numericalExplanation": "Spread of 30 pts (min: 60, max: 90, stdDev: 21.2) across 2 expert evaluations. Tipping threshold: 10 pts. Pessimistic scenario inverts winner.",
+      "participants": [
+        { "contributorId": "u1", "contributorName": "Alice", "value": 90, "confidence": 0.9 },
+        { "contributorId": "u2", "contributorName": "Bob", "value": 60, "confidence": 0.8 }
+      ],
+      "suggestedClarificationQuestions": [
+        "What empirical benchmarks or operational assumptions justify a score of 60 versus 90 on 'Growth'?"
+      ],
+      "resolution": {
+        "status": "open"
+      }
+    }
+  ],
+  "criteriaMetrics": [],
+  "priorityBreakdown": [
+    { "optionId": "opt_alpha", "optionName": "Option Alpha", "recommendationCount": 1, "percentage": 50 },
+    { "optionId": "opt_beta", "optionName": "Option Beta", "recommendationCount": 1, "percentage": 50 }
+  ],
+  "summary": "Detected 2 disagreements across 2 participants (1 decision-critical)."
+}
+```
+
+---
+
+### 33. Update Disagreement Resolution
+`PATCH /api/decisions/:id/disagreements/:disagreementId/resolution`
+
+Updates the human governance resolution status and consensus rationale for a disagreement item.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Decision `owner` or `editor`. (Viewers and contributors receive `403 Forbidden`).
+
+#### Request Body
+```json
+{
+  "status": "resolved", // "open" | "acknowledged" | "resolved"
+  "resolutionExplanation": "Consensus reached after reviewing benchmark data."
+}
+```
+
+#### Response: `200 OK`
+```json
+{
+  "status": "resolved",
+  "explanation": "Consensus reached after reviewing benchmark data.",
+  "resolvedByName": "Lead Architect",
+  "resolvedAt": "2026-10-31T20:00:00.000Z"
+}
+```
+
+---
+
+### 34. Explain Disagreement with AI
+`POST /api/decisions/:id/disagreements/:disagreementId/ai-explain`
+
+Generates an advisory, neutral mediation synthesis and structured clarification questions.
+
+#### Authentication
+Required (`Bearer <JWT>`)
+
+#### Permission
+Any authorized collaborator (`owner`, `editor`, `contributor`, `viewer`).
+
+#### Response: `200 OK`
+```json
+{
+  "disagreementId": "disag_score_crit_growth",
+  "neutralSummary": "Participants hold differing expectations regarding scalability timeline...",
+  "underlyingAssumptions": [
+    "Assumes immediate enterprise adoption vs phased pilot rollout."
+  ],
+  "suggestedClarificationQuestions": [
+    "What rollout timeline is realistically anticipated?"
+  ],
+  "disclaimer": "AI explanations are advisory synthesis tools designed for mediation. They do not alter authoritative MCDA evaluations or declare a participant correct."
+}
+```

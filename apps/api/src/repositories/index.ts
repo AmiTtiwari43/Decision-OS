@@ -4,3 +4,5 @@ export * from './decisionAccess.repository.js';
 export * from './invitation.repository.js';
 export * from './contribution.repository.js';
 export * from './evidence.repository.js';
+export * from './analytics.repository.js';
+export * from './disagreement.repository.js';

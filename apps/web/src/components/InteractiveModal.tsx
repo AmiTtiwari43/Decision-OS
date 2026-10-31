@@ -25,6 +25,7 @@ import {
   Lock,
   BookOpen,
   BarChart3,
+  Scale,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -35,6 +36,7 @@ import { ContributionsModal } from './ContributionsModal.js';
 import { EvidenceModal } from './EvidenceModal.js';
 import { AiAnalystModal } from './AiAnalystModal.js';
 import { AnalyticsModal } from './AnalyticsModal.js';
+import { DisagreementsModal } from './DisagreementsModal.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
@@ -90,6 +92,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
   const [isAiAnalystModalOpen, setIsAiAnalystModalOpen] = useState(false);
   const [isAnalyticsModalOpen, setIsAnalyticsModalOpen] = useState(false);
+  const [isDisagreementsModalOpen, setIsDisagreementsModalOpen] = useState(false);
   const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -817,6 +820,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Phase 11: Disagreement Intelligence Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsDisagreementsModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  title="Open Disagreement Intelligence"
+                >
+                  <Scale className="w-4 h-4 text-amber-400" />
+                  <span>Disagreements</span>
+                </button>
+              )}
+
               {/* Export Briefing Button */}
               <button
                 onClick={handleExportBriefing}
@@ -881,6 +896,13 @@ ${criteria
         <AnalyticsModal
           isOpen={isAnalyticsModalOpen}
           onClose={() => setIsAnalyticsModalOpen(false)}
+          decision={serverDecision}
+        />
+
+        {/* Phase 11 Disagreement Intelligence Modal */}
+        <DisagreementsModal
+          isOpen={isDisagreementsModalOpen}
+          onClose={() => setIsDisagreementsModalOpen(false)}
           decision={serverDecision}
         />
       </div>

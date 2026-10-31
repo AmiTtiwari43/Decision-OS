@@ -16,3 +16,5 @@ export * from './contribution.model.js';
 export * from './evidence.types.js';
 export * from './evidence.schema.js';
 export * from './evidence.model.js';
+export * from './disagreement.types.js';
+export * from './disagreement.model.js';

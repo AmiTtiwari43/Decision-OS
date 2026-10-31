@@ -11,6 +11,7 @@ import { contributionRoutes } from './routes/contributions.js';
 import { evidenceRoutes } from './routes/evidence.js';
 import { aiRoutes } from './routes/ai.js';
 import { analyticsRoutes } from './routes/analytics.js';
+import { disagreementRoutes } from './routes/disagreements.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -33,7 +34,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   // CORS
   await app.register(cors, {
     origin: currentEnv.CORS_ORIGIN.split(',').map(o => o.trim()),
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   });
 
   // Echo request ID in response header
@@ -70,6 +71,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Analytics Routes
   await app.register(analyticsRoutes, { prefix: '/api' });
+
+  // Disagreement Intelligence Routes
+  await app.register(disagreementRoutes, { prefix: '/api' });
 
   return app;
 }
