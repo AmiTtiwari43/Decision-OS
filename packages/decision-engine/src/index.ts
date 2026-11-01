@@ -3,6 +3,7 @@ import { normalizeWeights } from './normalization';
 import { evaluateOptions } from './scoring';
 import { calculateSensitivity } from './sensitivity';
 import { runMonteCarloSimulation } from './monteCarlo';
+import { hashCanonicalJson, CANONICAL_ENGINE_SPEC_HASH } from './hash';
 import type {
   EngineEvaluationInput,
   EngineResult,
@@ -11,6 +12,7 @@ import type {
 
 export * from './types';
 export * from './errors';
+export * from './hash';
 export { normalizeWeights } from './normalization';
 export { validateInput } from './validation';
 export { evaluateOptions } from './scoring';
@@ -77,9 +79,36 @@ export function evaluateDecision(input: EngineEvaluationInput): EngineResult {
     );
   }
 
+  // Step 6: Cryptographic Engine Metadata (CANONICAL_DECISION_ENGINE_V1_SPEC Section 8.2)
+  const inputHash = hashCanonicalJson({
+    criteria: input.criteria.map(c => ({ id: c.id, name: c.name, weight: c.weight, isLocked: c.isLocked })),
+    options: input.options.map(o => ({ id: o.id, name: o.name, scores: o.scores })),
+    lockedIds,
+  });
+
+  const calculationHash = hashCanonicalJson({
+    normalizedWeights,
+    isTie: scoringResult.isTie,
+    decisionOutcome: scoringResult.decisionOutcome,
+    winnerId: scoringResult.winnerId,
+    tiedWinnerIds: scoringResult.tiedWinnerIds,
+    pointLead: scoringResult.pointLead,
+    evaluations: scoringResult.evaluations.map(e => ({
+      optionId: e.optionId,
+      unroundedScore: e.unroundedScore,
+      weightedScore: e.weightedScore,
+      rank: e.rank,
+      presentationOrder: e.presentationOrder,
+      scoreDifferenceToLeader: e.scoreDifferenceToLeader,
+    })),
+  });
+
   return {
     engineVersion: '1.0.0',
+    engineSpecHash: CANONICAL_ENGINE_SPEC_HASH,
     evaluatedAt: new Date().toISOString(),
+    inputHash,
+    calculationHash,
     isTie: scoringResult.isTie,
     decisionOutcome: scoringResult.decisionOutcome,
     winnerId: scoringResult.winnerId,

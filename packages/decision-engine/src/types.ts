@@ -104,7 +104,10 @@ export interface MultiParameterCounterfactualResult {
 
 export interface EngineResult {
   readonly engineVersion: '1.0.0';
+  readonly engineSpecHash?: string;
   readonly evaluatedAt: string;
+  readonly inputHash?: string;
+  readonly calculationHash?: string;
   readonly isTie: boolean;
   readonly decisionOutcome: 'decisive' | 'tie';
   readonly winnerId: string | null;
