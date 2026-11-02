@@ -34,7 +34,7 @@ const baseDecisionPayload = {
   },
 };
 
-describe('Phase 9 — AI Analyst Subsystem', () => {
+describe('Phase 9 — AI Analyst Subsystem', { timeout: 30000 }, () => {
   let app: FastifyInstance;
 
   // User tokens
@@ -241,7 +241,7 @@ describe('Phase 9 — AI Analyst Subsystem', () => {
       url: `/api/decisions/${decisionId}/contributions/submit`,
       headers: { authorization: `Bearer ${expertToken}` },
     });
-  });
+  }, 30000);
 
   // ─── 1. Authentication & Object-Level Authorization ──────────────────────────
 

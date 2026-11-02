@@ -109,6 +109,16 @@ export class DecisionApiClient {
     this.timeoutMs = options.timeoutMs ?? 15000;
   }
 
+  private onUnauthorizedCallback?: () => void;
+
+  /**
+   * Registers a listener callback invoked whenever the client receives a 401 Unauthorized,
+   * allowing auth state and storage to be invalidated synchronously.
+   */
+  setOnUnauthorized(callback?: () => void): void {
+    this.onUnauthorizedCallback = callback;
+  }
+
   /**
    * Updates the in-memory bearer token used for authenticated requests.
    * Credentials are kept strictly in-memory per security requirements.
@@ -175,6 +185,7 @@ export class DecisionApiClient {
         // If 401 Unauthorized, automatically clear token if it was invalid/expired
         if (response.status === 401 && this.token) {
           this.token = null;
+          this.onUnauthorizedCallback?.();
         }
 
         throw new ApiClientError({

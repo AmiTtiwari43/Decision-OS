@@ -14,8 +14,11 @@ import { Principles } from './components/Principles';
 import { FinalCTA } from './components/FinalCTA';
 import { Footer } from './components/Footer';
 import { ScrollToTop } from './components/ScrollToTop';
+import { Logo } from './components/Logo';
+import { Dashboard } from './components/Dashboard';
 import { AuthProvider } from './context/AuthContext';
 import { useDecisionModel } from './hooks/useDecisionModel';
+import { useAuth } from './hooks/useAuth';
 
 // Lazy-loaded modal components for bundle splitting and faster initial page paint
 const InteractiveModal = lazy(() => import('./components/InteractiveModal').then(m => ({ default: m.InteractiveModal })));
@@ -25,6 +28,8 @@ const AcceptInvitationModal = lazy(() => import('./components/AcceptInvitationMo
 const WorkspaceAnalyticsModal = lazy(() => import('./components/WorkspaceAnalyticsModal').then(m => ({ default: m.WorkspaceAnalyticsModal })));
 
 function AppContent() {
+  const { user, isAuthenticated, isInitializing, sessionError, retrySession, logout } = useAuth();
+  const [activeView, setActiveView] = useState<'app' | 'marketing'>('app');
   const [isSandboxOpen, setIsSandboxOpen] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isWorkspaceAnalyticsOpen, setIsWorkspaceAnalyticsOpen] = useState(false);
@@ -93,6 +98,21 @@ function AppContent() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Prevent flash of unauthenticated or authenticated content before session validation completes
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-background text-slate-100 font-sans antialiased">
+        <div className="flex flex-col items-center gap-4">
+          <Logo size="lg" />
+          <div className="flex items-center gap-2 text-xs font-mono text-slate-400">
+            <span className="w-2 h-2 rounded-full bg-signal animate-pulse" />
+            <span>Verifying Decision OS session...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-background text-slate-100 selection:bg-signal selection:text-background font-sans antialiased">
       {/* Top sticky navigation */}
@@ -100,64 +120,120 @@ function AppContent() {
         onOpenSandbox={() => setIsSandboxOpen(true)}
         onOpenAudit={() => setIsAuditOpen(true)}
         onOpenAnalytics={() => setIsWorkspaceAnalyticsOpen(true)}
+        activeView={activeView}
+        onSelectView={setActiveView}
       />
 
-      {/* Main Narrative Structure */}
+      {/* Main Content Area */}
       <main className="w-full max-w-full overflow-x-hidden">
-        <Hero onOpenSandbox={() => setIsSandboxOpen(true)} />
+        {/* Recoverable Session Connection Alert Banner */}
+        {sessionError && !isAuthenticated && (
+          <div className="pt-20 px-4 max-w-7xl mx-auto">
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
+                <span className="font-mono">{sessionError}</span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <button
+                  onClick={() => retrySession()}
+                  className="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 font-mono font-semibold transition-all cursor-pointer text-xs"
+                >
+                  Retry Connection
+                </button>
+                <button
+                  onClick={() => logout()}
+                  className="px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-slate-200 font-mono transition-colors cursor-pointer text-xs"
+                  title="Clear saved session"
+                >
+                  Clear Session
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
-        {/* Live Telemetry Ticker Ribbon */}
-        <DecisionTicker
-          leaderName={winner.option.name}
-          leaderScore={winner.weightedScore}
-          scoreLead={explainability.pointLead}
-          tippingInfo={tippingStr}
-        />
-
-        <ProblemSection />
-        <HowItWorks />
-
-        {/* Focused, De-cluttered Interactive Decision Studio */}
-        <DecisionDemo onOpenSandbox={() => setIsSandboxOpen(true)} />
-
-        {/* Dedicated Deep Studio Instruments Showcase */}
-        <div id="instruments">
-          <InstrumentsShowcase
-            criteria={criteria}
-            options={options}
-            weights={weights}
-            activeOptionIds={activeOptionIds}
-            evaluations={evaluations}
-            sensitivity={sensitivity}
-            onSelectWeight={(cId, targetWeight) => setCriterionWeight(cId, targetWeight)}
+        {isAuthenticated && activeView === 'app' ? (
+          <Dashboard
+            onOpenStudio={async (decision) => {
+              await loadDecision(decision._id);
+              setIsSandboxOpen(true);
+            }}
+            onOpenAudit={() => setIsAuditOpen(true)}
+            onViewProductTour={() => setActiveView('marketing')}
           />
-        </div>
+        ) : (
+          <>
+            {/* Public Marketing Landing View */}
+            {isAuthenticated && (
+              <div className="pt-20 px-4 max-w-7xl mx-auto flex items-center justify-between pb-2">
+                <span className="text-xs font-mono text-slate-400">
+                  Viewing Public Overview as <strong className="text-white">{user?.name}</strong>
+                </span>
+                <button
+                  onClick={() => setActiveView('app')}
+                  className="px-3 py-1 rounded-lg bg-surface border border-signal/40 text-signal text-xs font-mono hover:bg-surface-subtle transition-all cursor-pointer"
+                >
+                  ← Return to Workspace Hub
+                </button>
+              </div>
+            )}
+            <Hero onOpenSandbox={() => setIsSandboxOpen(true)} />
 
-        {/* Verified Boardroom Decision Briefing Pass */}
-        <DecisionTicket
-          winner={winner}
-          runnerUp={runnerUp}
-          criteria={criteria}
-          weights={weights}
-          question={dataset.question}
-          decisionId={decisionId}
-          isAuthoritative={isAuthoritative}
-        />
+            {/* Live Telemetry Ticker Ribbon */}
+            <DecisionTicker
+              leaderName={winner.option.name}
+              leaderScore={winner.weightedScore}
+              scoreLead={explainability.pointLead}
+              tippingInfo={tippingStr}
+            />
 
-        {/* Real Scenario Case Studies */}
-        <CaseStudies onOpenSandbox={() => setIsSandboxOpen(true)} />
+            <ProblemSection />
+            <HowItWorks />
 
-        {/* 4-Stage Decision Evolution Timeline */}
-        <DecisionHistoryTimeline onOpenSandbox={() => setIsSandboxOpen(true)} />
+            {/* Focused, De-cluttered Interactive Decision Studio */}
+            <DecisionDemo onOpenSandbox={() => setIsSandboxOpen(true)} />
 
-        {/* Mathematical Transparency Section */}
-        <TransparencySection />
+            {/* Dedicated Deep Studio Instruments Showcase */}
+            <div id="instruments">
+              <InstrumentsShowcase
+                criteria={criteria}
+                options={options}
+                weights={weights}
+                activeOptionIds={activeOptionIds}
+                evaluations={evaluations}
+                sensitivity={sensitivity}
+                onSelectWeight={(cId, targetWeight) => setCriterionWeight(cId, targetWeight)}
+              />
+            </div>
 
-        {/* Core Tenet Principles */}
-        <Principles />
+            {/* Verified Boardroom Decision Briefing Pass */}
+            <DecisionTicket
+              winner={winner}
+              runnerUp={runnerUp}
+              criteria={criteria}
+              weights={weights}
+              question={dataset.question}
+              decisionId={decisionId}
+              isAuthoritative={isAuthoritative}
+            />
 
-        {/* Final CTA */}
-        <FinalCTA onOpenSandbox={() => setIsSandboxOpen(true)} />
+            {/* Real Scenario Case Studies */}
+            <CaseStudies onOpenSandbox={() => setIsSandboxOpen(true)} />
+
+            {/* 4-Stage Decision Evolution Timeline */}
+            <DecisionHistoryTimeline onOpenSandbox={() => setIsSandboxOpen(true)} />
+
+            {/* Mathematical Transparency Section */}
+            <TransparencySection />
+
+            {/* Core Tenet Principles */}
+            <Principles />
+
+            {/* Final CTA */}
+            <FinalCTA onOpenSandbox={() => setIsSandboxOpen(true)} />
+          </>
+        )}
       </main>
 
       {/* Honest Footer */}

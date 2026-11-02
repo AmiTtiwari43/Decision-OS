@@ -200,5 +200,7 @@ export function mapServerAnalysisToEngineResult(
     isTie: serverAnalysis.isTie,
     tiedWinnerIds: serverAnalysis.tiedWinnerIds,
     decisionOutcome: serverAnalysis.decisionOutcome,
+    calculationHash: serverAnalysis.calculationHash,
+    inputHash: serverAnalysis.inputHash,
   };
 }

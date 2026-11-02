@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { validateEnv } from '../src/config/env';
+import { validateEnv, KNOWN_DEV_JWT_SECRET } from '../src/config/env';
 
 describe('API Foundation — Environment Validation', () => {
   it('validates a correct environment configuration', () => {
@@ -63,14 +63,77 @@ describe('API Foundation — Environment Validation', () => {
     expect(() => validateEnv(invalidRaw)).toThrowError(/NODE_ENV/);
   });
 
-  it('provides safe default for JWT_SECRET and rejects short secrets when provided', () => {
-    const valid = validateEnv({});
-    expect(valid.JWT_SECRET).toBeDefined();
-    expect(valid.JWT_SECRET.length).toBeGreaterThanOrEqual(16);
+  describe('F-02: JWT_SECRET Configuration & Production Enforcement', () => {
+    it('1. development without an explicitly supplied secret uses safe development fallback', () => {
+      const parsed = validateEnv({ NODE_ENV: 'development' });
+      expect(parsed.JWT_SECRET).toBe(KNOWN_DEV_JWT_SECRET);
+      expect(parsed.JWT_SECRET.length).toBeGreaterThanOrEqual(16);
+    });
 
-    const invalidRaw = {
-      JWT_SECRET: 'short',
-    };
-    expect(() => validateEnv(invalidRaw)).toThrowError(/JWT_SECRET/);
+    it('2. test environment without an explicitly supplied secret uses safe development fallback', () => {
+      const parsed = validateEnv({ NODE_ENV: 'test' });
+      expect(parsed.JWT_SECRET).toBe(KNOWN_DEV_JWT_SECRET);
+    });
+
+    it('3. production with missing JWT_SECRET fails fast with non-sensitive error', () => {
+      const invalidRaw = {
+        NODE_ENV: 'production',
+      };
+
+      expect(() => validateEnv(invalidRaw)).toThrowError(
+        /JWT_SECRET must be explicitly configured in production environments/
+      );
+    });
+
+    it('4. production with empty string JWT_SECRET fails fast', () => {
+      const invalidRaw = {
+        NODE_ENV: 'production',
+        JWT_SECRET: '   ',
+      };
+
+      expect(() => validateEnv(invalidRaw)).toThrowError(
+        /JWT_SECRET must be explicitly configured in production environments/
+      );
+    });
+
+    it('5. production with known development fallback is strictly rejected', () => {
+      const invalidRaw = {
+        NODE_ENV: 'production',
+        JWT_SECRET: KNOWN_DEV_JWT_SECRET,
+      };
+
+      expect(() => validateEnv(invalidRaw)).toThrowError(
+        /JWT_SECRET cannot use the known development fallback in production environments/
+      );
+    });
+
+    it('6. production with a valid supplied secret succeeds', () => {
+      const validSecret = 'super-secure-production-jwt-signing-secret-2026!';
+      const parsed = validateEnv({
+        NODE_ENV: 'production',
+        JWT_SECRET: validSecret,
+      });
+
+      expect(parsed.NODE_ENV).toBe('production');
+      expect(parsed.JWT_SECRET).toBe(validSecret);
+    });
+
+    it('7. secret below the minimum length (< 16 chars) fails fast and never logs secret value', () => {
+      const secretUnder16 = 'short-secret-12';
+      let errorThrown: Error | null = null;
+      try {
+        validateEnv({
+          NODE_ENV: 'development',
+          JWT_SECRET: secretUnder16,
+        });
+      } catch (err) {
+        errorThrown = err as Error;
+      }
+
+      expect(errorThrown).not.toBeNull();
+      expect(errorThrown?.message).toContain('JWT_SECRET must be at least 16 characters long');
+      // Crucial: The error message must NEVER leak the raw secret value
+      expect(errorThrown?.message).not.toContain(secretUnder16);
+    });
   });
 });

@@ -108,4 +108,6 @@ export interface EngineResult {
   isTie?: boolean;
   tiedWinnerIds?: readonly string[];
   decisionOutcome?: 'decisive' | 'tie';
+  calculationHash?: string;
+  inputHash?: string;
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   X,
@@ -46,41 +46,74 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   const [adoptingCriterionId, setAdoptingCriterionId] = useState<string | null>(null);
   const [adoptSuccess, setAdoptSuccess] = useState<string | null>(null);
 
+  const activeRequestIdRef = useRef<number>(0);
+  const activeDecisionIdRef = useRef<string | null>(null);
+
   const currentUserRole = decision?.currentUserRole || 'owner';
   const canEdit = currentUserRole === 'owner' || currentUserRole === 'editor';
 
   const fetchAnalysis = useCallback(
     async (cap: AiCapability) => {
       if (!decision?._id) return;
+      const targetDecisionId = decision._id;
+      const requestId = ++activeRequestIdRef.current;
+
       setIsLoading(true);
       setError(null);
       setIsUnavailable(false);
       setAdoptSuccess(null);
 
       try {
-        const result = await apiClient.runAiAnalysis(decision._id, cap);
-        setAnalysis(result);
+        const result = await apiClient.runAiAnalysis(targetDecisionId, cap);
+        if (
+          activeRequestIdRef.current === requestId &&
+          activeDecisionIdRef.current === targetDecisionId
+        ) {
+          setAnalysis(result);
+        }
       } catch (err: unknown) {
-        if (err instanceof ApiClientError) {
-          if (err.statusCode === 503) {
-            setIsUnavailable(true);
-            setError(err.message || 'AI Analyst provider is not configured or offline.');
-          } else if (err.statusCode === 504) {
-            setError('AI Analyst request timed out. Please try again.');
-          } else if (err.statusCode === 429) {
-            setError('AI rate limit reached. Please wait a moment and try again.');
+        if (
+          activeRequestIdRef.current === requestId &&
+          activeDecisionIdRef.current === targetDecisionId
+        ) {
+          if (err instanceof ApiClientError) {
+            if (err.statusCode === 503) {
+              setIsUnavailable(true);
+              setError(err.message || 'AI Analyst provider is not configured or offline.');
+            } else if (err.statusCode === 504) {
+              setError('AI Analyst request timed out. Please try again.');
+            } else if (err.statusCode === 429) {
+              setError('AI rate limit reached. Please wait a moment and try again.');
+            } else {
+              setError(err.message || 'Failed to generate AI analysis.');
+            }
           } else {
-            setError(err.message || 'Failed to generate AI analysis.');
+            setError('An unexpected error occurred while communicating with the AI Analyst.');
           }
-        } else {
-          setError('An unexpected error occurred while communicating with the AI Analyst.');
         }
       } finally {
-        setIsLoading(false);
+        if (
+          activeRequestIdRef.current === requestId &&
+          activeDecisionIdRef.current === targetDecisionId
+        ) {
+          setIsLoading(false);
+        }
       }
     },
-    [decision]
+    [decision?._id]
   );
+
+  // Explicitly reset all cached analysis, proposals, loading, and errors on decision ID change or modal close/open
+  useEffect(() => {
+    activeDecisionIdRef.current = decision?._id || null;
+    activeRequestIdRef.current++;
+    setAnalysis(null);
+    setError(null);
+    setIsUnavailable(false);
+    setAdoptSuccess(null);
+    setAdoptingCriterionId(null);
+    setIsLoading(false);
+  }, [decision?._id, isOpen]);
 
   useEffect(() => {
     if (isOpen && decision?._id && !analysis && !isLoading && !error) {

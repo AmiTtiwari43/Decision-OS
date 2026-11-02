@@ -8,9 +8,17 @@ interface NavbarProps {
   onOpenSandbox: () => void;
   onOpenAudit: () => void;
   onOpenAnalytics?: () => void;
+  activeView?: 'app' | 'marketing';
+  onSelectView?: (view: 'app' | 'marketing') => void;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit, onOpenAnalytics }) => {
+export const Navbar: React.FC<NavbarProps> = ({
+  onOpenSandbox,
+  onOpenAudit,
+  onOpenAnalytics,
+  activeView = 'app',
+  onSelectView,
+}) => {
   const [scrolled, setScrolled] = useState(false);
   const [soundEnabled, setSoundEnabled] = useState(sound.isSoundEnabled());
   const { user, isAuthenticated, logout, openAuthModal } = useAuth();
@@ -51,39 +59,64 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenSandbox, onOpenAudit, onOp
         </a>
 
         {/* Navigation Links */}
-        <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
-          <a
-            href="#product"
-            className="hover:text-slate-100 transition-colors duration-200"
-          >
-            Product
-          </a>
-          <a
-            href="#simulator"
-            className="hover:text-slate-100 transition-colors duration-200 flex items-center gap-1.5"
-          >
-            <span>Interactive Demo</span>
-            <span className="w-1.5 h-1.5 rounded-full bg-signal" />
-          </a>
-          <a
-            href="#instruments"
-            className="hover:text-slate-100 transition-colors duration-200"
-          >
-            Deep Studio
-          </a>
-          <a
-            href="#how-it-works"
-            className="hover:text-slate-100 transition-colors duration-200"
-          >
-            How it works
-          </a>
-          <a
-            href="#principles"
-            className="hover:text-slate-100 transition-colors duration-200"
-          >
-            Principles
-          </a>
-        </nav>
+        {isAuthenticated && onSelectView ? (
+          <nav className="hidden sm:flex items-center gap-1.5 p-1 bg-surface-card border border-border-subtle rounded-xl text-xs font-mono">
+            <button
+              onClick={() => onSelectView('app')}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activeView === 'app'
+                  ? 'bg-signal text-background font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Workspace Hub
+            </button>
+            <button
+              onClick={() => onSelectView('marketing')}
+              className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+                activeView === 'marketing'
+                  ? 'bg-signal text-background font-bold shadow-sm'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+            >
+              Product Tour
+            </button>
+          </nav>
+        ) : (
+          <nav className="hidden lg:flex items-center gap-6 text-sm font-medium text-slate-400">
+            <a
+              href="#product"
+              className="hover:text-slate-100 transition-colors duration-200"
+            >
+              Product
+            </a>
+            <a
+              href="#simulator"
+              className="hover:text-slate-100 transition-colors duration-200 flex items-center gap-1.5"
+            >
+              <span>Interactive Demo</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-signal" />
+            </a>
+            <a
+              href="#instruments"
+              className="hover:text-slate-100 transition-colors duration-200"
+            >
+              Deep Studio
+            </a>
+            <a
+              href="#how-it-works"
+              className="hover:text-slate-100 transition-colors duration-200"
+            >
+              How it works
+            </a>
+            <a
+              href="#principles"
+              className="hover:text-slate-100 transition-colors duration-200"
+            >
+              Principles
+            </a>
+          </nav>
+        )}
 
         {/* Action Controls */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">

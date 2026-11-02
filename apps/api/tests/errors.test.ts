@@ -61,6 +61,7 @@ describe('API Foundation — Centralized Error Handling', () => {
     const prodEnv = validateEnv({
       NODE_ENV: 'production',
       PORT: '3000',
+      JWT_SECRET: 'production-jwt-signing-secret-for-tests-only!',
     });
 
     const app = await buildApp({ env: prodEnv, logger: false });

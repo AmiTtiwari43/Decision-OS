@@ -28,6 +28,7 @@ export type ScoreMatrixDto = Record<string, Record<string, number>>;
 
 export interface DecisionDto {
   _id: string;
+  id?: string;
   title: string;
   description: string;
   criteria: DecisionCriterionDto[];
@@ -36,6 +37,7 @@ export interface DecisionDto {
   analysis: EngineResult | null;
   calculationVersion: number;
   version?: number;
+  ownerId?: string | { _id: string; name?: string; email?: string };
   currentUserRole?: 'owner' | 'editor' | 'viewer' | 'contributor';
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: string | null;

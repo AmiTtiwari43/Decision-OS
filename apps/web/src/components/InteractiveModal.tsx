@@ -18,7 +18,6 @@ import {
   Clock,
   Sparkles,
   ChevronDown,
-  ChevronUp,
   Share2,
   Eye,
   Users,
@@ -28,12 +27,19 @@ import {
   Scale,
   Target,
   History,
+  ShieldCheck,
+  Calculator,
+  RefreshCw,
+  Hash,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
 import { useDecisionModel } from '../hooks/useDecisionModel.js';
 import { WeightSlider } from './WeightSlider.js';
 import { RealtimePresenceBar } from './RealtimePresenceBar.js';
+import { AlternativesManager } from './AlternativesManager.js';
+import { CriteriaManager } from './CriteriaManager.js';
+import { ScoreMatrix } from './ScoreMatrix.js';
 import { useRealtimeCollaboration } from '../hooks/useRealtimeCollaboration.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
@@ -54,6 +60,8 @@ interface InteractiveModalProps {
   onClose: () => void;
   model?: ReturnType<typeof useDecisionModel>;
 }
+
+export type ActiveWorkspaceTab = 'matrix' | 'weights' | 'alternatives' | 'analysis';
 
 export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   isOpen,
@@ -80,8 +88,11 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     currentUserRole = 'owner',
     isDirty,
     isAuthoritative,
+    isEvaluationStale,
     saveStatus,
     apiError,
+    conflictState,
+    dismissConflict,
     saveDecision,
     loadDecision,
     listSavedDecisions,
@@ -89,10 +100,24 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     updateOptionScore,
     updateDecisionMetadata,
     clearApiError,
+
+    // Batch 3 CRUD & Calculation
+    addAlternative,
+    renameAlternative,
+    updateAlternative,
+    removeAlternative,
+    addCriterion,
+    renameCriterion,
+    updateCriterion,
+    removeCriterion,
+    calculateAuthoritative,
+    getMissingScores,
+    isScoreMatrixComplete,
   } = model;
 
   const { isAuthenticated, openAuthModal } = useAuth();
 
+  const [activeTab, setActiveTab] = useState<ActiveWorkspaceTab>('matrix');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
   const [copied, setCopied] = useState(false);
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
@@ -103,19 +128,23 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isDisagreementsModalOpen, setIsDisagreementsModalOpen] = useState(false);
   const [isCalibrationModalOpen, setIsCalibrationModalOpen] = useState(false);
   const [isAuditExportModalOpen, setIsAuditExportModalOpen] = useState(false);
-  const [isScoringOpen, setIsScoringOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(dataset.title);
   const [editContext, setEditContext] = useState(dataset.context);
   const [savedDecisions, setSavedDecisions] = useState<DecisionDto[]>([]);
   const [isLoadingSaved, setIsLoadingSaved] = useState(false);
+  const [isCalculating, setIsCalculating] = useState(false);
+
+  const isOperationInFlight = saveStatus === 'in_flight' || isCalculating;
+  const missingScoresList = getMissingScores();
+  const isComplete = isScoreMatrixComplete();
 
   const {
     connectionStatus,
     activeParticipants,
-    conflictState,
-    dismissConflict,
+    conflictState: realtimeConflict,
+    dismissConflict: dismissRealtimeConflict,
     reconnect,
   } = useRealtimeCollaboration({
     decisionId,
@@ -135,18 +164,21 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   });
 
   const handleStartEditTitle = () => {
+    if (isOperationInFlight) return;
     setEditTitle(dataset.title);
     setEditContext(dataset.context);
     setIsEditingTitle(true);
   };
 
   const handleTemplateChange = (idx: number) => {
+    if (isOperationInFlight) return;
     setSelectedTemplateIndex(idx);
     setIsSavedListOpen(false);
     switchDataset(templateDatasets[idx]);
   };
 
   const handleOpenSavedList = async () => {
+    if (isOperationInFlight) return;
     if (!isAuthenticated) {
       openAuthModal('login');
       return;
@@ -166,18 +198,21 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   };
 
   const handleSelectSavedDecision = async (id: string) => {
+    if (isOperationInFlight) return;
     setSelectedTemplateIndex(null);
     setIsSavedListOpen(false);
     await loadDecision(id);
   };
 
   const handleCreateNew = () => {
+    if (isOperationInFlight) return;
     setSelectedTemplateIndex(null);
     setIsSavedListOpen(false);
     createNewDecision();
   };
 
   const handleSaveTitle = () => {
+    if (isOperationInFlight) return;
     if (editTitle.trim()) {
       updateDecisionMetadata(editTitle.trim(), editContext.trim());
       setIsEditingTitle(false);
@@ -185,6 +220,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   };
 
   const handleSaveToServer = async () => {
+    if (isOperationInFlight) return;
     if (!isAuthenticated) {
       openAuthModal('login');
       return;
@@ -194,25 +230,66 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     if (result) {
       sound.playCelebrate();
       confetti({
-        particleCount: 80,
-        spread: 70,
+        particleCount: 60,
+        spread: 60,
         origin: { y: 0.6 },
       });
     }
   };
 
+  const handleRunAuthoritativeCalculation = async () => {
+    if (isOperationInFlight) return;
+    if (!isAuthenticated) {
+      openAuthModal('login');
+      return;
+    }
+
+    if (!isComplete) {
+      setActiveTab('matrix');
+      return;
+    }
+
+    setIsCalculating(true);
+    sound.playTick();
+
+    try {
+      const result = await calculateAuthoritative();
+      if (result) {
+        sound.playCelebrate();
+        confetti({
+          particleCount: 90,
+          spread: 75,
+          origin: { y: 0.6 },
+        });
+        setActiveTab('analysis');
+      }
+    } catch {
+      // Error handled in hook and surfaced via apiError state
+    } finally {
+      setIsCalculating(false);
+    }
+  };
+
   const handleExportBriefing = () => {
-    const { winner, evaluations, explainability } = engineResult;
+    const { winner, evaluations, explainability, isTie, tiedWinnerIds } = engineResult;
 
     const report = `# Decision OS — Decision Briefing
 Generated: ${new Date().toLocaleDateString()}
 Decision Prompt: "${dataset.question}"
 ${decisionId ? `Server Decision ID: ${decisionId}` : 'Status: Unsaved Draft / Preview'}
-Verification: ${isAuthoritative ? `Authoritative Server MCDA (Canonical Engine v${serverDecision?.analysis?.engineVersion || '1.0.0'})` : 'Client Preview'}
+Verification: ${
+      isAuthoritative
+        ? `Authoritative Server MCDA (Canonical Engine v${serverDecision?.analysis?.engineVersion || '1.0.0'})`
+        : 'Client Preview'
+    }
 
-## Leading Recommendation
-🏆 **${winner.option.name}** (Weighted Score: ${winner.weightedScore}/100)
-${explainability.headline}
+## Outcome
+${
+  isTie
+    ? `🤝 **Mathematical Tie** between: ${(tiedWinnerIds || []).join(', ')}`
+    : `🏆 **${winner.option.name}** (Weighted Score: ${winner.weightedScore}/100)
+${explainability.headline}`
+}
 
 ## Explainability Summary
 ${explainability.dynamicRationale}
@@ -253,16 +330,16 @@ ${criteria
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25 }}
-          className="relative w-full max-w-5xl max-h-[92vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
+          className="relative w-full max-w-6xl max-h-[94vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
-          <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-surface shrink-0">
+          <div className="flex items-center justify-between p-3.5 sm:p-5 border-b border-border bg-surface shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-surface-subtle border border-border flex items-center justify-center text-signal">
                 <Layers className="w-4 h-4" />
@@ -273,23 +350,28 @@ ${criteria
                     Decision OS Workspace
                   </h3>
 
-                  {/* Dynamic Status Pill */}
+                  {/* Status Pills */}
                   {isAuthoritative ? (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-signal/15 text-signal border border-signal/30 flex items-center gap-1 font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse" />
-                      <span>Server-Verified (v1.0.0)</span>
+                      <span>Authoritative MCDA (v1.0.0)</span>
                       {decisionId && (
                         <span className="opacity-70 text-[9px]">#{decisionId.slice(-6)}</span>
                       )}
                     </span>
-                  ) : isDirty || mode === 'draft' ? (
+                  ) : isEvaluationStale ? (
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/15 text-amber-300 border border-amber-500/30 flex items-center gap-1 font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span>Evaluation Stale · Recalculation Required</span>
+                    </span>
+                  ) : mode === 'draft' ? (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-accent-amber/15 text-accent-amber border border-accent-amber/30 flex items-center gap-1 font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-accent-amber" />
-                      <span>Unsaved Preview (Draft)</span>
+                      <span>Unsaved Draft</span>
                     </span>
                   ) : (
                     <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-surface-subtle text-slate-400 border border-border flex items-center gap-1">
-                      <span>Template Demonstration</span>
+                      <span>Template Mode</span>
                     </span>
                   )}
 
@@ -309,7 +391,7 @@ ${criteria
                 </div>
 
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Calibrate weights and scores to generate an authoritative, explainable decision.
+                  Configure alternatives and criteria, calibrate weights, enter scores, and execute authoritative MCDA calculations.
                 </p>
               </div>
             </div>
@@ -328,27 +410,27 @@ ${criteria
             <RealtimePresenceBar
               connectionStatus={connectionStatus}
               activeParticipants={activeParticipants}
-              conflictState={conflictState}
-              onDismissConflict={dismissConflict}
+              conflictState={realtimeConflict}
+              onDismissConflict={dismissRealtimeConflict}
               onReviewConflict={() => {
                 if (decisionId) {
                   loadDecision(decisionId);
-                  dismissConflict();
+                  dismissRealtimeConflict();
                 }
               }}
               onReconnect={reconnect}
             />
           )}
 
-          {/* Selector & Action Ribbon */}
-          <div className="p-3 sm:p-4 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 shrink-0">
+          {/* Template & Saved Selector Ribbon */}
+          <div className="p-2.5 sm:p-3 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 shrink-0">
             <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline">Templates:</span>
               {templateDatasets.map((t, idx) => (
                 <button
                   key={t.id}
                   onClick={() => handleTemplateChange(idx)}
-                  className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
                     selectedTemplateIndex === idx && mode === 'template'
                       ? 'bg-signal text-background border-signal font-bold shadow-sm'
                       : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
@@ -360,7 +442,7 @@ ${criteria
 
               <button
                 onClick={handleCreateNew}
-                className={`px-2.5 sm:px-3 py-1 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
                   mode === 'draft' && selectedTemplateIndex === null
                     ? 'bg-signal text-background border-signal font-bold shadow-sm'
                     : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
@@ -383,8 +465,10 @@ ${criteria
                 }`}
               >
                 <Database className="w-3.5 h-3.5" />
-                <span>Saved Records</span>
-                <ChevronDown className={`w-3 h-3 transition-transform ${isSavedListOpen ? 'rotate-180' : ''}`} />
+                <span>Saved Decisions</span>
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform ${isSavedListOpen ? 'rotate-180' : ''}`}
+                />
               </button>
 
               {/* Saved Records Dropdown Popover */}
@@ -410,7 +494,7 @@ ${criteria
                         </div>
                       ) : savedDecisions.length === 0 ? (
                         <div className="p-4 text-center text-xs text-slate-500 font-mono">
-                          No saved decisions found in database. Click "Save to Server" to persist your first decision!
+                          No saved decisions found. Save your current model to view it here!
                         </div>
                       ) : (
                         savedDecisions.map((doc) => (
@@ -451,7 +535,9 @@ ${criteria
                   {apiError.missingPairs && apiError.missingPairs.length > 0 && (
                     <div className="mt-1 text-[11px] font-mono text-accent-amber">
                       Missing score coordinates:{' '}
-                      {apiError.missingPairs.map((p) => `[Option: ${p.optionId}, Criterion: ${p.criterionId}]`).join(', ')}
+                      {apiError.missingPairs
+                        .map((p) => `[Option: ${p.optionId}, Criterion: ${p.criterionId}]`)
+                        .join(', ')}
                     </div>
                   )}
                   {apiError.requestId && (
@@ -464,12 +550,6 @@ ${criteria
 
               <div className="flex items-center gap-2 shrink-0">
                 <button
-                  onClick={handleSaveToServer}
-                  className="px-2.5 py-1 rounded bg-accent-rose/20 hover:bg-accent-rose/30 text-white font-mono text-[11px] font-bold border border-accent-rose/40 cursor-pointer"
-                >
-                  Retry
-                </button>
-                <button
                   onClick={clearApiError}
                   className="p-1 rounded text-slate-400 hover:text-white cursor-pointer"
                   aria-label="Dismiss error"
@@ -480,29 +560,159 @@ ${criteria
             </div>
           )}
 
-          {/* Viewer Mode Banner */}
-          {decisionId && currentUserRole === 'viewer' && (
-            <div className="p-3 bg-sky-950/40 border-b border-sky-500/30 flex items-center gap-2.5 text-xs text-sky-200">
-              <Eye className="w-4 h-4 text-sky-400 shrink-0" />
-              <span>
-                <strong>Viewer Access (Read-Only):</strong> You have viewer access to this decision and its verified analytical calculations. Input calibrations, score modifications, and saving are restricted.
-              </span>
+          {/* Concurrency Conflict Banner */}
+          {conflictState?.isConflict && (
+            <div className="p-3.5 bg-amber-500/15 border-b border-amber-500/30 flex items-center justify-between gap-3 text-xs text-amber-200">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                <span>
+                  <strong>Concurrency Conflict:</strong> Another collaborator updated this decision (current version: {conflictState.currentVersion}). Please reload to fetch the latest state.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                {decisionId && (
+                  <button
+                    onClick={async () => {
+                      dismissConflict();
+                      await loadDecision(decisionId);
+                    }}
+                    className="px-3 py-1 rounded bg-amber-500 hover:bg-amber-600 text-background font-mono font-bold text-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Reload Latest</span>
+                  </button>
+                )}
+                <button
+                  onClick={dismissConflict}
+                  className="p-1 rounded text-amber-300 hover:text-white"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           )}
 
+          {/* Workspace Navigation Tabs */}
+          <div className="px-4 sm:px-6 pt-3 bg-surface border-b border-border flex items-center justify-between gap-3 overflow-x-auto shrink-0">
+            <div className="flex items-center gap-1 sm:gap-2">
+              <button
+                onClick={() => setActiveTab('matrix')}
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'matrix'
+                    ? 'border-signal text-signal bg-surface-card'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Table className="w-3.5 h-3.5" />
+                <span>Score Matrix</span>
+                {!isComplete && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('weights')}
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'weights'
+                    ? 'border-signal text-signal bg-surface-card'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Sliders className="w-3.5 h-3.5" />
+                <span>Weights & Criteria ({criteria.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('alternatives')}
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'alternatives'
+                    ? 'border-signal text-signal bg-surface-card'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>Alternatives ({options.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('analysis')}
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                  activeTab === 'analysis'
+                    ? 'border-signal text-signal bg-surface-card'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Award className="w-3.5 h-3.5" />
+                <span>Authoritative Results</span>
+                {isAuthoritative && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-signal" />
+                )}
+              </button>
+            </div>
+
+            {/* Run Authoritative Calculation Action Button */}
+            {currentUserRole !== 'viewer' && currentUserRole !== 'contributor' && (
+              <button
+                onClick={handleRunAuthoritativeCalculation}
+                disabled={isCalculating || !isComplete}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer shrink-0 mb-1.5 ${
+                  isCalculating
+                    ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
+                    : !isComplete
+                      ? 'bg-surface border border-amber-500/40 text-amber-300 opacity-80 hover:opacity-100'
+                      : isEvaluationStale || !isAuthoritative
+                        ? 'bg-signal hover:bg-signal-light text-background shadow-glow-signal-sm'
+                        : 'bg-surface hover:bg-surface-subtle border border-signal/50 text-signal shadow-sm'
+                }`}
+                title={
+                  !isComplete
+                    ? `Cannot calculate: ${missingScoresList.length} scores missing in matrix`
+                    : 'Run server-side MCDA analysis on Canonical Engine v1.0.0'
+                }
+              >
+                {isCalculating ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-signal" />
+                    <span>Calculating...</span>
+                  </>
+                ) : !isComplete ? (
+                  <>
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Incomplete Matrix ({missingScoresList.length} missing)</span>
+                  </>
+                ) : isEvaluationStale || !isAuthoritative ? (
+                  <>
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span>Run Authoritative Calculation</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-3.5 h-3.5 text-signal" />
+                    <span>Recalculate Results</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
           {/* Modal Scrollable Body */}
           <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
-            {/* Question Banner & Server Status */}
+            {/* Target Question Scope & Leading Winner Card */}
             <div className="p-4 rounded-xl bg-surface/80 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-mono uppercase text-signal tracking-wider">
-                    Target Question & Scope
+                    Target Dilemma & Framing
                   </span>
                   {!isEditingTitle && currentUserRole !== 'viewer' && (
                     <button
                       onClick={handleStartEditTitle}
-                      className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
+                      disabled={isOperationInFlight}
+                      className={`text-[11px] font-mono flex items-center gap-1 ${
+                        isOperationInFlight
+                          ? 'text-slate-600 cursor-not-allowed'
+                          : 'text-slate-400 hover:text-slate-200 cursor-pointer'
+                      }`}
                     >
                       <Sparkles className="w-3 h-3 text-signal" />
                       <span>Edit Title</span>
@@ -551,12 +761,12 @@ ${criteria
                 )}
               </div>
 
-              {/* Authoritative Winner Highlight */}
+              {/* Authoritative Outcome Pill */}
               <div className="flex items-center gap-3 bg-surface-card p-3 rounded-xl border border-border shrink-0">
                 <Award className="w-5 h-5 text-signal shrink-0" />
                 <div>
                   <div className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1.5">
-                    <span>Leading Choice</span>
+                    <span>Leading Outcome</span>
                     {isAuthoritative && (
                       <span className="text-signal flex items-center gap-0.5 font-bold">
                         <CheckCircle2 className="w-3 h-3" />
@@ -564,194 +774,275 @@ ${criteria
                       </span>
                     )}
                   </div>
-                  <div className="text-sm font-bold text-white">
-                    {engineResult.winner.option.name} (
-                    <span className="text-signal font-mono">
-                      {engineResult.winner.weightedScore} pts
-                    </span>
+                  {isAuthoritative ? (
+                    engineResult.isTie ? (
+                      <div className="text-sm font-bold text-amber-300">
+                        🤝 Exact Mathematical Tie
+                      </div>
+                    ) : (
+                      <div className="text-sm font-bold text-white">
+                        {engineResult.winner.option.name}{' '}
+                        <span className="text-signal font-mono">
+                          ({engineResult.winner.weightedScore} pts)
+                        </span>
+                      </div>
                     )
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Collapsible Option Scoring Matrix Toggle */}
-            <div className="border border-border-subtle rounded-xl bg-surface/50 overflow-hidden">
-              <button
-                onClick={() => setIsScoringOpen((prev) => !prev)}
-                className="w-full p-3 flex items-center justify-between text-xs font-mono font-bold text-slate-300 hover:text-white transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-2">
-                  <Table className="w-3.5 h-3.5 text-signal" />
-                  <span>Option Scoring Matrix (Raw Scores 0-100)</span>
-                </div>
-                <div className="flex items-center gap-1.5 text-slate-400 font-normal">
-                  <span>{isScoringOpen ? 'Hide Matrix' : 'Inspect & Edit Scores'}</span>
-                  {isScoringOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                </div>
-              </button>
-
-              <AnimatePresence>
-                {isScoringOpen && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    className="p-4 border-t border-border-subtle overflow-x-auto"
-                  >
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-border-subtle text-slate-400 font-mono text-[11px]">
-                          <th className="pb-2 font-semibold">Option / Criteria</th>
-                          {criteria.map((c) => (
-                            <th key={c.id} className="pb-2 px-2 font-semibold">
-                              {c.shortName || c.name}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-border-subtle/50">
-                        {options.map((opt) => (
-                          <tr key={opt.id} className="hover:bg-surface-subtle/30">
-                            <td className="py-2 font-semibold text-white flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: opt.color }} />
-                              <span>{opt.name}</span>
-                            </td>
-                            {criteria.map((c) => {
-                              const scoreVal = opt.scores[c.id] ?? 0;
-                              return (
-                                <td key={c.id} className="py-2 px-2">
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={100}
-                                    value={scoreVal}
-                                    disabled={currentUserRole === 'viewer'}
-                                    onChange={(e) => updateOptionScore(opt.id, c.id, Number(e.target.value))}
-                                    className={`w-16 px-2 py-1 rounded bg-surface border border-border text-center font-mono font-bold text-white focus:outline-none focus:border-signal text-xs ${
-                                      currentUserRole === 'viewer' ? 'opacity-50 cursor-not-allowed' : ''
-                                    }`}
-                                  />
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-
-            {/* 2-Column: Weights vs Rankings */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Left Column: Weight Sliders */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
-                  <div className="flex items-center gap-2 text-xs font-mono text-slate-300 font-bold uppercase">
-                    <Sliders className="w-3.5 h-3.5 text-signal" />
-                    <span>Calibrate Weights</span>
-                  </div>
-                  {currentUserRole !== 'viewer' && (
-                    <button
-                      onClick={resetToDefaults}
-                      className="text-[11px] font-mono text-slate-400 hover:text-slate-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      <span>Reset</span>
-                    </button>
-                  )}
-                </div>
-
-                <div className="space-y-2.5 max-h-[320px] overflow-y-auto pr-1">
-                  {criteria.map((c) => (
-                    <WeightSlider
-                      key={c.id}
-                      criterion={c}
-                      weight={weights[c.id] ?? 0}
-                      isLocked={lockedIds.includes(c.id)}
-                      disabled={currentUserRole === 'viewer'}
-                      onWeightChange={(val) => setCriterionWeight(c.id, val)}
-                      onToggleLock={() => toggleLock(c.id)}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              {/* Right Column: Live Option Results & Explainability */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
-                  <span className="text-xs font-mono text-slate-300 font-bold uppercase">
-                    {isAuthoritative ? 'Authoritative Server Rankings' : 'Calculated Option Scores'}
-                  </span>
-                  {isAuthoritative && (
-                    <span className="text-[10px] font-mono text-signal flex items-center gap-1">
-                      <Clock className="w-3 h-3" />
-                      <span>Canonical Engine v1.0.0</span>
-                    </span>
-                  )}
-                </div>
-
-                <div className="space-y-3">
-                  {engineResult.evaluations.map((item) => (
-                    <div
-                      key={item.option.id}
-                      className={`p-3.5 rounded-xl border transition-all ${
-                        item.rank === 1
-                          ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
-                          : 'bg-surface/50 border-border-subtle'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="w-2.5 h-2.5 rounded-full"
-                            style={{ backgroundColor: item.option.color }}
-                          />
-                          <span className="text-sm font-bold text-white">
-                            {item.option.name}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-mono text-xs">
-                          <span className="font-bold text-white text-base">
-                            {item.weightedScore}
-                          </span>
-                          <span className="text-slate-500">/100</span>
-                        </div>
-                      </div>
-
-                      <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-2">
-                        <div
-                          className="h-full rounded-full transition-all duration-300"
-                          style={{
-                            width: `${item.weightedScore}%`,
-                            backgroundColor: item.rank === 1 ? '#B8FF5A' : item.option.color,
-                          }}
-                        />
-                      </div>
-
-                      <div className="text-[11px] text-slate-400 line-clamp-1">
-                        {item.option.tagline || item.option.description}
-                      </div>
+                  ) : isEvaluationStale ? (
+                    <div className="text-xs font-mono text-amber-400">
+                      Recalculation Required
                     </div>
-                  ))}
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-surface/70 border border-border text-xs text-slate-300">
-                  <span className="font-bold text-signal block mb-1">
-                    Explainability Driver:
-                  </span>
-                  <p className="leading-relaxed">
-                    {engineResult.explainability.dynamicRationale}
-                  </p>
+                  ) : (
+                    <div className="text-sm font-bold text-slate-300">
+                      {engineResult.winner.option.name}{' '}
+                      <span className="text-slate-500 font-mono">
+                        (Preview)
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
+
+            {/* TAB CONTENT */}
+
+            {/* Tab 1: Scoring Matrix */}
+            {activeTab === 'matrix' && (
+              <div className="space-y-4">
+                <ScoreMatrix
+                  criteria={criteria}
+                  options={options}
+                  weights={weights}
+                  lockedIds={lockedIds}
+                  currentUserRole={currentUserRole}
+                  onUpdateScore={updateOptionScore}
+                  missingScores={missingScoresList}
+                  disabled={isOperationInFlight}
+                />
+              </div>
+            )}
+
+            {/* Tab 2: Weights & Criteria */}
+            {activeTab === 'weights' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Weight Sliders */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
+                    <div className="flex items-center gap-2 text-xs font-mono text-slate-300 font-bold uppercase">
+                      <Sliders className="w-3.5 h-3.5 text-signal" />
+                      <span>Calibrate Weights (Largest Remainder Normalization)</span>
+                    </div>
+                    {currentUserRole !== 'viewer' && currentUserRole !== 'contributor' && (
+                      <button
+                        onClick={resetToDefaults}
+                        disabled={isOperationInFlight}
+                        className={`text-[11px] font-mono flex items-center gap-1 ${
+                          isOperationInFlight
+                            ? 'text-slate-600 cursor-not-allowed'
+                            : 'text-slate-400 hover:text-slate-200 cursor-pointer'
+                        }`}
+                      >
+                        <RotateCcw className="w-3 h-3" />
+                        <span>Reset</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                    {criteria.map((c) => (
+                      <WeightSlider
+                        key={c.id}
+                        criterion={c}
+                        weight={weights[c.id] ?? 0}
+                        isLocked={lockedIds.includes(c.id)}
+                        disabled={currentUserRole === 'viewer' || currentUserRole === 'contributor' || isOperationInFlight}
+                        onWeightChange={(val) => setCriterionWeight(c.id, val)}
+                        onToggleLock={() => toggleLock(c.id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Criteria Manager */}
+                <div className="space-y-3">
+                  <CriteriaManager
+                    criteria={criteria}
+                    weights={weights}
+                    lockedIds={lockedIds}
+                    currentUserRole={currentUserRole}
+                    onAddCriterion={addCriterion}
+                    onRenameCriterion={renameCriterion}
+                    onUpdateCriterion={updateCriterion}
+                    onRemoveCriterion={removeCriterion}
+                    onToggleLock={toggleLock}
+                    disabled={isOperationInFlight}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Tab 3: Alternatives Manager */}
+            {activeTab === 'alternatives' && (
+              <div className="max-w-3xl mx-auto">
+                <AlternativesManager
+                  options={options}
+                  currentUserRole={currentUserRole}
+                  onAddAlternative={addAlternative}
+                  onRenameAlternative={renameAlternative}
+                  onUpdateAlternative={updateAlternative}
+                  onRemoveAlternative={removeAlternative}
+                  disabled={isOperationInFlight}
+                />
+              </div>
+            )}
+
+            {/* Tab 4: Authoritative Results & Sensitivity Analysis */}
+            {activeTab === 'analysis' && (
+              <div className="space-y-6">
+                {/* Mathematical Tie Alert Banner */}
+                {engineResult.isTie && (
+                  <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-200">
+                    <Scale className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold uppercase tracking-wider block text-amber-300">
+                        Canonical Mathematical Tie Detected (Epsilon: 1e-9)
+                      </span>
+                      <p className="mt-1 leading-relaxed">
+                        Multiple alternatives share an identical weighted score within machine epsilon. Under the Canonical Engine v1.0 specification, tied winners share Rank 1 with presentation order determined by input order.
+                      </p>
+                      {engineResult.tiedWinnerIds && (
+                        <div className="mt-2 font-mono text-[11px] text-amber-300">
+                          Tied Alternative IDs: {engineResult.tiedWinnerIds.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* Option Evaluations Table */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
+                    <span className="text-xs font-mono text-slate-300 font-bold uppercase">
+                      {isAuthoritative ? 'Authoritative Server Rankings' : 'Calculated Option Scores (Preview)'}
+                    </span>
+                    {isAuthoritative && (
+                      <span className="text-[10px] font-mono text-signal flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        <span>Canonical Engine v1.0.0</span>
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="space-y-3">
+                    {engineResult.evaluations.map((item) => (
+                      <div
+                        key={item.option.id}
+                        className={`p-3.5 rounded-xl border transition-all ${
+                          item.rank === 1
+                            ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
+                            : 'bg-surface/50 border-border-subtle'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1.5">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="w-2.5 h-2.5 rounded-full"
+                              style={{ backgroundColor: item.option.color }}
+                            />
+                            <span className="text-sm font-bold text-white">
+                              {item.option.name}
+                            </span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-slate-400">
+                              Rank #{item.rank}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 font-mono text-xs">
+                            <span className="font-bold text-white text-base">
+                              {item.weightedScore}
+                            </span>
+                            <span className="text-slate-500">/100</span>
+                          </div>
+                        </div>
+
+                        <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${item.weightedScore}%`,
+                              backgroundColor: item.rank === 1 ? '#B8FF5A' : item.option.color,
+                            }}
+                          />
+                        </div>
+
+                        <div className="text-[11px] text-slate-400 line-clamp-1">
+                          {item.option.tagline || item.option.description}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Explainability & Sensitivity Statements */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="p-3.5 rounded-xl bg-surface/70 border border-border text-xs text-slate-300">
+                    <span className="font-bold text-signal block mb-1">
+                      Explainability Rationale:
+                    </span>
+                    <p className="leading-relaxed">
+                      {engineResult.explainability.dynamicRationale}
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-xl bg-surface/70 border border-border text-xs text-slate-300">
+                    <span className="font-bold text-sky-400 block mb-1">
+                      Sensitivity & Tipping-Point:
+                    </span>
+                    <p className="leading-relaxed">
+                      {engineResult.explainability.sensitivityStatement}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Cryptographic Engine Metadata (CANONICAL_DECISION_ENGINE_V1_SPEC Section 8.2) */}
+                {isAuthoritative && serverDecision?.analysis && (
+                  <div className="p-3.5 rounded-xl bg-surface border border-border-subtle font-mono text-[11px] text-slate-400 space-y-1.5">
+                    <div className="flex items-center gap-1.5 font-bold text-slate-300 uppercase text-[10px]">
+                      <Hash className="w-3.5 h-3.5 text-signal" />
+                      <span>Canonical Engine Verification Audit Metadata</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
+                      <div>
+                        <span className="text-slate-500">Engine Version: </span>
+                        <span className="text-white">v{serverDecision.analysis.engineVersion}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Evaluated At: </span>
+                        <span className="text-white">{serverDecision.analysis.evaluatedAt}</span>
+                      </div>
+                      {serverDecision.analysis.calculationHash && (
+                        <div className="sm:col-span-2 truncate">
+                          <span className="text-slate-500">Calculation Hash: </span>
+                          <span className="text-signal select-all">
+                            {serverDecision.analysis.calculationHash}
+                          </span>
+                        </div>
+                      )}
+                      {serverDecision.analysis.inputHash && (
+                        <div className="sm:col-span-2 truncate">
+                          <span className="text-slate-500">Input Hash: </span>
+                          <span className="text-slate-300 select-all">
+                            {serverDecision.analysis.inputHash}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Modal Footer Bar */}
-          <div className="p-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
+          <div className="p-3.5 sm:p-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
             <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
               <span>Deterministic MCDA</span>
               <span className="text-slate-600">·</span>
@@ -760,17 +1051,16 @@ ${criteria
                   ID: {decisionId}
                 </span>
               ) : (
-                <span>Unsaved Sandbox</span>
+                <span>Unsaved Workspace</span>
               )}
             </div>
 
-            <div className="flex items-center gap-3">
-              {/* Save to Server / Persist Button */}
+            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+              {/* Save to Server Button */}
               {currentUserRole === 'viewer' ? (
                 <button
                   disabled
-                  className="px-4 py-2.5 rounded-xl bg-surface border border-border text-slate-500 font-bold text-xs sm:text-sm flex items-center gap-2 cursor-not-allowed"
-                  title="Viewers are not permitted to save changes"
+                  className="px-3.5 py-2 rounded-xl bg-surface border border-border text-slate-500 font-bold text-xs flex items-center gap-1.5 cursor-not-allowed"
                 >
                   <Eye className="w-4 h-4 text-sky-400" />
                   <span>Read-Only</span>
@@ -779,29 +1069,29 @@ ${criteria
                 <button
                   onClick={handleSaveToServer}
                   disabled={saveStatus === 'in_flight'}
-                  className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition-all cursor-pointer ${
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     saveStatus === 'in_flight'
                       ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
                       : isAuthoritative
                         ? 'bg-surface hover:bg-surface-subtle border border-signal/50 text-signal hover:shadow-glow-signal-sm'
                         : 'bg-signal hover:bg-signal-light text-background shadow-glow-signal-sm'
                   }`}
-                  title="Persist to MongoDB and compute authoritative MCDA results"
+                  title="Persist decision inputs to MongoDB"
                 >
                   {saveStatus === 'in_flight' ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin text-signal" />
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-signal" />
                       <span>Saving...</span>
                     </>
                   ) : isAuthoritative ? (
                     <>
-                      <CheckCircle2 className="w-4 h-4 text-signal" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-signal" />
                       <span>Saved & Verified</span>
                     </>
                   ) : (
                     <>
-                      <Save className="w-4 h-4" />
-                      <span>{decisionId ? 'Save Changes' : 'Save to Server'}</span>
+                      <Save className="w-3.5 h-3.5" />
+                      <span>{decisionId ? 'Save Inputs' : 'Save to Server'}</span>
                     </>
                   )}
                 </button>
@@ -811,10 +1101,10 @@ ${criteria
               {decisionId && currentUserRole === 'owner' && (
                 <button
                   onClick={() => setIsShareModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-signal/40 text-signal hover:shadow-glow-signal-sm font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-signal/40 text-signal hover:shadow-glow-signal-sm font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Share decision and manage collaborators"
                 >
-                  <Share2 className="w-4 h-4" />
+                  <Share2 className="w-3.5 h-3.5" />
                   <span>Share</span>
                 </button>
               )}
@@ -823,10 +1113,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsContributionsModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="View and submit expert contributions"
                 >
-                  <Sparkles className="w-4 h-4 text-signal" />
+                  <Sparkles className="w-3.5 h-3.5 text-signal" />
                   <span>Contributions</span>
                   {serverDecision?.isContributionRoundLocked && (
                     <Lock className="w-3 h-3 text-accent-rose" />
@@ -838,10 +1128,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsEvidenceModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="View and attach supporting evidence"
                 >
-                  <BookOpen className="w-4 h-4 text-blue-400" />
+                  <BookOpen className="w-3.5 h-3.5 text-blue-400" />
                   <span>Evidence</span>
                 </button>
               )}
@@ -850,10 +1140,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAiAnalystModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="px-3 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open AI Decision Analyst"
                 >
-                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
                   <span>AI Analyst</span>
                 </button>
               )}
@@ -862,10 +1152,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAnalyticsModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Advanced Decision Analytics"
                 >
-                  <BarChart3 className="w-4 h-4 text-cyan-400" />
+                  <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
                   <span>Analytics</span>
                 </button>
               )}
@@ -874,10 +1164,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsDisagreementsModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Disagreement Intelligence"
                 >
-                  <Scale className="w-4 h-4 text-amber-400" />
+                  <Scale className="w-3.5 h-3.5 text-amber-400" />
                   <span>Disagreements</span>
                 </button>
               )}
@@ -886,10 +1176,10 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsCalibrationModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
+                  className="px-3 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Expert Calibration Intelligence"
                 >
-                  <Target className="w-4 h-4 text-purple-400" />
+                  <Target className="w-3.5 h-3.5 text-purple-400" />
                   <span>Calibration</span>
                 </button>
               )}
@@ -898,28 +1188,28 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAuditExportModalOpen(true)}
-                  className="px-4 py-2.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-                  title="Open Decision History, Snapshots & Export Center"
+                  className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Open Decision History & Export Center"
                 >
-                  <History className="w-4 h-4 text-cyan-400" />
-                  <span>History & Export</span>
+                  <History className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>History</span>
                 </button>
               )}
 
-              {/* Export Briefing Button */}
+              {/* Copy Briefing Button */}
               <button
                 onClick={handleExportBriefing}
-                className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs sm:text-sm flex items-center gap-2 transition-all cursor-pointer"
+                className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 {copied ? (
                   <>
-                    <Check className="w-4 h-4 text-signal" />
-                    <span>Briefing Copied!</span>
+                    <Check className="w-3.5 h-3.5 text-signal" />
+                    <span>Copied!</span>
                   </>
                 ) : (
                   <>
-                    <Copy className="w-4 h-4" />
-                    <span>Copy Briefing</span>
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Briefing</span>
                   </>
                 )}
               </button>
@@ -928,7 +1218,6 @@ ${criteria
         </motion.div>
 
         <React.Suspense fallback={null}>
-          {/* Phase 6 Share Modal */}
           {isShareModalOpen && (
             <ShareModal
               isOpen={isShareModalOpen}
@@ -938,7 +1227,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 7 Contributions Modal */}
           {isContributionsModalOpen && (
             <ContributionsModal
               isOpen={isContributionsModalOpen}
@@ -952,7 +1240,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 8 Evidence Modal */}
           {isEvidenceModalOpen && (
             <EvidenceModal
               isOpen={isEvidenceModalOpen}
@@ -961,7 +1248,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 9 AI Analyst Modal */}
           {isAiAnalystModalOpen && (
             <AiAnalystModal
               isOpen={isAiAnalystModalOpen}
@@ -975,7 +1261,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 10 Advanced Analytics Modal */}
           {isAnalyticsModalOpen && (
             <AnalyticsModal
               isOpen={isAnalyticsModalOpen}
@@ -984,7 +1269,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 11 Disagreement Intelligence Modal */}
           {isDisagreementsModalOpen && (
             <DisagreementsModal
               isOpen={isDisagreementsModalOpen}
@@ -993,7 +1277,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 12 Expert Calibration Modal */}
           {isCalibrationModalOpen && (
             <ExpertCalibrationModal
               isOpen={isCalibrationModalOpen}
@@ -1002,7 +1285,6 @@ ${criteria
             />
           )}
 
-          {/* Phase 13 Decision Audit, History & Export Modal */}
           {isAuditExportModalOpen && (
             <AuditExportModal
               isOpen={isAuditExportModalOpen}
