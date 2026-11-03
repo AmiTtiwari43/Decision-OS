@@ -30,6 +30,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         sub: user.id,
         id: user.id,
         email: user.email,
+        name: user.name,
         role: user.role,
       });
 
@@ -72,6 +73,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
         sub: user.id,
         id: user.id,
         email: user.email,
+        name: user.name,
         role: user.role,
       });
 
@@ -122,4 +124,3 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
     }
   );
 };
-

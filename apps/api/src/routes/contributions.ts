@@ -2,9 +2,15 @@ import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply 
 import mongoose from 'mongoose';
 import {
   saveContributionSchema,
+  adoptContributionSchema,
+  rejectContributionSchema,
   type SaveContributionInput,
+  type AdoptContributionInput,
+  type RejectContributionInput,
 } from '../models/index.js';
 import { contributionService } from '../services/contribution.service.js';
+import { decisionRepository } from '../repositories/decision.repository.js';
+import { authorizeDecisionAction } from '../services/authorization.service.js';
 import {
   DecisionNotFoundError,
   InvalidDecisionIdError,
@@ -12,6 +18,11 @@ import {
   ContributionRoundLockedError,
   InvalidOptionReferenceError,
   InvalidCriterionReferenceError,
+  DecisionConflictError,
+  DecisionQuarantinedError,
+  InvalidContributionStatusError,
+  EngineValidationError,
+  ConcurrencyFencingError,
   ForbiddenError,
 } from '../errors/domain.errors.js';
 
@@ -29,7 +40,8 @@ function handleContributionError(
   if (
     err instanceof InvalidDecisionIdError ||
     err instanceof InvalidOptionReferenceError ||
-    err instanceof InvalidCriterionReferenceError
+    err instanceof InvalidCriterionReferenceError ||
+    err instanceof InvalidContributionStatusError
   ) {
     reply.status(400).send({
       statusCode: 400,
@@ -55,6 +67,48 @@ function handleContributionError(
       statusCode: 404,
       error: 'Not Found',
       message: err.message,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof DecisionConflictError) {
+    reply.status(409).send({
+      statusCode: 409,
+      error: 'Conflict',
+      message: err.message,
+      currentVersion: err.currentVersion,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof ConcurrencyFencingError) {
+    reply.status(409).send({
+      statusCode: 409,
+      error: 'Conflict',
+      message: err.message,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof EngineValidationError) {
+    reply.status(422).send({
+      statusCode: 422,
+      error: 'Unprocessable Entity',
+      message: err.message,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof DecisionQuarantinedError) {
+    reply.status(423).send({
+      statusCode: 423,
+      error: 'DecisionQuarantinedError',
+      message: err.message,
+      decisionId: err.decisionId,
       requestId,
     });
     return;
@@ -237,6 +291,61 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
     }
   });
 
+  // POST /decisions/:id/contributions/:contributionId/reject — Reject contribution with rationale (Owner only)
+  app.post(
+    '/decisions/:id/contributions/:contributionId/reject',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const { id, contributionId } = request.params as { id: string; contributionId: string };
+      const requestId = (request.id as string) || 'unknown';
+
+      if (!isValidObjectId(id) || !isValidObjectId(contributionId)) {
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: 'Invalid decision ID or contribution ID',
+          requestId,
+        });
+      }
+
+      try {
+        const decision = await decisionRepository.findById(id);
+        if (!decision) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: 'Not Found',
+            message: `Decision with id '${id}' not found`,
+            requestId,
+          });
+        }
+
+        // Authorize action first: owner or admin only
+        await authorizeDecisionAction(decision, 'reject_contribution', request.user);
+
+        const body = (request.body as Record<string, unknown>) || {};
+        const parsed = rejectContributionSchema.safeParse(body);
+        if (!parsed.success) {
+          const messages = parsed.error.errors.map((e) => e.message).join('; ');
+          return reply.status(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: messages,
+            requestId,
+          });
+        }
+
+        const rejected = await contributionService.rejectContribution(
+          id,
+          contributionId,
+          parsed.data as RejectContributionInput,
+          request.user
+        );
+        return reply.status(200).send(rejected);
+      } catch (err) {
+        return handleContributionError(err, request, reply);
+      }
+    }
+  );
+
   // POST /decisions/:id/contributions/:contributionId/adopt — Adopt expert scores into decision (Owner only)
   app.post(
     '/decisions/:id/contributions/:contributionId/adopt',
@@ -254,12 +363,47 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
 
       try {
-        const decision = await contributionService.adoptExpertScores(id, contributionId, request.user);
-        return reply.status(200).send(decision);
+        const decision = await decisionRepository.findById(id);
+        if (!decision) {
+          return reply.status(404).send({
+            statusCode: 404,
+            error: 'Not Found',
+            message: `Decision with id '${id}' not found`,
+            requestId,
+          });
+        }
+
+        // Authorize action FIRST: owner or admin only (rejects non-owner with 403 Forbidden)
+        await authorizeDecisionAction(decision, 'adopt', request.user);
+
+        // Body validation
+        const body = (request.body as Record<string, unknown>) || {};
+        const parsed = adoptContributionSchema.safeParse(body);
+        if (!parsed.success) {
+          const messages = parsed.error.errors.map((e) => e.message).join('; ');
+          return reply.status(400).send({
+            statusCode: 400,
+            error: 'Bad Request',
+            message: messages,
+            requestId,
+          });
+        }
+
+        const result = await contributionService.adoptExpertScores(
+          id,
+          contributionId,
+          parsed.data as AdoptContributionInput,
+          request.user
+        );
+
+        if (result.isIdempotentReplay) {
+          reply.header('X-Decision-Idempotent-Replay', 'true');
+        }
+
+        return reply.status(200).send(result.decision);
       } catch (err) {
         return handleContributionError(err, request, reply);
       }
     }
   );
 };
-

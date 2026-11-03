@@ -473,6 +473,7 @@ describe('Phase 7 — Expert Contributions & Deliberation Lifecycle', () => {
         method: 'POST',
         url: `/api/decisions/${decisionId}/contributions/${contributionId}/adopt`,
         headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { confirmation: true, expectedVersion: 1 },
       });
       expect(adoptRes.statusCode).toBe(200);
 

@@ -9,3 +9,5 @@ export * from './disagreement.repository.js';
 export * from './prediction.repository.js';
 export * from './audit.repository.js';
 export * from './snapshot.repository.js';
+export * from './comment.repository.js';
+export * from './operationJournal.repository.js';

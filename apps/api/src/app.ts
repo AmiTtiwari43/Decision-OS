@@ -17,6 +17,7 @@ import { disagreementRoutes } from './routes/disagreements.js';
 import { calibrationRoutes } from './routes/calibration.js';
 import { auditRoutes } from './routes/audit.js';
 import { collaborationRoutes } from './routes/collaboration.js';
+import { commentRoutes } from './routes/comments.js';
 import crypto from 'node:crypto';
 
 export interface BuildAppOptions extends FastifyServerOptions {
@@ -83,6 +84,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // Expert Contribution Routes
   await app.register(contributionRoutes, { prefix: '/api' });
+
+  // Deliberation Comment Routes
+  await app.register(commentRoutes, { prefix: '/api' });
 
   // Evidence & Provenance Routes
   await app.register(evidenceRoutes, { prefix: '/api' });

@@ -1,6 +1,12 @@
 import { z } from 'zod';
 
-export const contributionStatusSchema = z.enum(['draft', 'submitted', 'withdrawn']);
+export const contributionStatusSchema = z.enum([
+  'draft',
+  'submitted',
+  'withdrawn',
+  'adopted',
+  'rejected',
+]);
 
 export const contributionPredictionSchema = z.object({
   statement: z.string().trim().max(500, 'Prediction statement cannot exceed 500 characters').optional(),
@@ -40,5 +46,25 @@ export const saveContributionSchema = z.object({
   evidenceReferences: z.array(z.string().trim().min(1)).default([]),
 });
 
-export type ValidatedSaveContributionInput = z.infer<typeof saveContributionSchema>;
+export const adoptContributionSchema = z.object({
+  expectedVersion: z
+    .number({ required_error: 'expectedVersion is required' })
+    .int('expectedVersion must be an integer')
+    .positive('expectedVersion must be a positive integer'),
+  confirmation: z.literal(true, {
+    errorMap: () => ({ message: 'Explicit confirmation (confirmation: true) is required to adopt scores' }),
+  }),
+  selectedCriterionIds: z.array(z.string().trim().min(1)).optional(),
+});
 
+export const rejectContributionSchema = z.object({
+  rejectionReason: z
+    .string({ required_error: 'rejectionReason is required' })
+    .trim()
+    .min(1, 'rejectionReason cannot be empty')
+    .max(1000, 'rejectionReason cannot exceed 1000 characters'),
+});
+
+export type ValidatedSaveContributionInput = z.infer<typeof saveContributionSchema>;
+export type ValidatedAdoptContributionInput = z.infer<typeof adoptContributionSchema>;
+export type ValidatedRejectContributionInput = z.infer<typeof rejectContributionSchema>;

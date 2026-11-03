@@ -7,13 +7,34 @@ import {
 import type { RequesterContext } from './decision.service.js';
 
 export type DecisionRole = 'owner' | 'editor' | 'viewer' | 'contributor';
-export type DecisionAction = 'read' | 'edit' | 'analyze' | 'delete' | 'share' | 'contribute' | 'lock_round';
+export type DecisionAction =
+  | 'read'
+  | 'edit'
+  | 'analyze'
+  | 'delete'
+  | 'share'
+  | 'contribute'
+  | 'lock_round'
+  | 'adopt'
+  | 'reject_contribution'
+  | 'evidence_create'
+  | 'evidence_manage_own'
+  | 'evidence_manage_all'
+  | 'comment_create'
+  | 'comment_edit_own'
+  | 'comment_delete_own'
+  | 'comment_delete_all'
+  | 'comment_resolve'
+  | 'disagreement_resolve'
+  | 'ai_apply'
+  | 'ai_reject'
+  | 'activity_feed';
 
 /**
  * Resolves the effective role of a requester for a given decision.
  * Returns:
- * - 'owner' if user is system admin or decision owner.
- * - 'editor' or 'viewer' if user has an active DecisionAccessGrant.
+ * - 'owner' if user is global admin ('admin') or decision owner.
+ * - 'editor', 'contributor', or 'viewer' if user has an active DecisionAccessGrant.
  * - 'viewer' for legacy unowned decisions (read-only demonstration).
  * - null if user has no authorized relationship to this decision.
  */
@@ -61,8 +82,9 @@ export async function getDecisionRole(
  *
  * Boundary rules:
  * - Unrelated users receive 404 DecisionNotFoundError (ID enumeration defense).
- * - Viewers cannot mutate, analyze, delete, or share (403 Forbidden).
- * - Editors cannot delete or share (403 Forbidden).
+ * - Viewers cannot mutate, analyze, delete, share, or contribute (403 Forbidden).
+ * - Contributors cannot directly edit decision inputs, analyze, adopt, reject, or delete (403 Forbidden).
+ * - Editors cannot delete, share, lock/unlock rounds, adopt, reject, or moderate collaborator comments (403 Forbidden).
  * - Legacy unowned records cannot be mutated/deleted/shared by non-admins (404 DecisionNotFoundError).
  */
 export async function authorizeDecisionAction(
@@ -83,13 +105,14 @@ export async function authorizeDecisionAction(
   }
 
   // Special handling for legacy unowned records: only admin can mutate/delete/share
-  if (!decision.ownerId && requester?.role !== 'admin' && action !== 'read') {
+  if (!decision.ownerId && requester?.role !== 'admin' && action !== 'read' && action !== 'activity_feed') {
     throw new DecisionNotFoundError(decision._id.toString());
   }
 
   switch (action) {
     case 'read':
-      // Owner, Editor, and Viewer can all read
+    case 'activity_feed':
+      // Owner, Editor, Contributor, and Viewer can all read
       return role;
 
     case 'edit':
@@ -122,15 +145,68 @@ export async function authorizeDecisionAction(
       }
       return role;
 
+    case 'lock_round':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner can lock or unlock the contribution round');
+      }
+      return role;
+
+    case 'adopt':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner can adopt expert contributions');
+      }
+      return role;
+
+    case 'reject_contribution':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner can reject expert contributions');
+      }
+      return role;
+
     case 'contribute':
       if (role === 'viewer') {
         throw new ForbiddenError('Viewers are not permitted to submit contributions');
       }
       return role;
 
-    case 'lock_round':
+    case 'evidence_create':
+    case 'comment_create':
+    case 'comment_edit_own':
+    case 'comment_delete_own':
+    case 'evidence_manage_own':
+      if (role === 'viewer') {
+        throw new ForbiddenError('Viewers are not permitted to perform this action');
+      }
+      return role;
+
+    case 'evidence_manage_all':
       if (role !== 'owner') {
-        throw new ForbiddenError('Only the decision owner can lock or unlock the contribution round');
+        throw new ForbiddenError('Only the decision owner can moderate collaborator evidence');
+      }
+      return role;
+
+    case 'comment_delete_all':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner can delete collaborator comments');
+      }
+      return role;
+
+    case 'comment_resolve':
+      if (role !== 'owner' && role !== 'editor') {
+        throw new ForbiddenError('Only the decision owner or editors can resolve or reopen discussion threads');
+      }
+      return role;
+
+    case 'disagreement_resolve':
+      if (role !== 'owner' && role !== 'editor') {
+        throw new ForbiddenError('Only the decision owner or editors can resolve disagreements');
+      }
+      return role;
+
+    case 'ai_apply':
+    case 'ai_reject':
+      if (role !== 'owner' && role !== 'editor') {
+        throw new ForbiddenError('Only the decision owner or editors can apply or reject AI suggestions');
       }
       return role;
 

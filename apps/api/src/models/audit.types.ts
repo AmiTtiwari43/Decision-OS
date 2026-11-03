@@ -15,6 +15,11 @@ export type AuditAction =
   | 'contribution.submitted'
   | 'contribution.withdrawn'
   | 'contribution.adopted'
+  | 'contribution.rejected'
+  | 'comment.created'
+  | 'comment.updated'
+  | 'comment.deleted'
+  | 'comment.resolved'
   | 'evidence.created'
   | 'evidence.updated'
   | 'evidence.deleted'
@@ -47,6 +52,7 @@ export interface AuditDiff {
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
   changedFields?: string[];
+  [key: string]: unknown;
 }
 
 export interface IAuditEvent {
@@ -60,6 +66,7 @@ export interface IAuditEvent {
   entityId: string;
   summary: string;
   diff?: AuditDiff;
+  originalTimestamp: Date;
   timestamp: Date;
   eventHash: string;
   previousEventHash: string;
@@ -83,6 +90,7 @@ export interface AuditEventDto {
   entityId: string;
   summary: string;
   diff?: AuditDiff;
+  originalTimestamp: string;
   timestamp: string;
   eventHash: string;
   previousEventHash: string;
@@ -107,4 +115,3 @@ export interface ChainVerificationResultDto {
   brokenAtEventId?: string;
   reason?: string;
 }
-

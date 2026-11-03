@@ -132,6 +132,39 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
       type: Date,
       default: null,
     },
+    isAudited: {
+      type: Boolean,
+      default: true,
+    },
+    auditIntegrityStatus: {
+      type: String,
+      enum: ['healthy', 'pending_reconciliation', 'quarantined'],
+      default: 'healthy',
+      index: true,
+    },
+    pendingOperationId: {
+      type: String,
+      default: null,
+    },
+    quarantineReason: {
+      type: String,
+      default: null,
+    },
+    recoveryFencingToken: {
+      type: Number,
+      default: 0,
+      index: true,
+    },
+    recoveryOwner: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    recoveryLeaseExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
   },
   {
     timestamps: true,
@@ -142,6 +175,10 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
         if ((doc as unknown as { currentUserRole?: string }).currentUserRole) {
           ret.currentUserRole = (doc as unknown as { currentUserRole?: string }).currentUserRole;
         }
+        ret.isAudited = ret.isAudited !== undefined ? Boolean(ret.isAudited) : true;
+        ret.auditIntegrityStatus = ret.auditIntegrityStatus || 'healthy';
+        ret.pendingOperationId = ret.pendingOperationId || null;
+        ret.quarantineReason = ret.quarantineReason || null;
         return ret;
       },
     },

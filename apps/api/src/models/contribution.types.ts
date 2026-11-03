@@ -1,6 +1,11 @@
 import type { Types } from 'mongoose';
 
-export type ContributionStatus = 'draft' | 'submitted' | 'withdrawn';
+export type ContributionStatus =
+  | 'draft'
+  | 'submitted'
+  | 'withdrawn'
+  | 'adopted'
+  | 'rejected';
 
 export interface IContributionPrediction {
   statement?: string;
@@ -37,6 +42,12 @@ export interface IDecisionContribution {
   history: IContributionRevisionSnapshot[];
   submittedAt: Date | null;
   withdrawnAt: Date | null;
+  adoptedAt?: Date | null;
+  adoptedBy?: string | null;
+  adoptedOptionId?: string | null;
+  rejectionReason?: string | null;
+  rejectedAt?: Date | null;
+  rejectedBy?: { id: string; name?: string; role?: string } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -55,3 +66,12 @@ export interface SaveContributionInput {
   evidenceReferences?: string[];
 }
 
+export interface AdoptContributionInput {
+  expectedVersion: number;
+  confirmation: boolean;
+  selectedCriterionIds?: string[];
+}
+
+export interface RejectContributionInput {
+  rejectionReason: string;
+}

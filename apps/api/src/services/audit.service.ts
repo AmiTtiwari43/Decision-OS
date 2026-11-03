@@ -32,6 +32,8 @@ export interface RecordAuditInput {
   entityId: string;
   summary: string;
   diff?: AuditDiff;
+  eventId?: string;
+  originalTimestamp?: Date;
   timestamp?: Date;
 }
 
@@ -59,11 +61,20 @@ export function computeCanonicalEventHash(event: {
   entityId: string;
   summary: string;
   diff?: AuditDiff | null;
+  originalTimestamp: Date | string;
   timestamp: Date | string;
   previousEventHash: string;
   schemaVersion: number;
 }): string {
-  const ts = event.timestamp instanceof Date ? event.timestamp.toISOString() : new Date(event.timestamp).toISOString();
+  const origTs =
+    event.originalTimestamp instanceof Date
+      ? event.originalTimestamp.toISOString()
+      : new Date(event.originalTimestamp).toISOString();
+  const appendTs =
+    event.timestamp instanceof Date
+      ? event.timestamp.toISOString()
+      : new Date(event.timestamp).toISOString();
+
   const canonical = JSON.stringify(
     canonicalizeJson({
       action: event.action,
@@ -73,10 +84,11 @@ export function computeCanonicalEventHash(event: {
       entityId: event.entityId,
       entityType: event.entityType,
       eventId: event.eventId,
+      originalTimestamp: origTs,
       previousEventHash: event.previousEventHash,
       schemaVersion: event.schemaVersion || 1,
       summary: event.summary,
-      timestamp: ts,
+      timestamp: appendTs,
     })
   );
 
@@ -85,11 +97,14 @@ export function computeCanonicalEventHash(event: {
 
 export class AuditService {
   /**
-   * Appends an audit event with SHA-256 hash chaining to guarantee chronological tamper-evidence.
+   * Appends an audit event with SHA-256 hash chaining and dual timestamps.
+   * Guarantees chronological tamper-evidence, preserves stable identity across retries,
+   * and enforces strict monotonicity.
    */
   async recordEvent(input: RecordAuditInput): Promise<AuditEventDocument> {
     const { decisionId, action, entityType, entityId, summary, diff } = input;
-    const eventId = crypto.randomUUID();
+    const eventId = input.eventId || crypto.randomUUID();
+    const originalTimestamp = input.originalTimestamp || new Date();
 
     let actorId = 'system';
     let actorEmail: string | undefined;
@@ -125,9 +140,13 @@ export class AuditService {
         const latestEvent = await auditRepository.getLatestByDecisionId(decisionId);
         const previousEventHash = latestEvent?.eventHash || GENESIS_PREVIOUS_HASH;
         const schemaVersion = 1;
+
+        // Sequence timestamp: strictly monotonic chain append time
         const eventTimestamp =
           input.timestamp ||
-          (latestEvent ? new Date(Math.max(Date.now(), latestEvent.timestamp.getTime() + 1)) : new Date());
+          (latestEvent
+            ? new Date(Math.max(Date.now(), latestEvent.timestamp.getTime() + 1))
+            : new Date());
 
         const eventHash = computeCanonicalEventHash({
           eventId,
@@ -138,6 +157,7 @@ export class AuditService {
           entityId,
           summary,
           diff,
+          originalTimestamp,
           timestamp: eventTimestamp,
           previousEventHash,
           schemaVersion,
@@ -154,6 +174,7 @@ export class AuditService {
           entityId,
           summary,
           diff,
+          originalTimestamp,
           timestamp: eventTimestamp,
           eventHash,
           previousEventHash,
@@ -164,7 +185,10 @@ export class AuditService {
       } catch (err: unknown) {
         // If MongoDB duplicate key on { decisionId, previousEventHash } occurred due to concurrent writes, retry with new chain head
         const isDuplicateKey =
-          err && typeof err === 'object' && ('code' in err || 'errorLabels' in err) && (err as { code?: number }).code === 11000;
+          err &&
+          typeof err === 'object' &&
+          ('code' in err || 'errorLabels' in err) &&
+          (err as { code?: number }).code === 11000;
         if (isDuplicateKey && attempt < maxAttempts - 1) {
           await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
           continue;
@@ -173,7 +197,9 @@ export class AuditService {
       }
     }
 
-    throw new Error(`Failed to record audit event for decision ${decisionId} after ${maxAttempts} attempts.`);
+    throw new Error(
+      `Failed to record audit event for decision ${decisionId} after ${maxAttempts} attempts.`
+    );
   }
 
   /**
@@ -205,7 +231,7 @@ export class AuditService {
       { page, limit }
     );
 
-    const dtos: AuditEventDto[] = items.map(doc => ({
+    const dtos: AuditEventDto[] = items.map((doc) => ({
       eventId: doc.eventId,
       decisionId: doc.decisionId.toString(),
       actorId: doc.actorId,
@@ -216,6 +242,7 @@ export class AuditService {
       entityId: doc.entityId,
       summary: doc.summary,
       diff: doc.diff,
+      originalTimestamp: (doc.originalTimestamp || doc.timestamp).toISOString(),
       timestamp: doc.timestamp.toISOString(),
       eventHash: doc.eventHash,
       previousEventHash: doc.previousEventHash,
@@ -306,6 +333,7 @@ export class AuditService {
         entityId: ev.entityId,
         summary: ev.summary,
         diff: ev.diff,
+        originalTimestamp: ev.originalTimestamp || ev.timestamp,
         timestamp: ev.timestamp,
         previousEventHash: ev.previousEventHash,
         schemaVersion: ev.schemaVersion,
@@ -339,4 +367,3 @@ export class AuditService {
 }
 
 export const auditService = new AuditService();
-

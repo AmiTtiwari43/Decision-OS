@@ -50,6 +50,11 @@ export const AuditEventSchema = new Schema<IAuditEvent, Model<AuditEventDocument
       type: Schema.Types.Mixed,
       default: null,
     },
+    originalTimestamp: {
+      type: Date,
+      required: true,
+      default: Date.now,
+    },
     timestamp: {
       type: Date,
       required: true,
@@ -115,4 +120,3 @@ AuditEventSchema.pre('findOneAndDelete', function () {
 export const AuditEventModel =
   (mongoose.models.AuditEvent as Model<AuditEventDocument>) ||
   mongoose.model<AuditEventDocument>('AuditEvent', AuditEventSchema);
-

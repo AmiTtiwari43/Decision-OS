@@ -6,6 +6,7 @@ export interface TokenPayload {
   sub: string;
   id: string;
   email: string;
+  name?: string;
   role: 'user' | 'admin';
 }
 
@@ -85,4 +86,3 @@ export async function registerAuthPlugin(
     }
   });
 }
-

@@ -38,8 +38,8 @@ export class ContributionRepository {
 
   /**
    * Lists contributions for a decision.
-   * If includeDraftsForUserId is provided, returns all submitted/withdrawn contributions
-   * PLUS drafts belonging to that user. Otherwise only submitted/withdrawn contributions.
+   * If includeDraftsForUserId is provided, returns all submitted/withdrawn/adopted/rejected contributions
+   * PLUS drafts belonging to that user.
    */
   async listByDecision(
     decisionId: string,
@@ -52,15 +52,17 @@ export class ContributionRepository {
     const conditions: Record<string, unknown>[] = [];
     conditions.push({ decisionId: new mongoose.Types.ObjectId(decisionId) });
 
+    const nonDraftStatuses = ['submitted', 'withdrawn', 'adopted', 'rejected'];
+
     if (includeDraftsForUserId && mongoose.isValidObjectId(includeDraftsForUserId)) {
       conditions.push({
         $or: [
-          { status: { $in: ['submitted', 'withdrawn'] } },
+          { status: { $in: nonDraftStatuses } },
           { contributorId: new mongoose.Types.ObjectId(includeDraftsForUserId) },
         ],
       });
     } else {
-      conditions.push({ status: { $in: ['submitted', 'withdrawn'] } });
+      conditions.push({ status: { $in: nonDraftStatuses } });
     }
 
     return DecisionContributionModel.find({ $and: conditions })
@@ -86,9 +88,10 @@ export class ContributionRepository {
     const existing = await DecisionContributionModel.findOne(filter);
 
     if (existing) {
-      // If the contribution was previously submitted, archive the submitted state before modifying
+      // If the contribution was previously submitted or adopted, archive the state before modifying
       if (
         existing.status === 'submitted' ||
+        existing.status === 'adopted' ||
         (existing.status === 'withdrawn' &&
           existing.submittedAt &&
           !existing.history.some((h) => h.revision === existing.revision))
@@ -125,8 +128,8 @@ export class ContributionRepository {
       if (data.evidenceReferences !== undefined) {
         existing.evidenceReferences = data.evidenceReferences;
       }
-      // If was withdrawn, saving a draft moves it back to draft
-      if (existing.status === 'withdrawn') {
+      // If was withdrawn or rejected, saving a draft moves it back to draft
+      if (existing.status === 'withdrawn' || existing.status === 'rejected') {
         existing.status = 'draft';
       }
       await existing.save();
@@ -167,7 +170,7 @@ export class ContributionRepository {
   }
 
   /**
-   * Submits a contribution, capturing a historical snapshot if this is a revision.
+   * Submits a contribution, transitioning it to 'submitted'.
    */
   async submit(
     decisionId: string,
@@ -222,6 +225,63 @@ export class ContributionRepository {
   }
 
   /**
+   * Rejects a submitted contribution with rationale (Owner only).
+   */
+  async reject(
+    contributionId: string,
+    rejectionReason: string,
+    rejectedBy: { id: string; name?: string; role?: string }
+  ): Promise<DecisionContributionDocument | null> {
+    if (!mongoose.isValidObjectId(contributionId)) {
+      return null;
+    }
+
+    return DecisionContributionModel.findByIdAndUpdate(
+      contributionId,
+      {
+        $set: {
+          status: 'rejected',
+          rejectionReason,
+          rejectedAt: new Date(),
+          rejectedBy,
+        },
+      },
+      { new: true }
+    )
+      .populate('contributorId', 'id name email')
+      .exec();
+  }
+
+  /**
+   * Marks a contribution as adopted.
+   */
+  async markAdopted(
+    contributionId: string,
+    adoptedBy: string,
+    adoptedOptionId: string,
+    session?: mongoose.ClientSession
+  ): Promise<DecisionContributionDocument | null> {
+    if (!mongoose.isValidObjectId(contributionId)) {
+      return null;
+    }
+
+    return DecisionContributionModel.findByIdAndUpdate(
+      contributionId,
+      {
+        $set: {
+          status: 'adopted',
+          adoptedAt: new Date(),
+          adoptedBy,
+          adoptedOptionId,
+        },
+      },
+      { new: true, ...(session ? { session } : {}) }
+    )
+      .populate('contributorId', 'id name email')
+      .exec();
+  }
+
+  /**
    * Cascading cleanup: deletes all contributions for a decision.
    */
   async deleteByDecisionId(decisionId: string): Promise<number> {
@@ -236,4 +296,3 @@ export class ContributionRepository {
 }
 
 export const contributionRepository = new ContributionRepository();
-

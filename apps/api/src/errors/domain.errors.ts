@@ -458,3 +458,101 @@ export class DecisionConflictError extends Error {
     Object.setPrototypeOf(this, DecisionConflictError.prototype);
   }
 }
+
+/**
+ * Thrown when an operation is attempted against a quarantined decision.
+ */
+export class DecisionQuarantinedError extends Error {
+  readonly statusCode = 423;
+  readonly decisionId: string;
+
+  constructor(
+    decisionId: string,
+    message = 'Decision is quarantined due to unrecoverable audit desynchronization. Mutations are disabled.'
+  ) {
+    super(message);
+    this.name = 'DecisionQuarantinedError';
+    this.decisionId = decisionId;
+    Object.setPrototypeOf(this, DecisionQuarantinedError.prototype);
+  }
+}
+
+/**
+ * Thrown when a recovery worker's fencing token is superseded or lease is lost.
+ */
+export class ConcurrencyFencingError extends Error {
+  readonly statusCode = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConcurrencyFencingError';
+    Object.setPrototypeOf(this, ConcurrencyFencingError.prototype);
+  }
+}
+
+/**
+ * Thrown when a comment is not found by ID.
+ */
+export class CommentNotFoundError extends Error {
+  readonly statusCode = 404;
+
+  constructor(message = 'Comment not found') {
+    super(message);
+    this.name = 'CommentNotFoundError';
+    Object.setPrototypeOf(this, CommentNotFoundError.prototype);
+  }
+}
+
+/**
+ * Thrown when comment reply nesting exceeds the single-level limit (depth = 1).
+ */
+export class CommentDepthExceededError extends Error {
+  readonly statusCode = 400;
+
+  constructor(
+    message = 'Replies cannot be nested deeper than 1 level; reply directly to the root comment'
+  ) {
+    super(message);
+    this.name = 'CommentDepthExceededError';
+    Object.setPrototypeOf(this, CommentDepthExceededError.prototype);
+  }
+}
+
+/**
+ * Thrown when comment resolution is attempted on a child reply rather than root comment.
+ */
+export class InvalidCommentResolutionError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message = 'Resolution status can only be toggled on root comments') {
+    super(message);
+    this.name = 'InvalidCommentResolutionError';
+    Object.setPrototypeOf(this, InvalidCommentResolutionError.prototype);
+  }
+}
+
+/**
+ * Thrown when a comment target reference is invalid or incongruent.
+ */
+export class InvalidCommentTargetError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCommentTargetError';
+    Object.setPrototypeOf(this, InvalidCommentTargetError.prototype);
+  }
+}
+
+/**
+ * Thrown when an action is performed on a contribution in an incompatible status.
+ */
+export class InvalidContributionStatusError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidContributionStatusError';
+    Object.setPrototypeOf(this, InvalidContributionStatusError.prototype);
+  }
+}

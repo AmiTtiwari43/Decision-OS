@@ -9,6 +9,7 @@ import { decisionAccessRepository } from '../repositories/decisionAccess.reposit
 import { invitationRepository } from '../repositories/invitation.repository.js';
 import { contributionRepository } from '../repositories/contribution.repository.js';
 import { evidenceRepository } from '../repositories/evidence.repository.js';
+import { commentRepository } from '../repositories/comment.repository.js';
 import {
   authorizeDecisionAction,
   type DecisionRole,
@@ -29,6 +30,7 @@ import {
   IncompleteScoresError,
   EngineValidationError,
   DecisionConflictError,
+  DecisionQuarantinedError,
 } from '../errors/domain.errors.js';
 import type { MissingScorePair } from '../errors/domain.errors.js';
 
@@ -166,6 +168,10 @@ function stripServerFields(input: Record<string, unknown>): Record<string, unkno
   delete copy.ownerId;
   delete copy.expectedVersion;
   delete copy.version;
+  delete copy.isAudited;
+  delete copy.auditIntegrityStatus;
+  delete copy.pendingOperationId;
+  delete copy.quarantineReason;
   return copy;
 }
 
@@ -181,6 +187,11 @@ export async function createDecision(
   if (ownerId && mongoose.isValidObjectId(ownerId)) {
     sanitized.ownerId = new mongoose.Types.ObjectId(ownerId);
   }
+
+  // Set default audit integrity status
+  sanitized.isAudited = true;
+  sanitized.auditIntegrityStatus = 'healthy';
+  sanitized.pendingOperationId = null;
 
   // Create the base document
   const doc = await decisionRepository.create(sanitized);
@@ -267,6 +278,17 @@ export async function updateDecision(
     throw new DecisionNotFoundError(id);
   }
 
+  if (existing.auditIntegrityStatus === 'quarantined') {
+    throw new DecisionQuarantinedError(id, existing.quarantineReason || undefined);
+  }
+
+  if (existing.pendingOperationId) {
+    throw new DecisionConflictError(
+      existing.version || 1,
+      'Decision has an in-flight operation pending reconciliation'
+    );
+  }
+
   await authorizeDecisionAction(existing, 'edit', requester);
 
   // Optimistic concurrency check
@@ -284,7 +306,7 @@ export async function updateDecision(
 
   const nextVersion = (existing.version || 1) + 1;
   const sanitized = stripServerFields(data);
-  (sanitized as any).version = nextVersion;
+  (sanitized as Record<string, unknown>).version = nextVersion;
 
   const doc = await decisionRepository.update(
     id,
@@ -370,6 +392,10 @@ export async function deleteDecision(
     throw new DecisionNotFoundError(id);
   }
 
+  if (existing.auditIntegrityStatus === 'quarantined') {
+    throw new DecisionQuarantinedError(id, existing.quarantineReason || undefined);
+  }
+
   await authorizeDecisionAction(existing, 'delete', requester);
 
   // Preserve historical audit record before cascade and deletion
@@ -382,12 +408,13 @@ export async function deleteDecision(
     summary: `Deleted decision "${existing.title}"`,
   });
 
-  // Cascade delete any access grants, invitations, contributions, and evidence associated with this decision
+  // Cascade delete any access grants, invitations, contributions, evidence, and comments associated with this decision
   await Promise.all([
     decisionAccessRepository.deleteByDecisionId(id),
     invitationRepository.deleteByDecisionId(id),
     contributionRepository.deleteByDecisionId(id),
     evidenceRepository.deleteByDecisionId(id),
+    commentRepository.deleteByDecisionId(id),
   ]);
 
   const deleted = await decisionRepository.delete(id);
@@ -411,6 +438,17 @@ export async function analyzeDecision(
   const doc = await decisionRepository.findById(id);
   if (!doc) {
     throw new DecisionNotFoundError(id);
+  }
+
+  if (doc.auditIntegrityStatus === 'quarantined') {
+    throw new DecisionQuarantinedError(id, doc.quarantineReason || undefined);
+  }
+
+  if (doc.pendingOperationId) {
+    throw new DecisionConflictError(
+      doc.version || 1,
+      'Decision has an in-flight operation pending reconciliation'
+    );
   }
 
   await authorizeDecisionAction(doc, 'analyze', requester);

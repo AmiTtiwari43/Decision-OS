@@ -5,6 +5,8 @@ export interface ErrorResponse {
   error: string;
   message: string;
   requestId: string;
+  decisionId?: string;
+  currentVersion?: number;
 }
 
 export function registerErrorHandler(app: FastifyInstance, nodeEnv: string): void {
@@ -19,6 +21,7 @@ export function registerErrorHandler(app: FastifyInstance, nodeEnv: string): voi
     else if (statusCode === 404) errorName = 'Not Found';
     else if (statusCode === 409) errorName = 'Conflict';
     else if (statusCode === 422) errorName = 'Unprocessable Entity';
+    else if (statusCode === 423) errorName = error.name || 'Locked';
     else if (error.name && error.name !== 'Error') errorName = error.name;
 
     const isProd = nodeEnv === 'production';
@@ -36,6 +39,13 @@ export function registerErrorHandler(app: FastifyInstance, nodeEnv: string): voi
       message,
       requestId,
     };
+
+    if ((error as unknown as { decisionId?: string }).decisionId) {
+      response.decisionId = (error as unknown as { decisionId?: string }).decisionId;
+    }
+    if ((error as unknown as { currentVersion?: number }).currentVersion !== undefined) {
+      response.currentVersion = (error as unknown as { currentVersion?: number }).currentVersion;
+    }
 
     reply.status(statusCode).send(response);
   });

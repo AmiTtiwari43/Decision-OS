@@ -3,6 +3,8 @@ import type { EngineResult } from '@decision-os/decision-engine';
 
 export type CriterionDirection = 'benefit' | 'cost';
 
+export type AuditIntegrityStatus = 'healthy' | 'pending_reconciliation' | 'quarantined';
+
 export interface DecisionCriterion {
   id: string;
   name: string;
@@ -37,12 +39,41 @@ export interface IDecision {
   ownerId?: Types.ObjectId | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;
+  isAudited?: boolean;
+  auditIntegrityStatus?: AuditIntegrityStatus;
+  pendingOperationId?: string | null;
+  quarantineReason?: string | null;
+  recoveryFencingToken?: number;
+  recoveryOwner?: string | null;
+  recoveryLeaseExpiresAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
 
 export interface DecisionDocument extends IDecision {
   _id: Types.ObjectId;
+}
+
+export interface DecisionDto {
+  id: string;
+  title: string;
+  description: string;
+  criteria: DecisionCriterion[];
+  options: DecisionOption[];
+  scores: ScoreMatrix;
+  analysis: EngineResult | null;
+  calculationVersion: number;
+  version: number;
+  ownerId?: string | null;
+  isContributionRoundLocked?: boolean;
+  contributionRoundLockedAt?: string | null;
+  currentUserRole?: string;
+  isAudited: boolean;
+  auditIntegrityStatus: AuditIntegrityStatus;
+  pendingOperationId: string | null;
+  quarantineReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateDecisionInput {
@@ -57,6 +88,10 @@ export interface CreateDecisionInput {
   ownerId?: Types.ObjectId | string | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;
+  isAudited?: boolean;
+  auditIntegrityStatus?: AuditIntegrityStatus;
+  pendingOperationId?: string | null;
+  quarantineReason?: string | null;
 }
 
 export interface UpdateDecisionInput {
@@ -72,4 +107,8 @@ export interface UpdateDecisionInput {
   ownerId?: Types.ObjectId | string | null;
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: Date | null;
+  isAudited?: boolean;
+  auditIntegrityStatus?: AuditIntegrityStatus;
+  pendingOperationId?: string | null;
+  quarantineReason?: string | null;
 }

@@ -76,7 +76,7 @@ export const DecisionContributionSchema = new Schema<
     },
     status: {
       type: String,
-      enum: ['draft', 'submitted', 'withdrawn'],
+      enum: ['draft', 'submitted', 'withdrawn', 'adopted', 'rejected'],
       default: 'draft',
       index: true,
     },
@@ -94,6 +94,30 @@ export const DecisionContributionSchema = new Schema<
     },
     withdrawnAt: {
       type: Date,
+      default: null,
+    },
+    adoptedAt: {
+      type: Date,
+      default: null,
+    },
+    adoptedBy: {
+      type: String,
+      default: null,
+    },
+    adoptedOptionId: {
+      type: String,
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+    rejectedBy: {
+      type: Schema.Types.Mixed,
       default: null,
     },
   },

@@ -25,3 +25,8 @@ export * from './audit.model.js';
 export * from './snapshot.types.js';
 export * from './snapshot.model.js';
 export * from './collaboration.types.js';
+export * from './comment.types.js';
+export * from './comment.schema.js';
+export * from './comment.model.js';
+export * from './operationJournal.types.js';
+export * from './operationJournal.model.js';
