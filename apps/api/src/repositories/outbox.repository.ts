@@ -82,7 +82,7 @@ export class OutboxRepository {
             dispatchOwner: workerId,
             leaseExpiresAt: leaseExpiration,
           },
-          $inc: { retryCount: 1 },
+          $inc: { retryCount: 1, claimGeneration: 1 },
         },
         { new: true }
       ).exec();
@@ -95,18 +95,33 @@ export class OutboxRepository {
   }
 
   /**
-   * Marks a notification as successfully delivered.
+   * Marks a notification as successfully delivered with claim generation fencing.
+   * A stale dispatcher whose lease expired or whose generation was superseded will be rejected.
    */
-  async markDelivered(notificationId: string, workerId?: string): Promise<boolean> {
-    const filter: Record<string, unknown> = { notificationId };
-    if (workerId) filter.dispatchOwner = workerId;
+  async markDelivered(
+    notificationId: string,
+    workerId?: string,
+    claimGeneration?: number
+  ): Promise<boolean> {
+    const now = new Date();
+    const filter: Record<string, unknown> = {
+      notificationId,
+      status: 'CLAIMED',
+    };
+    if (workerId) {
+      filter.dispatchOwner = workerId;
+      filter.leaseExpiresAt = { $gt: now };
+    }
+    if (claimGeneration !== undefined) {
+      filter.claimGeneration = claimGeneration;
+    }
 
     const res = await NotificationOutboxModel.updateOne(
       filter,
       {
         $set: {
           status: 'DELIVERED',
-          deliveredAt: new Date(),
+          deliveredAt: now,
           leaseExpiresAt: null,
           dispatchOwner: null,
         },
@@ -118,10 +133,26 @@ export class OutboxRepository {
 
   /**
    * Records a dispatch failure and resets state to PENDING for exponential backoff retry.
+   * Rejects stale dispatchers with mismatched owner, generation, or expired lease.
    */
-  async markFailed(notificationId: string, error: string, workerId?: string): Promise<boolean> {
-    const filter: Record<string, unknown> = { notificationId };
-    if (workerId) filter.dispatchOwner = workerId;
+  async markFailed(
+    notificationId: string,
+    error: string,
+    workerId?: string,
+    claimGeneration?: number
+  ): Promise<boolean> {
+    const now = new Date();
+    const filter: Record<string, unknown> = {
+      notificationId,
+      status: 'CLAIMED',
+    };
+    if (workerId) {
+      filter.dispatchOwner = workerId;
+      filter.leaseExpiresAt = { $gt: now };
+    }
+    if (claimGeneration !== undefined) {
+      filter.claimGeneration = claimGeneration;
+    }
 
     const res = await NotificationOutboxModel.updateOne(
       filter,

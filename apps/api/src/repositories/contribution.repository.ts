@@ -259,32 +259,55 @@ export class ContributionRepository {
 
   /**
    * Marks a contribution as adopted.
-   * Atomically guards that contribution is currently 'submitted' and prevents stale overwrite.
+   * Atomically guards status: 'submitted', expected revision, and decision binding.
    */
   async markAdopted(
     contributionId: string,
     adoptedBy: string,
     adoptedOptionId: string,
-    session?: mongoose.ClientSession
+    session?: mongoose.ClientSession,
+    options?: {
+      decisionId?: string;
+      expectedRevision?: number;
+      operationId?: string;
+      decisionVersion?: number;
+      fencingToken?: number;
+    }
   ): Promise<DecisionContributionDocument | null> {
     if (!mongoose.isValidObjectId(contributionId)) {
       return null;
     }
 
+    const filter: Record<string, unknown> = {
+      _id: new mongoose.Types.ObjectId(contributionId),
+      status: 'submitted', // Strict status fencing
+    };
+
+    if (options?.decisionId && mongoose.isValidObjectId(options.decisionId)) {
+      filter.decisionId = new mongoose.Types.ObjectId(options.decisionId);
+    }
+    if (options?.expectedRevision !== undefined) {
+      filter.revision = options.expectedRevision;
+    }
+
+    const setPayload: Record<string, unknown> = {
+      status: 'adopted',
+      adoptedAt: new Date(),
+      adoptedBy,
+      adoptedOptionId,
+    };
+
+    if (options?.operationId) setPayload.adoptedOperationId = options.operationId;
+    if (options?.decisionVersion !== undefined) setPayload.adoptedDecisionVersion = options.decisionVersion;
+    if (options?.fencingToken !== undefined) setPayload.adoptedFencingToken = options.fencingToken;
+    if (options?.expectedRevision !== undefined) setPayload.adoptedRevision = options.expectedRevision;
+
     return DecisionContributionModel.findOneAndUpdate(
+      filter,
       {
-        _id: new mongoose.Types.ObjectId(contributionId),
-        status: 'submitted', // Strict status fencing
+        $set: setPayload,
       },
-      {
-        $set: {
-          status: 'adopted',
-          adoptedAt: new Date(),
-          adoptedBy,
-          adoptedOptionId,
-        },
-      },
-      { new: true, ...(session ? { session } : {}) }
+      { returnDocument: 'after', ...(session ? { session } : {}) }
     )
       .populate('contributorId', 'id name email')
       .exec();

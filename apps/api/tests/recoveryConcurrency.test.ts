@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection.js';
-import { assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard.js';
 import { UserModel } from '../src/models/user.model.js';
 import { DecisionModel } from '../src/models/decision.model.js';
 import { DecisionContributionModel } from '../src/models/contribution.model.js';
@@ -19,8 +19,7 @@ import {
 import { auditService } from '../src/services/audit.service.js';
 import { ConcurrencyFencingError } from '../src/errors/domain.errors.js';
 
-const TEST_MONGODB_URI =
-  process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 assertTestDatabase(TEST_MONGODB_URI);
 
@@ -530,6 +529,9 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
           version: 6,
           pendingOperationId: opId,
           scores: { postgres: { cost: 10, perf: 10 }, atlas: { cost: 10, perf: 10 } },
+          recoveryOwner: 'worker-recovery',
+          recoveryFencingToken: 1,
+          recoveryLeaseExpiresAt: new Date(Date.now() + 60_000),
         },
       });
 

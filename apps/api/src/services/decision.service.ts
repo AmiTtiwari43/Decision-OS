@@ -16,7 +16,7 @@ import {
 } from './authorization.service.js';
 import { auditService } from './audit.service.js';
 import { outboxService } from './outbox.service.js';
-import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
+import { runInTransaction } from '../db/connection.js';
 import { collaborationService } from './collaboration.service.js';
 import { evaluationCache } from './evaluationCache.js';
 import {
@@ -603,14 +603,9 @@ export async function resolveQuarantine(
     return updated;
   };
 
-  let resolvedDoc: DecisionDocument;
-  if (isReplicaSetSupported()) {
-    resolvedDoc = await runInTransaction(async (session) => {
-      return executeResolution(session);
-    });
-  } else {
-    resolvedDoc = await executeResolution();
-  }
+  const resolvedDoc = await runInTransaction(async (session) => {
+    return executeResolution(session);
+  });
 
   evaluationCache.invalidate(id);
 

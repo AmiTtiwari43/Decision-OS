@@ -10,6 +10,7 @@ export interface INotificationOutbox {
   status: OutboxStatus;
   dispatchOwner?: string | null;
   leaseExpiresAt?: Date | null;
+  claimGeneration?: number;
   retryCount: number;
   lastError?: string | null;
   deliveredAt?: Date | null;
@@ -18,5 +19,15 @@ export interface INotificationOutbox {
 }
 
 export interface NotificationOutboxDocument extends INotificationOutbox {
+  _id: Types.ObjectId;
+}
+
+export interface INotificationConsumerRecord {
+  consumerId: string;
+  notificationId: string;
+  processedAt: Date;
+}
+
+export interface NotificationConsumerRecordDocument extends INotificationConsumerRecord {
   _id: Types.ObjectId;
 }

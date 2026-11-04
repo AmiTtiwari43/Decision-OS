@@ -11,7 +11,9 @@ import type { RequesterContext } from './decision.service.js';
 import {
   DecisionNotFoundError,
   InvalidDecisionIdError,
+  ConcurrencyFencingError,
 } from '../errors/domain.errors.js';
+import { runInTransaction } from '../db/connection.js';
 import type {
   AuditAction,
   AuditEntityType,
@@ -118,6 +120,12 @@ export class AuditService {
     const eventId = input.eventId || crypto.randomUUID();
     const session = explicitSession || input.session;
 
+    if (!session) {
+      return runInTransaction(async (txSession) => {
+        return this.recordEvent(input, txSession);
+      });
+    }
+
     // 0. Idempotency check: if eventId already committed or in session, return it
     const existing = await AuditEventModel.findOne({ eventId })
       .session(session || null)
@@ -167,7 +175,11 @@ export class AuditService {
           .session(session || null)
           .exec();
 
-        if (decisionDoc?.auditHead && decisionDoc.auditHead.sequenceNumber > 0) {
+        if (!decisionDoc) {
+          throw new DecisionNotFoundError(decisionId);
+        }
+
+        if (decisionDoc.auditHead && decisionDoc.auditHead.sequenceNumber > 0) {
           currentSequence = decisionDoc.auditHead.sequenceNumber;
           previousEventHash = decisionDoc.auditHead.eventHash || GENESIS_PREVIOUS_HASH;
           if (decisionDoc.auditHead.updatedAt) {
@@ -227,31 +239,43 @@ export class AuditService {
         const created = await auditRepository.create(eventPayload, session);
 
         // 2. Advance authoritative audit head on DecisionModel within the same session
-        if (decisionDoc) {
-          await DecisionModel.updateOne(
-            {
-              _id: decisionDoc._id,
-              $or: [
-                { 'auditHead.sequenceNumber': sequenceNumber - 1 },
-                { 'auditHead.sequenceNumber': { $exists: false } },
-                { auditHead: null },
-              ],
-            },
-            {
-              $set: {
-                auditHead: {
-                  sequenceNumber,
-                  eventHash,
-                  lastEventId: eventId,
-                  updatedAt: eventTimestamp,
-                },
+        const headCondition: Record<string, unknown> = {
+          _id: decisionDoc._id,
+        };
+
+        if (sequenceNumber === 1) {
+          headCondition.$or = [
+            { 'auditHead.sequenceNumber': 0 },
+            { 'auditHead.sequenceNumber': { $exists: false } },
+            { auditHead: null },
+          ];
+        } else {
+          headCondition['auditHead.sequenceNumber'] = sequenceNumber - 1;
+          headCondition['auditHead.eventHash'] = previousEventHash;
+        }
+
+        const headUpdateRes = await DecisionModel.updateOne(
+          headCondition,
+          {
+            $set: {
+              auditHead: {
+                sequenceNumber,
+                eventHash,
+                lastEventId: eventId,
+                updatedAt: eventTimestamp,
               },
             },
-            {
-              timestamps: false,
-              ...(session ? { session } : {}),
-            }
-          ).exec();
+          },
+          {
+            timestamps: false,
+            session,
+          }
+        ).exec();
+
+        if (headUpdateRes.matchedCount === 0) {
+          throw new ConcurrencyFencingError(
+            `Audit-head CAS mismatch on decision ${decisionId}: expected prior sequence ${sequenceNumber - 1} with hash ${previousEventHash}, but audit head was modified concurrently`
+          );
         }
 
         return created;
@@ -428,6 +452,25 @@ export class AuditService {
       }
 
       expectedPrevHash = ev.eventHash;
+    }
+
+    // 3. Verify authoritative audit head matches chain tip
+    if (decision.auditHead && decision.auditHead.sequenceNumber > 0) {
+      const tip = events[events.length - 1];
+      if (
+        decision.auditHead.sequenceNumber !== tip.sequenceNumber ||
+        decision.auditHead.eventHash !== tip.eventHash
+      ) {
+        return {
+          decisionId,
+          isValid: false,
+          totalEventsChecked: events.length,
+          rootHash: events[0].eventHash,
+          headHash: tip.eventHash,
+          verifiedAt: nowIso,
+          reason: `Audit head mismatch: decision head sequence ${decision.auditHead.sequenceNumber} (hash ${decision.auditHead.eventHash}) does not match chain tip sequence ${tip.sequenceNumber} (hash ${tip.eventHash})`,
+        };
+      }
     }
 
     return {

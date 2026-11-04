@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app.js';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection.js';
-import { assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard.js';
 import { UserModel } from '../src/models/user.model.js';
 import { DecisionModel } from '../src/models/decision.model.js';
 import { DecisionInvitationModel } from '../src/models/invitation.model.js';
@@ -12,8 +12,7 @@ import { DecisionEvidenceModel } from '../src/models/evidence.model.js';
 import { setCustomAIProvider } from '../src/services/ai/providers/provider.factory.js';
 import { MockAIProvider } from '../src/services/ai/providers/mock.provider.js';
 
-const TEST_MONGODB_URI =
-  process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 assertTestDatabase(TEST_MONGODB_URI);
 

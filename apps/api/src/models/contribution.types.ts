@@ -45,6 +45,10 @@ export interface IDecisionContribution {
   adoptedAt?: Date | null;
   adoptedBy?: string | null;
   adoptedOptionId?: string | null;
+  adoptedOperationId?: string | null;
+  adoptedDecisionVersion?: number | null;
+  adoptedFencingToken?: number | null;
+  adoptedRevision?: number | null;
   rejectionReason?: string | null;
   rejectedAt?: Date | null;
   rejectedBy?: { id: string; name?: string; role?: string } | null;

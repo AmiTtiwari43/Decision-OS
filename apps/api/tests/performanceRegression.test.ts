@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import mongoose from 'mongoose';
 import { buildApp } from '../src/app.js';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection.js';
-import { assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard.js';
 import { DecisionModel } from '../src/models/decision.model.js';
 import { UserModel } from '../src/models/user.model.js';
 import { evaluationCache } from '../src/services/evaluationCache.js';
@@ -13,7 +13,7 @@ import { decisionRepository } from '../src/repositories/decision.repository.js';
 import { analyticsRepository } from '../src/repositories/analytics.repository.js';
 import { runMonteCarloSimulation, evaluateDecision } from '@decision-os/decision-engine';
 
-const TEST_MONGODB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 describe('Phase 15: Automated Performance Regression & Scale Suite', () => {
   let app: FastifyInstance;

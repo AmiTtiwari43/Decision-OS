@@ -396,33 +396,41 @@ export class ContributionService {
       );
     }
 
-    const rejected = await contributionRepository.reject(
-      contributionId,
-      input.rejectionReason.trim(),
-      {
-        id: requester.id,
-        name: requester.name || requester.email || 'Decision Owner',
-        role: 'owner',
-      }
-    );
-
-    if (!rejected) {
-      throw new ContributionNotFoundError('Failed to reject contribution');
-    }
-
-    await auditService.recordEvent({
-      decisionId,
-      actor: requester,
-      action: 'contribution.rejected',
-      entityType: 'contribution',
-      entityId: contributionId,
-      summary: `Rejected expert contribution from ${rejected.contributorId}: "${input.rejectionReason.trim()}"`,
-      diff: {
-        after: {
-          status: 'rejected',
-          rejectionReason: input.rejectionReason.trim(),
+    const rejected = await runInTransaction(async (session) => {
+      const rej = await contributionRepository.reject(
+        contributionId,
+        input.rejectionReason.trim(),
+        {
+          id: requester.id,
+          name: requester.name || requester.email || 'Decision Owner',
+          role: 'owner',
         },
-      },
+        session
+      );
+
+      if (!rej) {
+        throw new ContributionNotFoundError('Failed to reject contribution');
+      }
+
+      await auditService.recordEvent(
+        {
+          decisionId,
+          actor: requester,
+          action: 'contribution.rejected',
+          entityType: 'contribution',
+          entityId: contributionId,
+          summary: `Rejected expert contribution from ${rej.contributorId}: "${input.rejectionReason.trim()}"`,
+          diff: {
+            after: {
+              status: 'rejected',
+              rejectionReason: input.rejectionReason.trim(),
+            },
+          },
+        },
+        session
+      );
+
+      return rej;
     });
 
     collaborationService.publishEvent(decisionId, {
@@ -659,7 +667,12 @@ export class ContributionService {
         contributionId,
         requester.id,
         preferredOptionId,
-        session
+        session,
+        {
+          decisionId,
+          expectedRevision: contribution.revision,
+          decisionVersion: targetVersion,
+        }
       );
 
       if (!adopted) {

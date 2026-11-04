@@ -3,14 +3,14 @@ import type { FastifyInstance } from 'fastify';
 import mongoose from 'mongoose';
 import { buildApp } from '../src/app.js';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection.js';
-import { assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard.js';
 import { DecisionModel } from '../src/models/decision.model.js';
 import { UserModel } from '../src/models/user.model.js';
 import { evaluationCache } from '../src/services/evaluationCache.js';
 import { collaborationService } from '../src/services/collaboration.service.js';
 import { runAnalysis, updateDecision, deleteDecision } from '../src/services/decision.service.js';
 
-const TEST_MONGODB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 describe('Phase 15: Observability, Diagnostics, Caching & Performance Controls', () => {
   let app: FastifyInstance;

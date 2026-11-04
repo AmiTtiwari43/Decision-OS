@@ -108,6 +108,23 @@ export const DecisionContributionSchema = new Schema<
       type: String,
       default: null,
     },
+    adoptedOperationId: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    adoptedDecisionVersion: {
+      type: Number,
+      default: null,
+    },
+    adoptedFencingToken: {
+      type: Number,
+      default: null,
+    },
+    adoptedRevision: {
+      type: Number,
+      default: null,
+    },
     rejectionReason: {
       type: String,
       default: null,

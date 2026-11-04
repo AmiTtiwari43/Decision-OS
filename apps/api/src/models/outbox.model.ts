@@ -40,6 +40,11 @@ export const NotificationOutboxSchema = new Schema<INotificationOutbox, Model<No
       default: null,
       index: true,
     },
+    claimGeneration: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     retryCount: {
       type: Number,
       default: 0,
@@ -74,3 +79,32 @@ NotificationOutboxSchema.index({ status: 1, leaseExpiresAt: 1, createdAt: 1 });
 export const NotificationOutboxModel =
   (mongoose.models.NotificationOutbox as Model<NotificationOutboxDocument>) ||
   mongoose.model<NotificationOutboxDocument>('NotificationOutbox', NotificationOutboxSchema);
+
+export const NotificationConsumerRecordSchema = new Schema(
+  {
+    consumerId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    notificationId: {
+      type: String,
+      required: true,
+      index: true,
+    },
+    processedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  {
+    timestamps: false,
+  }
+);
+
+// Unique compound index guarantees durable consumer idempotency across restarts & concurrent deliveries
+NotificationConsumerRecordSchema.index({ consumerId: 1, notificationId: 1 }, { unique: true });
+
+export const NotificationConsumerRecordModel =
+  mongoose.models.NotificationConsumerRecord ||
+  mongoose.model('NotificationConsumerRecord', NotificationConsumerRecordSchema);

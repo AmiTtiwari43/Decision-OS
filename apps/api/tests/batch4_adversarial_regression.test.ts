@@ -609,14 +609,14 @@ describe('Batch 4 Adversarial Regression Suite — Replica Set & Transactional R
       expect(delivered?.deliveredAt).not.toBeNull();
     });
 
-    it('consumer deduplicates repeated notification deliveries', () => {
+    it('consumer deduplicates repeated notification deliveries', async () => {
       const consumerId = 'email-notifier-service';
       const eventId = 'notif-dup-check-999';
 
-      const firstPass = outboxService.deduplicateConsumerEvent(consumerId, eventId);
+      const firstPass = await outboxService.deduplicateConsumerEvent(consumerId, eventId);
       expect(firstPass).toBe(true); // First delivery processed
 
-      const duplicatePass = outboxService.deduplicateConsumerEvent(consumerId, eventId);
+      const duplicatePass = await outboxService.deduplicateConsumerEvent(consumerId, eventId);
       expect(duplicatePass).toBe(false); // Duplicate ignored!
     });
   });

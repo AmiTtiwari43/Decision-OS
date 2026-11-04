@@ -7,7 +7,7 @@ import {
   type IOperationJournal,
 } from '../models/index.js';
 import { ConcurrencyFencingError } from '../errors/domain.errors.js';
-import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
+import { runInTransaction } from '../db/connection.js';
 
 export const NON_TERMINAL_OPERATION_STATES: OperationState[] = [
   'PENDING',
@@ -142,20 +142,16 @@ export class OperationJournalRepository {
       return executeClaim(existingSession);
     }
 
-    if (isReplicaSetSupported()) {
-      try {
-        return await runInTransaction(async (session) => {
-          return executeClaim(session);
-        });
-      } catch (err) {
-        if (err instanceof ConcurrencyFencingError) {
-          return null;
-        }
-        throw err;
+    try {
+      return await runInTransaction(async (session) => {
+        return executeClaim(session);
+      });
+    } catch (err) {
+      if (err instanceof ConcurrencyFencingError) {
+        return null;
       }
+      throw err;
     }
-
-    return executeClaim();
   }
 
   /**
@@ -172,6 +168,7 @@ export class OperationJournalRepository {
     const result = await DecisionModel.updateOne(
       {
         _id: decisionId,
+        auditIntegrityStatus: { $ne: 'quarantined' },
         $or: [
           { recoveryFencingToken: { $lt: fencingToken } },
           { recoveryFencingToken: null },

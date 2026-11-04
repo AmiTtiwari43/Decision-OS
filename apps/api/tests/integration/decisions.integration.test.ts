@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { connectToDatabase, disconnectFromDatabase } from '../../src/db/connection';
-import { assertTestDatabase } from '../../src/db/guard';
+import { assertTestDatabase, getTestDatabaseUri } from '../../src/db/guard';
 import { DecisionModel } from '../../src/models/decision.model';
 import {
   createDecision,
@@ -8,8 +8,7 @@ import {
   updateDecision,
 } from '../../src/services/decision.service';
 
-const TEST_MONGODB_URI =
-  process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 assertTestDatabase(TEST_MONGODB_URI);
 

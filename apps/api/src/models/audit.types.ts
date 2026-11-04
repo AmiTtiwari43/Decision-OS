@@ -7,6 +7,7 @@ export type AuditAction =
   | 'decision.deleted'
   | 'decision.round_locked'
   | 'decision.round_unlocked'
+  | 'decision.quarantined'
   | 'decision.quarantine_resolved'
   | 'sharing.invitation_created'
   | 'sharing.invitation_redeemed'

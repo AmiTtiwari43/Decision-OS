@@ -4,7 +4,7 @@ import { PassThrough } from 'node:stream';
 import type { ServerResponse } from 'node:http';
 import { buildApp } from '../src/app';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection';
-import { assertTestDatabase } from '../src/db/guard';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard';
 import { DecisionModel } from '../src/models/decision.model';
 import { UserModel } from '../src/models/user.model';
 import { DecisionAccessGrantModel } from '../src/models/decisionAccess.model';
@@ -14,8 +14,7 @@ import { revokeAccessGrant } from '../src/services/sharing.service';
 import { collaborationService } from '../src/services/collaboration.service';
 import { DecisionConflictError } from '../src/errors/domain.errors';
 
-const TEST_MONGODB_URI =
-  process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 assertTestDatabase(TEST_MONGODB_URI);
 

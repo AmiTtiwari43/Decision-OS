@@ -3,11 +3,11 @@ import {
   connectToDatabase,
   disconnectFromDatabase,
 } from '../../src/db/connection';
-import { assertTestDatabase } from '../../src/db/guard';
+import { assertTestDatabase, getTestDatabaseUri } from '../../src/db/guard';
 import { decisionRepository } from '../../src/repositories/decision.repository';
 import { DecisionModel } from '../../src/models/decision.model';
 
-const TEST_MONGODB_URI = process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 describe('Decision Repository MongoDB Integration', () => {
   // Test DB guard MUST verify test database URI

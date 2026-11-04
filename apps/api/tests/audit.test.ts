@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { buildApp } from '../src/app';
 import { connectToDatabase, disconnectFromDatabase } from '../src/db/connection';
-import { assertTestDatabase } from '../src/db/guard';
+import { assertTestDatabase, getTestDatabaseUri } from '../src/db/guard';
 import { DecisionModel } from '../src/models/decision.model';
 import { UserModel } from '../src/models/user.model';
 import { DecisionAccessGrantModel } from '../src/models/decisionAccess.model';
@@ -13,8 +13,7 @@ import { auditService, GENESIS_PREVIOUS_HASH } from '../src/services/audit.servi
 import { sanitizeCsvCell } from '../src/services/export.service';
 import { contributionRepository } from '../src/repositories/index';
 
-const TEST_MONGODB_URI =
-  process.env.TEST_MONGODB_URI || 'mongodb://127.0.0.1:27017/decision_os_test';
+const TEST_MONGODB_URI = getTestDatabaseUri();
 
 assertTestDatabase(TEST_MONGODB_URI);
 
