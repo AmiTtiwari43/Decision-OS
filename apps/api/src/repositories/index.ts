@@ -11,3 +11,4 @@ export * from './audit.repository.js';
 export * from './snapshot.repository.js';
 export * from './comment.repository.js';
 export * from './operationJournal.repository.js';
+export * from './outbox.repository.js';

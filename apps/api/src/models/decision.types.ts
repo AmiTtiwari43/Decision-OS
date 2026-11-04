@@ -27,6 +27,13 @@ export interface DecisionOption {
  */
 export type ScoreMatrix = Record<string, Record<string, number>>;
 
+export interface DecisionAuditHead {
+  sequenceNumber: number;
+  eventHash: string;
+  lastEventId?: string;
+  updatedAt?: Date;
+}
+
 export interface IDecision {
   title: string;
   description: string;
@@ -46,6 +53,7 @@ export interface IDecision {
   recoveryFencingToken?: number;
   recoveryOwner?: string | null;
   recoveryLeaseExpiresAt?: Date | null;
+  auditHead?: DecisionAuditHead | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -72,6 +80,7 @@ export interface DecisionDto {
   auditIntegrityStatus: AuditIntegrityStatus;
   pendingOperationId: string | null;
   quarantineReason?: string | null;
+  auditHead?: DecisionAuditHead | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -92,6 +101,7 @@ export interface CreateDecisionInput {
   auditIntegrityStatus?: AuditIntegrityStatus;
   pendingOperationId?: string | null;
   quarantineReason?: string | null;
+  auditHead?: DecisionAuditHead | null;
 }
 
 export interface UpdateDecisionInput {
@@ -111,4 +121,5 @@ export interface UpdateDecisionInput {
   auditIntegrityStatus?: AuditIntegrityStatus;
   pendingOperationId?: string | null;
   quarantineReason?: string | null;
+  auditHead?: DecisionAuditHead | null;
 }

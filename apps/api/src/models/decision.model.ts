@@ -165,6 +165,16 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
       default: null,
       index: true,
     },
+    auditHead: {
+      type: {
+        sequenceNumber: { type: Number, default: 0 },
+        eventHash: { type: String, default: null },
+        lastEventId: { type: String, default: null },
+        updatedAt: { type: Date, default: null },
+      },
+      default: null,
+      _id: false,
+    },
   },
   {
     timestamps: true,
@@ -179,6 +189,7 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
         ret.auditIntegrityStatus = ret.auditIntegrityStatus || 'healthy';
         ret.pendingOperationId = ret.pendingOperationId || null;
         ret.quarantineReason = ret.quarantineReason || null;
+        ret.auditHead = ret.auditHead || null;
         return ret;
       },
     },

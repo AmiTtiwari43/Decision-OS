@@ -15,13 +15,16 @@ import {
   type DecisionRole,
 } from './authorization.service.js';
 import { auditService } from './audit.service.js';
+import { outboxService } from './outbox.service.js';
+import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
 import { collaborationService } from './collaboration.service.js';
 import { evaluationCache } from './evaluationCache.js';
-import type {
-  DecisionCriterion,
-  DecisionOption,
-  ScoreMatrix,
-  DecisionDocument,
+import {
+  DecisionModel,
+  type DecisionCriterion,
+  type DecisionOption,
+  type ScoreMatrix,
+  type DecisionDocument,
 } from '../models/index.js';
 import type { ListDecisionsFilter, PaginationOptions, PaginatedResult } from '../repositories/decision.repository.js';
 import {
@@ -507,4 +510,121 @@ export async function analyzeDecision(
   });
 
   return result;
+}
+
+export async function resolveQuarantine(
+  id: string,
+  requester?: RequesterContext,
+  resolutionNotes?: string
+): Promise<DecisionDocument> {
+  if (!mongoose.isValidObjectId(id)) {
+    throw new InvalidDecisionIdError(id);
+  }
+
+  const existing = await decisionRepository.findById(id);
+  if (!existing) {
+    throw new DecisionNotFoundError(id);
+  }
+
+  await authorizeDecisionAction(existing, 'quarantine_resolve', requester);
+
+  if (existing.auditIntegrityStatus !== 'quarantined') {
+    throw new Error(`Decision '${id}' is not in quarantined status (current status: ${existing.auditIntegrityStatus})`);
+  }
+
+  const currentVersion = existing.version || 1;
+  const nextVersion = currentVersion + 1;
+
+  const executeResolution = async (session?: mongoose.ClientSession): Promise<DecisionDocument> => {
+    const updated = await DecisionModel.findOneAndUpdate(
+      {
+        _id: id,
+        auditIntegrityStatus: 'quarantined',
+      },
+      {
+        $set: {
+          auditIntegrityStatus: 'healthy',
+          quarantineReason: null,
+          pendingOperationId: null,
+          recoveryOwner: null,
+          recoveryLeaseExpiresAt: null,
+          isAudited: true,
+          version: nextVersion,
+        },
+      },
+      { new: true, session }
+    ).exec();
+
+    if (!updated) {
+      throw new DecisionConflictError(
+        currentVersion,
+        'Decision quarantine was concurrently modified or resolved'
+      );
+    }
+
+    // Append authoritative audit event
+    await auditService.recordEvent(
+      {
+        decisionId: id,
+        actor: requester,
+        action: 'decision.quarantine_resolved',
+        entityType: 'decision',
+        entityId: id,
+        summary: resolutionNotes?.trim() || `Administrative quarantine resolution by ${requester?.name || requester?.id || 'admin'}`,
+        diff: {
+          before: {
+            auditIntegrityStatus: 'quarantined',
+            quarantineReason: existing.quarantineReason,
+            version: currentVersion,
+          },
+          after: {
+            auditIntegrityStatus: 'healthy',
+            version: nextVersion,
+          },
+        },
+      },
+      session
+    );
+
+    // Create outbox notification
+    await outboxService.createNotification(
+      {
+        decisionId: id,
+        eventType: 'decision.quarantine_resolved',
+        payload: {
+          decisionId: id,
+          resolvedBy: requester?.id,
+          version: nextVersion,
+        },
+      },
+      session
+    );
+
+    return updated;
+  };
+
+  let resolvedDoc: DecisionDocument;
+  if (isReplicaSetSupported()) {
+    resolvedDoc = await runInTransaction(async (session) => {
+      return executeResolution(session);
+    });
+  } else {
+    resolvedDoc = await executeResolution();
+  }
+
+  evaluationCache.invalidate(id);
+
+  collaborationService.publishEvent(id, {
+    type: 'decision.quarantine_resolved',
+    decisionId: id,
+    version: nextVersion,
+    actorId: requester?.id,
+    actorName: requester?.name || requester?.email,
+    payload: {
+      status: 'healthy',
+      version: nextVersion,
+    },
+  });
+
+  return resolvedDoc;
 }

@@ -7,6 +7,7 @@ export type AuditAction =
   | 'decision.deleted'
   | 'decision.round_locked'
   | 'decision.round_unlocked'
+  | 'decision.quarantine_resolved'
   | 'sharing.invitation_created'
   | 'sharing.invitation_redeemed'
   | 'sharing.grant_updated'
@@ -70,6 +71,7 @@ export interface IAuditEvent {
   timestamp: Date;
   eventHash: string;
   previousEventHash: string;
+  sequenceNumber: number;
   schemaVersion: number;
   createdAt: Date;
   updatedAt: Date;
@@ -94,6 +96,7 @@ export interface AuditEventDto {
   timestamp: string;
   eventHash: string;
   previousEventHash: string;
+  sequenceNumber: number;
   schemaVersion: number;
 }
 

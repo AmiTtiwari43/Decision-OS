@@ -7,6 +7,7 @@ import {
   type IOperationJournal,
 } from '../models/index.js';
 import { ConcurrencyFencingError } from '../errors/domain.errors.js';
+import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
 
 export const NON_TERMINAL_OPERATION_STATES: OperationState[] = [
   'PENDING',
@@ -72,57 +73,89 @@ export class OperationJournalRepository {
   async claimJournalOperation(
     workerId: string,
     leaseDurationMs: number = 30000,
-    operationId?: string
+    operationId?: string,
+    existingSession?: mongoose.ClientSession
   ): Promise<OperationJournalDocument | null> {
-    const now = new Date();
-    const leaseExpiration = new Date(now.getTime() + leaseDurationMs);
+    const executeClaim = async (session?: mongoose.ClientSession) => {
+      const now = new Date();
+      const leaseExpiration = new Date(now.getTime() + leaseDurationMs);
 
-    const query: Record<string, unknown> = {
-      state: { $in: NON_TERMINAL_OPERATION_STATES },
-      $or: [
-        { recoveryOwner: null },
-        { leaseExpiresAt: { $lt: now } },
-      ],
-      retryCount: { $lt: 5 },
+      const query: Record<string, unknown> = {
+        state: { $in: NON_TERMINAL_OPERATION_STATES },
+        $or: [
+          { recoveryOwner: null },
+          { leaseExpiresAt: null },
+          { leaseExpiresAt: { $exists: false } },
+          { leaseExpiresAt: { $lt: now } },
+        ],
+        retryCount: { $lt: 5 },
+      };
+
+      if (operationId) {
+        query.operationId = operationId;
+      }
+
+      const claimed = await OperationJournalModel.findOneAndUpdate(
+        query,
+        {
+          $set: {
+            recoveryOwner: workerId,
+            leaseExpiresAt: leaseExpiration,
+            heartbeatAt: now,
+          },
+          $inc: {
+            fencingToken: 1, // Monotonically increasing generation number
+            retryCount: 1,
+          },
+        },
+        {
+          new: true,
+          sort: { createdAt: 1 }, // FIFO oldest first
+          session,
+        }
+      ).exec();
+
+      if (!claimed) {
+        return null;
+      }
+
+      // Immediately bind ownership and fencing generation to the Decision document.
+      // In a transaction, this guarantees journal claim and decision lease binding are atomic.
+      const bound = await this.bindDecisionLease(
+        claimed.decisionId.toString(),
+        workerId,
+        claimed.fencingToken,
+        leaseExpiration,
+        session
+      );
+
+      if (!bound) {
+        throw new ConcurrencyFencingError(
+          `Failed to bind decision lease for decision ${claimed.decisionId} to worker ${workerId}`
+        );
+      }
+
+      return claimed;
     };
 
-    if (operationId) {
-      query.operationId = operationId;
+    if (existingSession) {
+      return executeClaim(existingSession);
     }
 
-    const claimed = await OperationJournalModel.findOneAndUpdate(
-      query,
-      {
-        $set: {
-          recoveryOwner: workerId,
-          leaseExpiresAt: leaseExpiration,
-          heartbeatAt: now,
-        },
-        $inc: {
-          fencingToken: 1, // Monotonically increasing generation number
-          retryCount: 1,
-        },
-      },
-      {
-        new: true,
-        sort: { createdAt: 1 }, // FIFO oldest first
+    if (isReplicaSetSupported()) {
+      try {
+        return await runInTransaction(async (session) => {
+          return executeClaim(session);
+        });
+      } catch (err) {
+        if (err instanceof ConcurrencyFencingError) {
+          return null;
+        }
+        throw err;
       }
-    ).exec();
-
-    if (!claimed) {
-      return null;
     }
 
-    // Immediately bind ownership and fencing generation to the Decision document.
-    // This atomically closes the ownership-transfer gap before any recovery writes occur.
-    await this.bindDecisionLease(
-      claimed.decisionId.toString(),
-      workerId,
-      claimed.fencingToken,
-      leaseExpiration
-    );
-
-    return claimed;
+    return executeClaim();
   }
 
   /**
@@ -133,7 +166,8 @@ export class OperationJournalRepository {
     decisionId: string,
     workerId: string,
     fencingToken: number,
-    leaseExpiration: Date
+    leaseExpiration: Date,
+    session?: mongoose.ClientSession
   ): Promise<boolean> {
     const result = await DecisionModel.updateOne(
       {
@@ -150,7 +184,8 @@ export class OperationJournalRepository {
           recoveryOwner: workerId,
           recoveryLeaseExpiresAt: leaseExpiration,
         },
-      }
+      },
+      { session }
     ).exec();
 
     return result.matchedCount === 1;
@@ -166,23 +201,28 @@ export class OperationJournalRepository {
     workerId: string,
     fencingToken: number,
     leaseDurationMs: number = 30000,
-    decisionId?: string
+    decisionId?: string,
+    session?: mongoose.ClientSession
   ): Promise<boolean> {
     const now = new Date();
     const newExpiration = new Date(now.getTime() + leaseDurationMs);
 
+    // CRITICAL (F2): A heartbeat must NEVER resurrect an expired lease.
+    // Query requires leaseExpiresAt > now and strictly matching owner + fencingToken.
     const result = await OperationJournalModel.updateOne(
       {
         operationId,
         recoveryOwner: workerId,
         fencingToken, // Strict fencing token match
+        leaseExpiresAt: { $gt: now },
       },
       {
         $set: {
           leaseExpiresAt: newExpiration,
           heartbeatAt: now,
         },
-      }
+      },
+      { session }
     ).exec();
 
     if (result.matchedCount === 0) {
@@ -195,12 +235,14 @@ export class OperationJournalRepository {
           _id: decisionId,
           recoveryOwner: workerId,
           recoveryFencingToken: fencingToken,
+          recoveryLeaseExpiresAt: { $gt: now },
         },
         {
           $set: {
             recoveryLeaseExpiresAt: newExpiration,
           },
-        }
+        },
+        { session }
       ).exec();
     }
 
@@ -217,7 +259,8 @@ export class OperationJournalRepository {
     fencingToken: number,
     fromState: OperationState | OperationState[],
     toState: OperationState,
-    extraFields: Record<string, unknown> = {}
+    extraFields: Record<string, unknown> = {},
+    session?: mongoose.ClientSession
   ): Promise<void> {
     const now = new Date();
     const stateCondition = Array.isArray(fromState)
@@ -230,6 +273,7 @@ export class OperationJournalRepository {
         recoveryOwner: workerId,
         fencingToken, // Guarantees this worker still holds the valid lease
         state: stateCondition,
+        leaseExpiresAt: { $gt: now }, // Worker lease must not be expired
       },
       {
         $set: {
@@ -237,12 +281,13 @@ export class OperationJournalRepository {
           heartbeatAt: now,
           ...extraFields,
         },
-      }
+      },
+      { session }
     ).exec();
 
     if (result.matchedCount === 0) {
       throw new ConcurrencyFencingError(
-        `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease for operation ${operationId}`
+        `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease or state mismatch for operation ${operationId}`
       );
     }
   }
@@ -252,7 +297,8 @@ export class OperationJournalRepository {
    */
   async markUnrecoverable(
     operationId: string,
-    errorDetails: string
+    errorDetails: string,
+    session?: mongoose.ClientSession
   ): Promise<void> {
     await OperationJournalModel.updateOne(
       { operationId },
@@ -262,7 +308,8 @@ export class OperationJournalRepository {
           errorDetails,
           heartbeatAt: new Date(),
         },
-      }
+      },
+      { session }
     ).exec();
   }
 }

@@ -61,6 +61,12 @@ export const AuditEventSchema = new Schema<IAuditEvent, Model<AuditEventDocument
       default: Date.now,
       index: true,
     },
+    sequenceNumber: {
+      type: Number,
+      required: true,
+      default: 1,
+      index: true,
+    },
     eventHash: {
       type: String,
       required: true,
@@ -83,17 +89,19 @@ export const AuditEventSchema = new Schema<IAuditEvent, Model<AuditEventDocument
         if (ret.decisionId && typeof ret.decisionId === 'object') {
           ret.decisionId = (ret.decisionId as mongoose.Types.ObjectId).toString();
         }
+        ret.sequenceNumber = ret.sequenceNumber !== undefined ? Number(ret.sequenceNumber) : 1;
         return ret;
       },
     },
   }
 );
 
-// Compound indexes for timeline retrieval and filtered audits
+// Compound indexes for timeline retrieval, filtered audits, and unique monotonic sequence
 AuditEventSchema.index({ decisionId: 1, timestamp: -1 });
 AuditEventSchema.index({ decisionId: 1, action: 1 });
 AuditEventSchema.index({ decisionId: 1, entityType: 1 });
 AuditEventSchema.index({ decisionId: 1, timestamp: 1 });
+AuditEventSchema.index({ decisionId: 1, sequenceNumber: 1 }, { unique: true });
 AuditEventSchema.index({ decisionId: 1, previousEventHash: 1 }, { unique: true });
 
 // Strictly enforce append-only semantics: prevent updates and deletions on audit records

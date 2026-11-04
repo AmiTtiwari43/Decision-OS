@@ -12,6 +12,7 @@ export type CollaborationEventType =
   | 'participant.left'
   | 'presence.sync'
   | 'decision.conflict'
+  | 'decision.quarantine_resolved'
   | 'sync_required';
 
 export interface CollaborationEvent<T = unknown> {

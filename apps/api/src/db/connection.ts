@@ -9,6 +9,7 @@ export interface DatabaseConnectionOptions extends ConnectOptions {
   maxPoolSize?: number;
   minPoolSize?: number;
   maxIdleTimeMS?: number;
+  requireReplicaSet?: boolean;
 }
 
 const DEFAULT_CONNECT_OPTIONS: ConnectOptions = {
@@ -24,6 +25,57 @@ const DEFAULT_CONNECT_OPTIONS: ConnectOptions = {
 let isConnecting = false;
 
 /**
+ * Checks whether the current active MongoDB connection supports multi-document transactions.
+ * Transactions require a replica set topology (ReplicaSetWithPrimary or Sharded).
+ */
+export function isReplicaSetSupported(): boolean {
+  if (mongoose.connection.readyState !== 1) {
+    return false;
+  }
+  const client = mongoose.connection.getClient() as unknown as {
+    topology?: {
+      description?: {
+        type?: string;
+        setName?: string;
+        servers?: Map<string, { setName?: string; type?: string }>;
+      };
+    };
+  };
+  const desc = client?.topology?.description;
+  if (!desc) return false;
+  if (desc.type === 'ReplicaSetWithPrimary' || desc.type === 'Sharded') {
+    return true;
+  }
+  if (desc.setName) {
+    return true;
+  }
+  if (desc.servers) {
+    for (const server of desc.servers.values()) {
+      if (server.setName || server.type === 'RSPrimary') {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Asserts that the connected MongoDB deployment is a transaction-capable replica set.
+ * Throws a clear configuration error if standalone or unsupported.
+ */
+export function assertReplicaSetSupported(): void {
+  if (!isReplicaSetSupported()) {
+    const client = mongoose.connection.getClient() as unknown as {
+      topology?: { description?: { type?: string } };
+    };
+    const topologyType = client?.topology?.description?.type || 'Unknown';
+    throw new Error(
+      `MongoDB topology '${topologyType}' does not support multi-document transactions. Decision OS Batch 4 requires a MongoDB Replica Set (Topology A). Standalone MongoDB is not supported.`
+    );
+  }
+}
+
+/**
  * Connects to MongoDB using Mongoose with resilient lifecycle management.
  * Reuses existing active connections to prevent accidental multi-connection leaks.
  */
@@ -33,12 +85,18 @@ export async function connectToDatabase(
 ): Promise<Connection> {
   // If already connected, reuse existing connection
   if (mongoose.connection.readyState === 1) {
+    if (options?.requireReplicaSet) {
+      assertReplicaSetSupported();
+    }
     return mongoose.connection;
   }
 
   // If currently in the process of connecting, wait for completion
   if (mongoose.connection.readyState === 2 && isConnecting) {
     await mongoose.connection.asPromise();
+    if (options?.requireReplicaSet) {
+      assertReplicaSetSupported();
+    }
     return mongoose.connection;
   }
 
@@ -50,6 +108,11 @@ export async function connectToDatabase(
     };
 
     await mongoose.connect(uri, opts);
+
+    if (options?.requireReplicaSet) {
+      assertReplicaSetSupported();
+    }
+
     return mongoose.connection;
   } catch (error) {
     const sanitized = sanitizeMongoUri(uri);
@@ -87,6 +150,7 @@ export interface DatabaseHealthReport {
   status: 'connected' | 'disconnected';
   latencyMs?: number;
   error?: string;
+  isReplicaSet?: boolean;
 }
 
 /**
@@ -115,6 +179,7 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthReport> {
     return {
       status: 'connected',
       latencyMs,
+      isReplicaSet: isReplicaSetSupported(),
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Database ping command failed';
@@ -122,5 +187,47 @@ export async function checkDatabaseHealth(): Promise<DatabaseHealthReport> {
       status: 'disconnected',
       error: message,
     };
+  }
+}
+
+export interface TransactionOptions {
+  readConcern?: { level: 'snapshot' | 'local' | 'majority' };
+  writeConcern?: { w: 'majority' | number; j?: boolean; wtimeoutMS?: number };
+  maxCommitTimeMS?: number;
+}
+
+export const DEFAULT_TRANSACTION_OPTIONS: TransactionOptions = {
+  readConcern: { level: 'snapshot' },
+  writeConcern: { w: 'majority' },
+  maxCommitTimeMS: 10000,
+};
+
+/**
+ * Executes a callback within a managed MongoDB multi-document ACID transaction.
+ * Automatically validates replica-set capability, manages session lifecycle,
+ * and retries transient transaction errors using standard MongoDB driver guarantees.
+ */
+export async function runInTransaction<T>(
+  callback: (session: mongoose.ClientSession) => Promise<T>,
+  options: TransactionOptions = DEFAULT_TRANSACTION_OPTIONS
+): Promise<T> {
+  assertReplicaSetSupported();
+
+  const session = await mongoose.startSession();
+  try {
+    let result: T;
+    await session.withTransaction(
+      async () => {
+        result = await callback(session);
+      },
+      {
+        readConcern: options.readConcern as mongoose.mongo.ReadConcern,
+        writeConcern: options.writeConcern as mongoose.mongo.WriteConcern,
+        maxCommitTimeMS: options.maxCommitTimeMS,
+      }
+    );
+    return result!;
+  } finally {
+    await session.endSession();
   }
 }

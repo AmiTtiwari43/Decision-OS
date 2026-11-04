@@ -28,7 +28,8 @@ export type DecisionAction =
   | 'disagreement_resolve'
   | 'ai_apply'
   | 'ai_reject'
-  | 'activity_feed';
+  | 'activity_feed'
+  | 'quarantine_resolve';
 
 /**
  * Resolves the effective role of a requester for a given decision.
@@ -207,6 +208,12 @@ export async function authorizeDecisionAction(
     case 'ai_reject':
       if (role !== 'owner' && role !== 'editor') {
         throw new ForbiddenError('Only the decision owner or editors can apply or reject AI suggestions');
+      }
+      return role;
+
+    case 'quarantine_resolve':
+      if (role !== 'owner') {
+        throw new ForbiddenError('Only the decision owner or system administrator can resolve quarantine');
       }
       return role;
 

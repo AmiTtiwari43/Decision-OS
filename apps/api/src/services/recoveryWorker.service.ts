@@ -24,6 +24,8 @@ import {
 import {
   ConcurrencyFencingError,
 } from '../errors/domain.errors.js';
+import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
+import type mongoose from 'mongoose';
 
 export interface HeartbeatHandle {
   stop: () => void;
@@ -96,9 +98,6 @@ export async function executeCompensatingRollback(
 
   const compensatingVersion = failedVersion + 1;
 
-  // 1. Conditional Atomic Reversion:
-  // Requires matching failed version and pendingOperationId,
-  // and verifies that the worker still holds the valid recovery lease and fencing token on the decision.
   const decisionFilter: Record<string, unknown> = {
     _id: decisionId,
     version: failedVersion,
@@ -114,83 +113,97 @@ export async function executeCompensatingRollback(
     ];
   }
 
-  const revertedDoc = await DecisionModel.findOneAndUpdate(
-    decisionFilter,
-    {
-      $set: {
-        scores: previousSnapshot.scores,
-        criteria: previousSnapshot.criteria,
-        options: previousSnapshot.options,
-        version: compensatingVersion,
-        recoveryFencingToken: fencingToken > 0 ? fencingToken : 0,
-        recoveryOwner: fencingToken > 0 ? workerId : null,
-        analysis: null, // Clear stale evaluation
-        isAudited: false, // Remains un-audited until compensation event is confirmed
+  const executeAtomicReversion = async (session?: mongoose.ClientSession): Promise<DecisionDocument> => {
+    const revertedDoc = await DecisionModel.findOneAndUpdate(
+      decisionFilter,
+      {
+        $set: {
+          scores: previousSnapshot.scores,
+          criteria: previousSnapshot.criteria,
+          options: previousSnapshot.options,
+          version: compensatingVersion,
+          recoveryFencingToken: fencingToken > 0 ? fencingToken : 0,
+          recoveryOwner: fencingToken > 0 ? workerId : null,
+          analysis: null, // Clear stale evaluation
+          isAudited: false, // Remains un-audited until compensation event is confirmed
+        },
       },
-    },
-    { new: true }
-  ).exec();
+      { new: true, session }
+    ).exec();
 
-  if (!revertedDoc) {
-    throw new ConcurrencyFencingError(
-      `Failed to execute compensation: decision ${decisionId} version mismatch or worker ${workerId} fencing token ${fencingToken} superseded`
-    );
+    if (!revertedDoc) {
+      throw new ConcurrencyFencingError(
+        `Failed to execute compensation: decision ${decisionId} version mismatch or worker ${workerId} fencing token ${fencingToken} superseded`
+      );
+    }
+
+    // Append Compensation Audit Event within the same transaction
+    await auditService.recordEvent({
+      decisionId,
+      action: 'decision.updated',
+      entityType: 'decision',
+      entityId: decisionId,
+      actor: { id: 'system', role: 'admin', name: `System Recovery Worker (${workerId})` },
+      summary: `Compensating rollback to restore baseline inputs following failed operation ${operationId}`,
+      diff: {
+        before: { version: failedVersion },
+        after: {
+          version: compensatingVersion,
+          isCompensated: true,
+          restoredVersion: previousSnapshot.version,
+        },
+      },
+    }, session);
+
+    // Finalize Decision
+    const finalizeFilter: Record<string, unknown> = {
+      _id: decisionId,
+      version: compensatingVersion,
+    };
+    if (fencingToken > 0) {
+      finalizeFilter.$or = [
+        { recoveryFencingToken: fencingToken, recoveryOwner: workerId },
+        { recoveryFencingToken: { $lte: fencingToken }, recoveryOwner: null },
+        { recoveryFencingToken: null },
+        { recoveryFencingToken: { $exists: false } },
+      ];
+    }
+
+    const finalizeRes = await DecisionModel.updateOne(
+      finalizeFilter,
+      {
+        $set: {
+          isAudited: true,
+          pendingOperationId: null,
+          recoveryOwner: null,
+          recoveryLeaseExpiresAt: null,
+        },
+      },
+      { session }
+    ).exec();
+
+    if (fencingToken > 0 && finalizeRes.matchedCount === 0) {
+      throw new ConcurrencyFencingError(
+        `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing compensation for decision ${decisionId}`
+      );
+    }
+
+    return revertedDoc;
+  };
+
+  let finalDoc: DecisionDocument;
+  if (isReplicaSetSupported()) {
+    finalDoc = await runInTransaction(async (session) => {
+      return executeAtomicReversion(session);
+    });
+  } else {
+    finalDoc = await executeAtomicReversion();
   }
 
-  // 2. Invalidate evaluation cache
+  // Invalidate evaluation cache
   evaluationCache.invalidate(decisionId);
 
-  // 3. Append Compensation Audit Event
-  await auditService.recordEvent({
-    decisionId,
-    action: 'decision.updated',
-    entityType: 'decision',
-    entityId: decisionId,
-    actor: { id: 'system', role: 'admin', name: `System Recovery Worker (${workerId})` },
-    summary: `Compensating rollback to restore baseline inputs following failed operation ${operationId}`,
-    diff: {
-      before: { version: failedVersion },
-      after: {
-        version: compensatingVersion,
-        isCompensated: true,
-        restoredVersion: previousSnapshot.version,
-      },
-    },
-  });
-
-  // 4. Mark Decision Audited & Clear In-Flight Marker & Release Recovery Lease
-  const finalizeFilter: Record<string, unknown> = {
-    _id: decisionId,
-    version: compensatingVersion,
-  };
-  if (fencingToken > 0) {
-    finalizeFilter.$or = [
-      { recoveryFencingToken: fencingToken, recoveryOwner: workerId },
-      { recoveryFencingToken: { $lte: fencingToken }, recoveryOwner: null },
-      { recoveryFencingToken: null },
-      { recoveryFencingToken: { $exists: false } },
-    ];
-  }
-
-  const finalizeRes = await DecisionModel.updateOne(
-    finalizeFilter,
-    {
-      $set: {
-        isAudited: true,
-        pendingOperationId: null,
-        recoveryOwner: null,
-        recoveryLeaseExpiresAt: null,
-      },
-    }
-  ).exec();
-
-  if (fencingToken > 0 && finalizeRes.matchedCount === 0) {
-    throw new ConcurrencyFencingError(
-      `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing compensation for decision ${decisionId}`
-    );
-  }
-
-  return revertedDoc;
+  return finalDoc;
 }
 
 export class RecoveryWorkerService {
@@ -344,7 +357,7 @@ export class RecoveryWorkerService {
       if (currentState === 'EVALUATED') {
         if (journal.action === 'contribution.adopted' && journal.auditDraft?.entityId) {
           await DecisionContributionModel.updateOne(
-            { _id: journal.auditDraft.entityId },
+            { _id: journal.auditDraft.entityId, status: 'submitted' },
             {
               $set: {
                 status: 'adopted',

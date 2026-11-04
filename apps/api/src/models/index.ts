@@ -30,3 +30,5 @@ export * from './comment.schema.js';
 export * from './comment.model.js';
 export * from './operationJournal.types.js';
 export * from './operationJournal.model.js';
+export * from './outbox.types.js';
+export * from './outbox.model.js';

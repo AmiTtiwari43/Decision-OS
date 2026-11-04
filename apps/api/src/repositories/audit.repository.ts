@@ -14,21 +14,31 @@ export interface AuditPaginationOptions {
 export class AuditRepository {
   /**
    * Appends a new audit event. Strictly append-only.
+   * Supports session-bound transactional writes.
    */
-  async create(data: Omit<IAuditEvent, 'createdAt' | 'updatedAt'>): Promise<AuditEventDocument> {
+  async create(
+    data: Omit<IAuditEvent, 'createdAt' | 'updatedAt'>,
+    session?: mongoose.ClientSession
+  ): Promise<AuditEventDocument> {
     const doc = new AuditEventModel(data);
-    return doc.save();
+    return doc.save(session ? { session } : undefined);
   }
 
   /**
    * Retrieves the most recent audit event for a decision to establish the hash linkage.
    */
-  async getLatestByDecisionId(decisionId: string): Promise<AuditEventDocument | null> {
-    return AuditEventModel.findOne({
+  async getLatestByDecisionId(
+    decisionId: string,
+    session?: mongoose.ClientSession
+  ): Promise<AuditEventDocument | null> {
+    const q = AuditEventModel.findOne({
       decisionId: new mongoose.Types.ObjectId(decisionId),
-    })
-      .sort({ timestamp: -1, _id: -1 })
-      .exec();
+    }).sort({ sequenceNumber: -1, timestamp: -1, _id: -1 });
+
+    if (session) {
+      q.session(session);
+    }
+    return q.exec();
   }
 
   /**
@@ -39,7 +49,7 @@ export class AuditRepository {
     return AuditEventModel.find({
       decisionId: new mongoose.Types.ObjectId(decisionId),
     })
-      .sort({ timestamp: 1, _id: 1 })
+      .sort({ sequenceNumber: 1, timestamp: 1, _id: 1 })
       .lean<AuditEventDocument[]>()
       .exec();
   }
@@ -86,7 +96,7 @@ export class AuditRepository {
 
     const [items, total] = await Promise.all([
       AuditEventModel.find(query)
-        .sort({ timestamp: -1, _id: -1 })
+        .sort({ sequenceNumber: -1, timestamp: -1, _id: -1 })
         .skip(skip)
         .limit(limit)
         .lean<AuditEventDocument[]>()
@@ -99,4 +109,3 @@ export class AuditRepository {
 }
 
 export const auditRepository = new AuditRepository();
-

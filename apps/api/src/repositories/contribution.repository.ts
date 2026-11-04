@@ -226,18 +226,23 @@ export class ContributionRepository {
 
   /**
    * Rejects a submitted contribution with rationale (Owner only).
+   * Atomically guards that contribution is currently 'submitted'.
    */
   async reject(
     contributionId: string,
     rejectionReason: string,
-    rejectedBy: { id: string; name?: string; role?: string }
+    rejectedBy: { id: string; name?: string; role?: string },
+    session?: mongoose.ClientSession
   ): Promise<DecisionContributionDocument | null> {
     if (!mongoose.isValidObjectId(contributionId)) {
       return null;
     }
 
-    return DecisionContributionModel.findByIdAndUpdate(
-      contributionId,
+    return DecisionContributionModel.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(contributionId),
+        status: 'submitted', // Strict status fencing
+      },
       {
         $set: {
           status: 'rejected',
@@ -246,7 +251,7 @@ export class ContributionRepository {
           rejectedBy,
         },
       },
-      { new: true }
+      { new: true, ...(session ? { session } : {}) }
     )
       .populate('contributorId', 'id name email')
       .exec();
@@ -254,6 +259,7 @@ export class ContributionRepository {
 
   /**
    * Marks a contribution as adopted.
+   * Atomically guards that contribution is currently 'submitted' and prevents stale overwrite.
    */
   async markAdopted(
     contributionId: string,
@@ -265,8 +271,11 @@ export class ContributionRepository {
       return null;
     }
 
-    return DecisionContributionModel.findByIdAndUpdate(
-      contributionId,
+    return DecisionContributionModel.findOneAndUpdate(
+      {
+        _id: new mongoose.Types.ObjectId(contributionId),
+        status: 'submitted', // Strict status fencing
+      },
       {
         $set: {
           status: 'adopted',

@@ -5,6 +5,7 @@ import {
   decisionRepository,
   userRepository,
 } from '../repositories/index.js';
+import { DecisionModel, AuditEventModel } from '../models/index.js';
 import { authorizeDecisionAction } from './authorization.service.js';
 import type { RequesterContext } from './decision.service.js';
 import {
@@ -35,6 +36,8 @@ export interface RecordAuditInput {
   eventId?: string;
   originalTimestamp?: Date;
   timestamp?: Date;
+  sequenceNumber?: number;
+  session?: mongoose.ClientSession;
 }
 
 function canonicalizeJson(obj: unknown): unknown {
@@ -65,6 +68,7 @@ export function computeCanonicalEventHash(event: {
   timestamp: Date | string;
   previousEventHash: string;
   schemaVersion: number;
+  sequenceNumber?: number;
 }): string {
   const origTs =
     event.originalTimestamp instanceof Date
@@ -75,36 +79,52 @@ export function computeCanonicalEventHash(event: {
       ? event.timestamp.toISOString()
       : new Date(event.timestamp).toISOString();
 
-  const canonical = JSON.stringify(
-    canonicalizeJson({
-      action: event.action,
-      actorId: event.actorId,
-      decisionId: event.decisionId,
-      diff: event.diff ?? null,
-      entityId: event.entityId,
-      entityType: event.entityType,
-      eventId: event.eventId,
-      originalTimestamp: origTs,
-      previousEventHash: event.previousEventHash,
-      schemaVersion: event.schemaVersion || 1,
-      summary: event.summary,
-      timestamp: appendTs,
-    })
-  );
+  const payloadToHash: Record<string, unknown> = {
+    action: event.action,
+    actorId: event.actorId,
+    decisionId: event.decisionId,
+    diff: event.diff ?? null,
+    entityId: event.entityId,
+    entityType: event.entityType,
+    eventId: event.eventId,
+    originalTimestamp: origTs,
+    previousEventHash: event.previousEventHash,
+    schemaVersion: event.schemaVersion || 1,
+    sequenceNumber: event.sequenceNumber !== undefined ? event.sequenceNumber : 1,
+    summary: event.summary,
+    timestamp: appendTs,
+  };
 
+  const canonical = JSON.stringify(canonicalizeJson(payloadToHash));
   return crypto.createHash('sha256').update(canonical, 'utf8').digest('hex');
 }
 
 export class AuditService {
   /**
-   * Appends an audit event with SHA-256 hash chaining and dual timestamps.
-   * Guarantees chronological tamper-evidence, preserves stable identity across retries,
-   * and enforces strict monotonicity.
+   * Appends an audit event with SHA-256 hash chaining, authoritative sequence numbers,
+   * and session-bound transaction safety.
+   *
+   * Guarantees:
+   * 1. If called within a MongoDB session, all writes participate in that transaction.
+   * 2. Authoritative audit head on DecisionModel is conditionally updated.
+   * 3. Idempotent on eventId retry.
+   * 4. Aborted transactions leave zero partial audit state.
    */
-  async recordEvent(input: RecordAuditInput): Promise<AuditEventDocument> {
+  async recordEvent(
+    input: RecordAuditInput,
+    explicitSession?: mongoose.ClientSession
+  ): Promise<AuditEventDocument> {
     const { decisionId, action, entityType, entityId, summary, diff } = input;
     const eventId = input.eventId || crypto.randomUUID();
-    const originalTimestamp = input.originalTimestamp || new Date();
+    const session = explicitSession || input.session;
+
+    // 0. Idempotency check: if eventId already committed or in session, return it
+    const existing = await AuditEventModel.findOne({ eventId })
+      .session(session || null)
+      .exec();
+    if (existing) {
+      return existing;
+    }
 
     let actorId = 'system';
     let actorEmail: string | undefined;
@@ -120,7 +140,6 @@ export class AuditService {
       }
     }
 
-    // Attempt to enrich actor details if email is missing and actorId is an ObjectId
     if (!actorEmail && mongoose.isValidObjectId(actorId)) {
       try {
         const user = await userRepository.findById(actorId);
@@ -133,20 +152,42 @@ export class AuditService {
       }
     }
 
-    // Determine previousEventHash from the latest audit record for this decision with retry on concurrent contention
-    const maxAttempts = 5;
+    const originalTimestamp = input.originalTimestamp || new Date();
+    const schemaVersion = 1;
+
+    const maxAttempts = session ? 1 : 5; // Inside a session transaction, do not loop internally
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
-        const latestEvent = await auditRepository.getLatestByDecisionId(decisionId);
-        const previousEventHash = latestEvent?.eventHash || GENESIS_PREVIOUS_HASH;
-        const schemaVersion = 1;
+        // 1. Read the current authoritative head from DecisionModel
+        let currentSequence = 0;
+        let previousEventHash = GENESIS_PREVIOUS_HASH;
+        let lastTimestamp = 0;
 
-        // Sequence timestamp: strictly monotonic chain append time
+        const decisionDoc = await DecisionModel.findById(decisionId)
+          .session(session || null)
+          .exec();
+
+        if (decisionDoc?.auditHead && decisionDoc.auditHead.sequenceNumber > 0) {
+          currentSequence = decisionDoc.auditHead.sequenceNumber;
+          previousEventHash = decisionDoc.auditHead.eventHash || GENESIS_PREVIOUS_HASH;
+          if (decisionDoc.auditHead.updatedAt) {
+            lastTimestamp = new Date(decisionDoc.auditHead.updatedAt).getTime();
+          }
+        } else {
+          // Fallback if auditHead is not yet populated
+          const latestEvent = await auditRepository.getLatestByDecisionId(decisionId, session);
+          if (latestEvent) {
+            currentSequence = latestEvent.sequenceNumber || 1;
+            previousEventHash = latestEvent.eventHash;
+            lastTimestamp = new Date(latestEvent.timestamp).getTime();
+          }
+        }
+
+        const sequenceNumber = input.sequenceNumber || currentSequence + 1;
+        const nowMs = Date.now();
         const eventTimestamp =
           input.timestamp ||
-          (latestEvent
-            ? new Date(Math.max(Date.now(), latestEvent.timestamp.getTime() + 1))
-            : new Date());
+          new Date(Math.max(nowMs, lastTimestamp + 1));
 
         const eventHash = computeCanonicalEventHash({
           eventId,
@@ -161,6 +202,7 @@ export class AuditService {
           timestamp: eventTimestamp,
           previousEventHash,
           schemaVersion,
+          sequenceNumber,
         });
 
         const eventPayload: Omit<IAuditEvent, 'createdAt' | 'updatedAt'> = {
@@ -178,17 +220,48 @@ export class AuditService {
           timestamp: eventTimestamp,
           eventHash,
           previousEventHash,
+          sequenceNumber,
           schemaVersion,
         };
 
-        return await auditRepository.create(eventPayload);
+        const created = await auditRepository.create(eventPayload, session);
+
+        // 2. Advance authoritative audit head on DecisionModel within the same session
+        if (decisionDoc) {
+          await DecisionModel.updateOne(
+            {
+              _id: decisionDoc._id,
+              $or: [
+                { 'auditHead.sequenceNumber': sequenceNumber - 1 },
+                { 'auditHead.sequenceNumber': { $exists: false } },
+                { auditHead: null },
+              ],
+            },
+            {
+              $set: {
+                auditHead: {
+                  sequenceNumber,
+                  eventHash,
+                  lastEventId: eventId,
+                  updatedAt: eventTimestamp,
+                },
+              },
+            },
+            {
+              timestamps: false,
+              ...(session ? { session } : {}),
+            }
+          ).exec();
+        }
+
+        return created;
       } catch (err: unknown) {
-        // If MongoDB duplicate key on { decisionId, previousEventHash } occurred due to concurrent writes, retry with new chain head
         const isDuplicateKey =
           err &&
           typeof err === 'object' &&
           ('code' in err || 'errorLabels' in err) &&
           (err as { code?: number }).code === 11000;
+
         if (isDuplicateKey && attempt < maxAttempts - 1) {
           await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
           continue;
@@ -246,6 +319,7 @@ export class AuditService {
       timestamp: doc.timestamp.toISOString(),
       eventHash: doc.eventHash,
       previousEventHash: doc.previousEventHash,
+      sequenceNumber: doc.sequenceNumber || 1,
       schemaVersion: doc.schemaVersion,
     }));
 
@@ -259,7 +333,7 @@ export class AuditService {
   }
 
   /**
-   * Verifies the cryptographic SHA-256 hash chain for all events in this decision.
+   * Verifies the cryptographic SHA-256 hash chain and monotonic sequence numbers for all events in this decision.
    */
   async verifyChainIntegrity(
     decisionId: string,
@@ -290,7 +364,7 @@ export class AuditService {
       };
     }
 
-    // Order by cryptographic chain linkage if a complete chain exists, protecting against millisecond sort ties
+    // Order by sequenceNumber or hash chain linkage
     const eventsByPrev = new Map<string, AuditEventDocument>();
     for (const ev of rawEvents) {
       eventsByPrev.set(ev.previousEventHash, ev);
@@ -337,6 +411,7 @@ export class AuditService {
         timestamp: ev.timestamp,
         previousEventHash: ev.previousEventHash,
         schemaVersion: ev.schemaVersion,
+        sequenceNumber: ev.sequenceNumber,
       });
 
       if (computedHash !== ev.eventHash) {
@@ -362,6 +437,21 @@ export class AuditService {
       rootHash: events[0].eventHash,
       headHash: events[events.length - 1].eventHash,
       verifiedAt: nowIso,
+    };
+  }
+
+  /**
+   * Convenience alias for chain verification with { valid, totalEvents, violations }.
+   */
+  async verifyChain(
+    decisionId: string,
+    requester?: RequesterContext
+  ): Promise<{ valid: boolean; totalEvents: number; violations: string[] }> {
+    const res = await this.verifyChainIntegrity(decisionId, requester);
+    return {
+      valid: res.isValid,
+      totalEvents: res.totalEventsChecked,
+      violations: res.brokenAtEventId ? [res.reason || `Broken chain at ${res.brokenAtEventId}`] : [],
     };
   }
 }

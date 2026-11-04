@@ -41,9 +41,10 @@ export function getDatabaseNameFromUri(uri: string): string | null {
 
 /**
  * Asserts that the provided MongoDB URI points to a designated test database.
- * Tests must REFUSE to execute unless the database name strictly ends with '_test'.
+ * Tests must REFUSE to execute unless the database name strictly ends with '_test'
+ * or an isolated worker test suffix (e.g. '_test_1', '_test_worker2').
  *
- * @throws {Error} If the database name cannot be extracted or does not end with '_test'.
+ * @throws {Error} If the database name cannot be extracted or does not end with a test suffix.
  */
 export function assertTestDatabase(uri: string): void {
   const dbName = getDatabaseNameFromUri(uri);
@@ -55,9 +56,29 @@ export function assertTestDatabase(uri: string): void {
     );
   }
 
-  if (!dbName.endsWith('_test')) {
+  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)?$/.test(dbName);
+  if (!isTestDb) {
     throw new Error(
       `Test database safety guard violation: database '${dbName}' in URI (${sanitizedUri}) does not end with '_test'. Refusing to execute tests against a potential non-test database.`
     );
   }
+}
+
+/**
+ * Returns an isolated test database URI for the current worker process if parallel execution is active.
+ */
+export function getTestDatabaseUri(baseUri?: string): string {
+  const uri =
+    baseUri ||
+    process.env.TEST_MONGODB_URI ||
+    'mongodb://127.0.0.1:27018/decision_os_test?replicaSet=rs0&directConnection=true';
+  const poolId = process.env.VITEST_POOL_ID;
+  if (poolId) {
+    const dbName = getDatabaseNameFromUri(uri);
+    if (dbName && !dbName.includes(`_test_${poolId}`)) {
+      const newDbName = `${dbName}_${poolId}`;
+      return uri.replace(`/${dbName}`, `/${newDbName}`);
+    }
+  }
+  return uri;
 }

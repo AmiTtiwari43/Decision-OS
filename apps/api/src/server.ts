@@ -1,12 +1,14 @@
 import { buildApp } from './app.js';
 import { env } from './config/env.js';
-import { connectToDatabase, disconnectFromDatabase } from './db/connection.js';
+import { connectToDatabase, disconnectFromDatabase, assertReplicaSetSupported } from './db/connection.js';
 import { collaborationService } from './services/collaboration.service.js';
 
 export async function startServer(): Promise<void> {
   // Connect to MongoDB before accepting network requests
   try {
     await connectToDatabase(env.MONGODB_URI);
+    // Validate replica set transaction support for Batch 4 deployment
+    assertReplicaSetSupported();
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(`Fatal: Failed to connect to MongoDB during server startup: ${message}`);
