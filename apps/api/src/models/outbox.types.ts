@@ -22,10 +22,22 @@ export interface NotificationOutboxDocument extends INotificationOutbox {
   _id: Types.ObjectId;
 }
 
+export type ConsumerProcessingStatus = 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED';
+
 export interface INotificationConsumerRecord {
   consumerId: string;
   notificationId: string;
-  processedAt: Date;
+  idempotencyKey?: string;
+  status: ConsumerProcessingStatus;
+  processingOwner?: string | null;
+  leaseExpiresAt?: Date | null;
+  claimGeneration: number;
+  attemptCount: number;
+  lastError?: string | null;
+  completedAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  processedAt?: Date;
 }
 
 export interface NotificationConsumerRecordDocument extends INotificationConsumerRecord {

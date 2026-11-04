@@ -86,7 +86,7 @@ export class OperationJournalRepository {
           { recoveryOwner: null },
           { leaseExpiresAt: null },
           { leaseExpiresAt: { $exists: false } },
-          { leaseExpiresAt: { $lt: now } },
+          { $expr: { $lt: ['$leaseExpiresAt', '$$NOW'] } },
         ],
         retryCount: { $lt: 5 },
       };
@@ -201,49 +201,74 @@ export class OperationJournalRepository {
     decisionId?: string,
     session?: mongoose.ClientSession
   ): Promise<boolean> {
-    const now = new Date();
-    const newExpiration = new Date(now.getTime() + leaseDurationMs);
+    const newExpiration = new Date(Date.now() + leaseDurationMs);
 
-    // CRITICAL (F2): A heartbeat must NEVER resurrect an expired lease.
-    // Query requires leaseExpiresAt > now and strictly matching owner + fencingToken.
-    const result = await OperationJournalModel.updateOne(
-      {
-        operationId,
-        recoveryOwner: workerId,
-        fencingToken, // Strict fencing token match
-        leaseExpiresAt: { $gt: now },
-      },
-      {
-        $set: {
-          leaseExpiresAt: newExpiration,
-          heartbeatAt: now,
-        },
-      },
-      { session }
-    ).exec();
-
-    if (result.matchedCount === 0) {
-      return false;
-    }
-
-    if (decisionId) {
-      await DecisionModel.updateOne(
+    const executeRenew = async (sess?: mongoose.ClientSession): Promise<boolean> => {
+      // CRITICAL (F2): A heartbeat must NEVER resurrect an expired lease.
+      // Strict database-time server check $$NOW and matching owner + fencingToken.
+      const result = await OperationJournalModel.updateOne(
         {
-          _id: decisionId,
+          operationId,
           recoveryOwner: workerId,
-          recoveryFencingToken: fencingToken,
-          recoveryLeaseExpiresAt: { $gt: now },
+          fencingToken, // Strict fencing token match
+          $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
         },
         {
           $set: {
-            recoveryLeaseExpiresAt: newExpiration,
+            leaseExpiresAt: newExpiration,
+            heartbeatAt: new Date(),
           },
         },
-        { session }
+        { session: sess }
       ).exec();
+
+      if (result.matchedCount === 0) {
+        return false;
+      }
+
+      if (decisionId) {
+        const decRes = await DecisionModel.updateOne(
+          {
+            _id: decisionId,
+            recoveryOwner: workerId,
+            recoveryFencingToken: fencingToken,
+            auditIntegrityStatus: { $ne: 'quarantined' },
+            $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+          },
+          {
+            $set: {
+              recoveryLeaseExpiresAt: newExpiration,
+            },
+          },
+          { session: sess }
+        ).exec();
+
+        if (decRes.matchedCount === 0) {
+          return false;
+        }
+      }
+
+      return true;
+    };
+
+    if (session) {
+      return executeRenew(session);
     }
 
-    return true;
+    try {
+      return await runInTransaction(async (txSession) => {
+        const ok = await executeRenew(txSession);
+        if (!ok) {
+          throw new ConcurrencyFencingError(`Lease renewal failed for operation ${operationId}`);
+        }
+        return true;
+      });
+    } catch (err: unknown) {
+      if (err instanceof ConcurrencyFencingError) {
+        return false;
+      }
+      throw err;
+    }
   }
 
   /**
@@ -259,7 +284,6 @@ export class OperationJournalRepository {
     extraFields: Record<string, unknown> = {},
     session?: mongoose.ClientSession
   ): Promise<void> {
-    const now = new Date();
     const stateCondition = Array.isArray(fromState)
       ? { $in: fromState }
       : fromState;
@@ -270,12 +294,12 @@ export class OperationJournalRepository {
         recoveryOwner: workerId,
         fencingToken, // Guarantees this worker still holds the valid lease
         state: stateCondition,
-        leaseExpiresAt: { $gt: now }, // Worker lease must not be expired
+        $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] }, // Database-time lease validity
       },
       {
         $set: {
           state: toState,
-          heartbeatAt: now,
+          heartbeatAt: new Date(),
           ...extraFields,
         },
       },

@@ -136,8 +136,15 @@ describe('Batch 4 Phase 2 — Adversarial Recovery Fencing & Lease Safety', () =
     expect(decAfterA?.recoveryOwner).toBe('worker-A');
 
     // 2. Worker A pauses immediately before protected write
-    // 3. A's lease expires
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    // 3. A's lease expires deterministically in database (zero timing-based sleeps)
+    await OperationJournalModel.updateOne(
+      { operationId: opId },
+      { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+    );
+    await DecisionModel.updateOne(
+      { _id: decision._id },
+      { $set: { recoveryLeaseExpiresAt: new Date(Date.now() - 5000) } }
+    );
 
     // 4 & 5. Worker B claims generation 2 through the real repository method
     const claimB = await operationJournalRepository.claimJournalOperation('worker-B', 30000, opId);

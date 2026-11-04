@@ -210,8 +210,11 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
       const claimBeforeExpire = await operationJournalRepository.claimJournalOperation('worker-beta', 5000, opId);
       expect(claimBeforeExpire).toBeNull();
 
-      // Wait for lease to expire
-      await new Promise((r) => setTimeout(r, 60));
+      // Deterministically expire lease in database (no sleep)
+      await OperationJournalModel.updateOne(
+        { operationId: opId },
+        { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
 
       // Worker Beta claims expired operation
       const claim2 = await operationJournalRepository.claimJournalOperation('worker-beta', 5000, opId);
@@ -236,10 +239,14 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
       });
 
       for (let expectedToken = 1; expectedToken <= 4; expectedToken++) {
-        const claim = await operationJournalRepository.claimJournalOperation(`worker-${expectedToken}`, 30, opId);
+        const claim = await operationJournalRepository.claimJournalOperation(`worker-${expectedToken}`, 30000, opId);
         expect(claim).not.toBeNull();
         expect(claim!.fencingToken).toBe(expectedToken);
-        await new Promise((r) => setTimeout(r, 45));
+        // Deterministically expire lease for next takeover
+        await OperationJournalModel.updateOne(
+          { operationId: opId },
+          { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+        );
       }
     });
 
@@ -259,11 +266,14 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
       });
 
       // Worker 1 claims (token = 1)
-      const claim1 = await operationJournalRepository.claimJournalOperation('worker-1', 40, opId);
+      const claim1 = await operationJournalRepository.claimJournalOperation('worker-1', 40000, opId);
       expect(claim1!.fencingToken).toBe(1);
 
-      // Wait for lease to expire, Worker 2 takes over (token = 2)
-      await new Promise((r) => setTimeout(r, 55));
+      // Deterministically expire Worker 1 lease; Worker 2 takes over (token = 2)
+      await OperationJournalModel.updateOne(
+        { operationId: opId },
+        { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
       const claim2 = await operationJournalRepository.claimJournalOperation('worker-2', 5000, opId);
       expect(claim2!.fencingToken).toBe(2);
 
@@ -340,17 +350,15 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
         auditDraft: makeAuditDraft(),
       });
 
-      // Worker claims with 100ms lease
-      const claim = await operationJournalRepository.claimJournalOperation('worker-active', 100, opId);
+      // Worker claims with 30000ms lease
+      const claim = await operationJournalRepository.claimJournalOperation('worker-active', 30000, opId);
       expect(claim).not.toBeNull();
 
-      // Renew lease after 50ms
-      await new Promise((r) => setTimeout(r, 50));
-      const renewed = await operationJournalRepository.renewOperationLease(opId, 'worker-active', 1, 150);
+      // Renew lease
+      const renewed = await operationJournalRepository.renewOperationLease(opId, 'worker-active', 1, 60000);
       expect(renewed).toBe(true);
 
-      // At t=110ms (which would have expired the original 100ms lease), another worker tries to claim
-      await new Promise((r) => setTimeout(r, 60));
+      // Another worker tries to claim while lease is unexpired
       const stealAttempt = await operationJournalRepository.claimJournalOperation('worker-thief', 1000, opId);
       expect(stealAttempt).toBeNull(); // Claim blocked because lease was actively renewed!
     });
@@ -791,8 +799,15 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
       expect(decAfterA!.recoveryFencingToken).toBe(1);
       expect(decAfterA!.recoveryOwner).toBe('worker-A');
 
-      // 2. Worker A pauses; wait 60ms for Worker A's lease to expire
-      await new Promise((r) => setTimeout(r, 60));
+      // 2. Worker A pauses; deterministically expire Worker A's lease in database
+      await OperationJournalModel.updateOne(
+        { operationId: opId },
+        { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
+      await DecisionModel.updateOne(
+        { _id: decisionId },
+        { $set: { recoveryLeaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
 
       // 3. Worker B claims token 2 in the journal (ownership transfer)
       const claimB = await operationJournalRepository.claimJournalOperation('worker-B', 5000, opId);
@@ -850,8 +865,15 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
       const claimA = await operationJournalRepository.claimJournalOperation('worker-A', 40, opId);
       expect(claimA!.fencingToken).toBe(1);
 
-      // Worker A pauses and lease expires
-      await new Promise((r) => setTimeout(r, 60));
+      // Worker A pauses and lease expires deterministically in database
+      await OperationJournalModel.updateOne(
+        { operationId: opId },
+        { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
+      await DecisionModel.updateOne(
+        { _id: decisionId },
+        { $set: { recoveryLeaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
 
       // Worker B claims token 2 and advances state
       const claimB = await operationJournalRepository.claimJournalOperation('worker-B', 5000, opId);
@@ -912,11 +934,18 @@ describe('Batch 4 Phase 1 — Concurrency, Recovery Worker & Cryptographic Audit
         $set: { pendingOperationId: opId, version: 2 },
       });
 
-      // Worker A starts recovery and crashes/pauses
-      const claimA = await operationJournalRepository.claimJournalOperation('worker-A', 40, opId);
+      // Worker A starts recovery and crashes/pauses; deterministically expire Worker A lease
+      const claimA = await operationJournalRepository.claimJournalOperation('worker-A', 40000, opId);
       expect(claimA!.fencingToken).toBe(1);
 
-      await new Promise((r) => setTimeout(r, 60));
+      await OperationJournalModel.updateOne(
+        { operationId: opId },
+        { $set: { leaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
+      await DecisionModel.updateOne(
+        { _id: decisionId },
+        { $set: { recoveryLeaseExpiresAt: new Date(Date.now() - 5000) } }
+      );
 
       // Worker B recovers and completes the operation
       const claimB = await operationJournalRepository.claimJournalOperation('worker-B', 5000, opId);

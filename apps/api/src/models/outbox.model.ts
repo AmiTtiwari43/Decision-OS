@@ -1,5 +1,10 @@
 import mongoose, { Schema, type Model } from 'mongoose';
-import type { NotificationOutboxDocument, INotificationOutbox } from './outbox.types.js';
+import type {
+  NotificationOutboxDocument,
+  INotificationOutbox,
+  INotificationConsumerRecord,
+  NotificationConsumerRecordDocument,
+} from './outbox.types.js';
 
 export const NotificationOutboxSchema = new Schema<INotificationOutbox, Model<NotificationOutboxDocument>>(
   {
@@ -80,7 +85,10 @@ export const NotificationOutboxModel =
   (mongoose.models.NotificationOutbox as Model<NotificationOutboxDocument>) ||
   mongoose.model<NotificationOutboxDocument>('NotificationOutbox', NotificationOutboxSchema);
 
-export const NotificationConsumerRecordSchema = new Schema(
+export const NotificationConsumerRecordSchema = new Schema<
+  INotificationConsumerRecord,
+  Model<NotificationConsumerRecordDocument>
+>(
   {
     consumerId: {
       type: String,
@@ -92,19 +100,58 @@ export const NotificationConsumerRecordSchema = new Schema(
       required: true,
       index: true,
     },
+    idempotencyKey: {
+      type: String,
+      index: true,
+    },
+    status: {
+      type: String,
+      enum: ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'],
+      default: 'PENDING',
+      index: true,
+    },
+    processingOwner: {
+      type: String,
+      default: null,
+      index: true,
+    },
+    leaseExpiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+    claimGeneration: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    attemptCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastError: {
+      type: String,
+      default: null,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
     processedAt: {
       type: Date,
       default: Date.now,
     },
   },
   {
-    timestamps: false,
+    timestamps: true,
   }
 );
 
 // Unique compound index guarantees durable consumer idempotency across restarts & concurrent deliveries
 NotificationConsumerRecordSchema.index({ consumerId: 1, notificationId: 1 }, { unique: true });
+NotificationConsumerRecordSchema.index({ status: 1, leaseExpiresAt: 1 });
 
-export const NotificationConsumerRecordModel =
-  mongoose.models.NotificationConsumerRecord ||
-  mongoose.model('NotificationConsumerRecord', NotificationConsumerRecordSchema);
+export const NotificationConsumerRecordModel: Model<NotificationConsumerRecordDocument> =
+  (mongoose.models.NotificationConsumerRecord as Model<NotificationConsumerRecordDocument>) ||
+  mongoose.model<NotificationConsumerRecordDocument>('NotificationConsumerRecord', NotificationConsumerRecordSchema);

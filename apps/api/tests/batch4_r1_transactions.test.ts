@@ -47,22 +47,19 @@ describe('Batch 4 Phase 1 — Transaction Enforcement & Standalone Fail-Closed V
     });
 
     it('detects standalone topology and reports isReplicaSetSupported() === false', () => {
-      if (!standaloneConnected) {
-        console.warn('Standalone MongoDB not reachable on port 27017, skipping standalone ping.');
-        return;
-      }
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       expect(isReplicaSetSupported()).toBe(false);
     });
 
     it('assertReplicaSetSupported() throws clear configuration error on standalone MongoDB', () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       expect(() => assertReplicaSetSupported()).toThrowError(
         /does not support multi-document transactions.*requires a MongoDB Replica Set/
       );
     });
 
     it('runInTransaction() strictly fails closed on standalone MongoDB', async () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       let executed = false;
       await expect(
         runInTransaction(async () => {
@@ -73,7 +70,7 @@ describe('Batch 4 Phase 1 — Transaction Enforcement & Standalone Fail-Closed V
     });
 
     it('executeCompensatingRollback() strictly fails closed without standalone fallback', async () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       const opId = 'op-standalone-fail-1';
       const decId = new mongoose.Types.ObjectId().toString();
 
@@ -90,14 +87,14 @@ describe('Batch 4 Phase 1 — Transaction Enforcement & Standalone Fail-Closed V
     });
 
     it('claimJournalOperation() strictly fails closed without standalone fallback', async () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       await expect(
         operationJournalRepository.claimJournalOperation('worker-standalone', 10000, 'op-standalone-fail-2')
       ).rejects.toThrowError(/does not support multi-document transactions/);
     });
 
     it('resolveQuarantine() strictly fails closed without standalone fallback', async () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       const dec = await DecisionModel.create({
         title: 'Quarantine Fail Closed Test',
         criteria: [{ id: 'c1', name: 'C1', weight: 1, direction: 'benefit' }],
@@ -113,7 +110,7 @@ describe('Batch 4 Phase 1 — Transaction Enforcement & Standalone Fail-Closed V
     });
 
     it('adoptExpertScores() strictly fails closed without standalone fallback', async () => {
-      if (!standaloneConnected) return;
+      expect(standaloneConnected, 'Standalone MongoDB required on port 27017').toBe(true);
       const decId = new mongoose.Types.ObjectId().toString();
       const contribId = new mongoose.Types.ObjectId().toString();
 

@@ -98,7 +98,6 @@ export async function executeCompensatingRollback(
   }
 
   const compensatingVersion = failedVersion + 1;
-  const now = new Date();
 
   const decisionFilter: Record<string, unknown> = {
     _id: decisionId,
@@ -110,7 +109,7 @@ export async function executeCompensatingRollback(
   if (fencingToken > 0) {
     decisionFilter.recoveryFencingToken = fencingToken;
     decisionFilter.recoveryOwner = workerId;
-    decisionFilter.recoveryLeaseExpiresAt = { $gt: now };
+    decisionFilter.$expr = { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] };
   }
 
   const executeAtomicReversion = async (session?: mongoose.ClientSession): Promise<DecisionDocument> => {
@@ -141,10 +140,7 @@ export async function executeCompensatingRollback(
     await DecisionContributionModel.updateOne(
       {
         decisionId: new mongoose.Types.ObjectId(decisionId),
-        $or: [
-          { adoptedOperationId: operationId },
-          { _id: journalDoc?.auditDraft?.entityId ? new mongoose.Types.ObjectId(journalDoc.auditDraft.entityId) : null },
-        ],
+        adoptedOperationId: operationId,
         status: 'adopted',
       },
       {
@@ -156,6 +152,7 @@ export async function executeCompensatingRollback(
           adoptedOperationId: null,
           adoptedDecisionVersion: null,
           adoptedFencingToken: null,
+          adoptedRevision: null,
         },
       },
       { session }
@@ -189,7 +186,7 @@ export async function executeCompensatingRollback(
     if (fencingToken > 0) {
       finalizeFilter.recoveryFencingToken = fencingToken;
       finalizeFilter.recoveryOwner = workerId;
-      finalizeFilter.recoveryLeaseExpiresAt = { $gt: now };
+      finalizeFilter.$expr = { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] };
     }
 
     const finalizeRes = await DecisionModel.updateOne(
@@ -332,44 +329,48 @@ export class RecoveryWorkerService {
           );
           currentState = 'COMPENSATING';
         } else {
-          // Engine evaluation succeeded -> Update decision analysis with atomic fencing check
-          const now = new Date();
-          const updateRes = await DecisionModel.updateOne(
-            {
-              _id: decisionId,
-              version: journal.targetVersion,
-              pendingOperationId: operationId,
-              auditIntegrityStatus: { $ne: 'quarantined' },
-              ...(fencingToken > 0
-                ? {
-                    recoveryFencingToken: fencingToken,
-                    recoveryOwner: workerId,
-                    recoveryLeaseExpiresAt: { $gt: now },
-                  }
-                : {}),
-            },
-            {
-              $set: {
-                analysis: evalResult,
-                recoveryFencingToken: fencingToken,
-                recoveryOwner: workerId,
+          // Engine evaluation succeeded -> Update decision analysis inside transaction with atomic fencing
+          await runInTransaction(async (session) => {
+            const updateRes = await DecisionModel.updateOne(
+              {
+                _id: decisionId,
+                version: journal.targetVersion,
+                pendingOperationId: operationId,
+                auditIntegrityStatus: { $ne: 'quarantined' },
+                ...(fencingToken > 0
+                  ? {
+                      recoveryFencingToken: fencingToken,
+                      recoveryOwner: workerId,
+                      $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                    }
+                  : {}),
               },
+              {
+                $set: {
+                  analysis: evalResult,
+                  recoveryFencingToken: fencingToken,
+                  recoveryOwner: workerId,
+                },
+              },
+              { session }
+            ).exec();
+
+            if (updateRes.matchedCount === 0) {
+              throw new ConcurrencyFencingError(
+                `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while updating analysis for decision ${decisionId}`
+              );
             }
-          ).exec();
 
-          if (updateRes.matchedCount === 0) {
-            throw new ConcurrencyFencingError(
-              `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while updating analysis for decision ${decisionId}`
+            await operationJournalRepository.transitionJournalState(
+              operationId,
+              workerId,
+              fencingToken,
+              'DECISION_MUTATED',
+              'EVALUATED',
+              {},
+              session
             );
-          }
-
-          await operationJournalRepository.transitionJournalState(
-            operationId,
-            workerId,
-            fencingToken,
-            'DECISION_MUTATED',
-            'EVALUATED'
-          );
+          });
           currentState = 'EVALUATED';
         }
       }
@@ -380,116 +381,234 @@ export class RecoveryWorkerService {
           const targetContrib = await DecisionContributionModel.findById(journal.auditDraft.entityId).exec();
           if (targetContrib) {
             const expectedRev = (journal.payload?.revision as number) || targetContrib.revision || 1;
-            const contribRes = await DecisionContributionModel.updateOne(
-              {
-                _id: targetContrib._id,
-                decisionId: new mongoose.Types.ObjectId(decisionId),
-                status: 'submitted',
-                revision: expectedRev,
-              },
-              {
-                $set: {
-                  status: 'adopted',
-                  adoptedAt: new Date(),
-                  adoptedBy: journal.actor.id,
-                  adoptedOptionId: journal.payload.preferredOptionId as string,
-                  adoptedOperationId: operationId,
-                  adoptedDecisionVersion: journal.targetVersion,
-                  adoptedFencingToken: fencingToken,
-                  adoptedRevision: expectedRev,
+
+            await runInTransaction(async (session) => {
+              // 1. Transactional Decision lease validation
+              const decisionValidation = await DecisionModel.updateOne(
+                {
+                  _id: decisionId,
+                  version: journal.targetVersion,
+                  pendingOperationId: operationId,
+                  auditIntegrityStatus: { $ne: 'quarantined' },
+                  ...(fencingToken > 0
+                    ? {
+                        recoveryFencingToken: fencingToken,
+                        recoveryOwner: workerId,
+                        $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                      }
+                    : {}),
                 },
-              }
-            ).exec();
+                {
+                  $set: { recoveryOwner: workerId },
+                },
+                { session }
+              ).exec();
 
-            if (contribRes.matchedCount === 0) {
-              const alreadyAdopted = await DecisionContributionModel.findOne({
-                _id: targetContrib._id,
-                adoptedOperationId: operationId,
-              }).exec();
-
-              if (!alreadyAdopted) {
+              if (decisionValidation.matchedCount === 0) {
                 throw new ConcurrencyFencingError(
-                  `Contribution ${journal.auditDraft.entityId} was modified or is not in submitted state`
+                  `Fencing violation: Worker ${workerId} with token ${fencingToken} failed Decision validation during contribution projection for operation ${operationId}`
                 );
               }
-            }
-          }
-        }
 
-        await operationJournalRepository.transitionJournalState(
-          operationId,
-          workerId,
-          fencingToken,
-          'EVALUATED',
-          'ENTITIES_UPDATED'
-        );
+              // 2. Check for idempotent recovery if already adopted by this operation
+              const alreadyAdopted = await DecisionContributionModel.findOne({
+                _id: targetContrib._id,
+                decisionId: new mongoose.Types.ObjectId(decisionId),
+                adoptedOperationId: operationId,
+                status: 'adopted',
+              }).session(session).exec();
+
+              if (!alreadyAdopted) {
+                // 3. Conditional contribution adoption write in transaction session
+                const contribRes = await DecisionContributionModel.updateOne(
+                  {
+                    _id: targetContrib._id,
+                    decisionId: new mongoose.Types.ObjectId(decisionId),
+                    status: 'submitted',
+                    revision: expectedRev,
+                  },
+                  {
+                    $set: {
+                      status: 'adopted',
+                      adoptedAt: new Date(),
+                      adoptedBy: journal.actor.id,
+                      adoptedOptionId: journal.payload.preferredOptionId as string,
+                      adoptedOperationId: operationId,
+                      adoptedDecisionVersion: journal.targetVersion,
+                      adoptedFencingToken: fencingToken,
+                      adoptedRevision: expectedRev,
+                    },
+                  },
+                  { session }
+                ).exec();
+
+                if (contribRes.matchedCount === 0) {
+                  throw new ConcurrencyFencingError(
+                    `Contribution ${journal.auditDraft.entityId} was modified, rejected, withdrawn, or is not in submitted state`
+                  );
+                }
+              }
+
+              // 4. Journal state transition in same transaction
+              await operationJournalRepository.transitionJournalState(
+                operationId,
+                workerId,
+                fencingToken,
+                'EVALUATED',
+                'ENTITIES_UPDATED',
+                {},
+                session
+              );
+            });
+          } else {
+            await operationJournalRepository.transitionJournalState(
+              operationId,
+              workerId,
+              fencingToken,
+              'EVALUATED',
+              'ENTITIES_UPDATED'
+            );
+          }
+        } else {
+          await runInTransaction(async (session) => {
+            const decisionValidation = await DecisionModel.updateOne(
+              {
+                _id: decisionId,
+                version: journal.targetVersion,
+                pendingOperationId: operationId,
+                auditIntegrityStatus: { $ne: 'quarantined' },
+                ...(fencingToken > 0
+                  ? {
+                      recoveryFencingToken: fencingToken,
+                      recoveryOwner: workerId,
+                      $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                    }
+                  : {}),
+              },
+              {
+                $set: { recoveryOwner: workerId },
+              },
+              { session }
+            ).exec();
+
+            if (decisionValidation.matchedCount === 0) {
+              throw new ConcurrencyFencingError(
+                `Fencing violation: Worker ${workerId} with token ${fencingToken} failed Decision validation during transition for operation ${operationId}`
+              );
+            }
+
+            await operationJournalRepository.transitionJournalState(
+              operationId,
+              workerId,
+              fencingToken,
+              'EVALUATED',
+              'ENTITIES_UPDATED',
+              {},
+              session
+            );
+          });
+        }
         currentState = 'ENTITIES_UPDATED';
       }
 
       // ─── Step 4: ENTITIES_UPDATED ─────────────────────────────────────────
       if (currentState === 'ENTITIES_UPDATED') {
-        await auditService.recordEvent({
-          decisionId: decisionId.toString(),
-          actor: journal.actor,
-          action: journal.action,
-          entityType: journal.auditDraft.entityType as any,
-          entityId: journal.auditDraft.entityId,
-          summary: journal.auditDraft.summary,
-          diff: journal.auditDraft.diff,
-          eventId: journal.auditDraft.eventId,
-        });
+        await runInTransaction(async (session) => {
+          const decisionValidation = await DecisionModel.updateOne(
+            {
+              _id: decisionId,
+              version: journal.targetVersion,
+              pendingOperationId: operationId,
+              auditIntegrityStatus: { $ne: 'quarantined' },
+              ...(fencingToken > 0
+                ? {
+                    recoveryFencingToken: fencingToken,
+                    recoveryOwner: workerId,
+                    $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                  }
+                : {}),
+            },
+            {
+              $set: { recoveryOwner: workerId },
+            },
+            { session }
+          ).exec();
 
-        await operationJournalRepository.transitionJournalState(
-          operationId,
-          workerId,
-          fencingToken,
-          'ENTITIES_UPDATED',
-          'AUDITED'
-        );
+          if (decisionValidation.matchedCount === 0) {
+            throw new ConcurrencyFencingError(
+              `Fencing violation: Worker ${workerId} with token ${fencingToken} failed Decision validation during audit recording for operation ${operationId}`
+            );
+          }
+
+          await auditService.recordEvent({
+            decisionId: decisionId.toString(),
+            actor: journal.actor,
+            action: journal.action,
+            entityType: journal.auditDraft.entityType as any,
+            entityId: journal.auditDraft.entityId,
+            summary: journal.auditDraft.summary,
+            diff: journal.auditDraft.diff,
+            eventId: journal.auditDraft.eventId,
+          }, session);
+
+          await operationJournalRepository.transitionJournalState(
+            operationId,
+            workerId,
+            fencingToken,
+            'ENTITIES_UPDATED',
+            'AUDITED',
+            {},
+            session
+          );
+        });
         currentState = 'AUDITED';
       }
 
       // ─── Step 5: AUDITED ──────────────────────────────────────────────────
       if (currentState === 'AUDITED') {
-        const now = new Date();
-        const finalizeRes = await DecisionModel.updateOne(
-          {
-            _id: decisionId,
-            version: journal.targetVersion,
-            pendingOperationId: operationId,
-            auditIntegrityStatus: { $ne: 'quarantined' },
-            ...(fencingToken > 0
-              ? {
-                  recoveryFencingToken: fencingToken,
-                  recoveryOwner: workerId,
-                  recoveryLeaseExpiresAt: { $gt: now },
-                }
-              : {}),
-          },
-          {
-            $set: {
-              pendingOperationId: null,
-              isAudited: true,
-              auditIntegrityStatus: 'healthy',
-              recoveryOwner: null,
-              recoveryLeaseExpiresAt: null,
+        await runInTransaction(async (session) => {
+          const finalizeRes = await DecisionModel.updateOne(
+            {
+              _id: decisionId,
+              version: journal.targetVersion,
+              pendingOperationId: operationId,
+              auditIntegrityStatus: { $ne: 'quarantined' },
+              ...(fencingToken > 0
+                ? {
+                    recoveryFencingToken: fencingToken,
+                    recoveryOwner: workerId,
+                    $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                  }
+                : {}),
             },
+            {
+              $set: {
+                pendingOperationId: null,
+                isAudited: true,
+                auditIntegrityStatus: 'healthy',
+                recoveryOwner: null,
+                recoveryLeaseExpiresAt: null,
+              },
+            },
+            { session }
+          ).exec();
+
+          if (finalizeRes.matchedCount === 0) {
+            throw new ConcurrencyFencingError(
+              `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing decision ${decisionId}`
+            );
           }
-        ).exec();
 
-        if (finalizeRes.matchedCount === 0) {
-          throw new ConcurrencyFencingError(
-            `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing decision ${decisionId}`
+          await operationJournalRepository.transitionJournalState(
+            operationId,
+            workerId,
+            fencingToken,
+            'AUDITED',
+            'COMPLETED',
+            {},
+            session
           );
-        }
-
-        await operationJournalRepository.transitionJournalState(
-          operationId,
-          workerId,
-          fencingToken,
-          'AUDITED',
-          'COMPLETED'
-        );
+        });
         return 'completed';
       }
 
@@ -509,36 +628,49 @@ export class RecoveryWorkerService {
           );
         } else if (decision && decision.version === compensatingVersion) {
           // Compensating write already succeeded; ensure audit event is recorded and pendingOperationId cleared
-          const now = new Date();
-          const compFinalizeRes = await DecisionModel.updateOne(
-            {
-              _id: decisionId,
-              version: compensatingVersion,
-              pendingOperationId: operationId,
-              auditIntegrityStatus: { $ne: 'quarantined' },
-              ...(fencingToken > 0
-                ? {
-                    recoveryFencingToken: fencingToken,
-                    recoveryOwner: workerId,
-                    recoveryLeaseExpiresAt: { $gt: now },
-                  }
-                : {}),
-            },
-            {
-              $set: {
-                pendingOperationId: null,
-                isAudited: true,
-                recoveryOwner: null,
-                recoveryLeaseExpiresAt: null,
+          await runInTransaction(async (session) => {
+            const compFinalizeRes = await DecisionModel.updateOne(
+              {
+                _id: decisionId,
+                version: compensatingVersion,
+                pendingOperationId: operationId,
+                auditIntegrityStatus: { $ne: 'quarantined' },
+                ...(fencingToken > 0
+                  ? {
+                      recoveryFencingToken: fencingToken,
+                      recoveryOwner: workerId,
+                      $expr: { $gt: ['$recoveryLeaseExpiresAt', '$$NOW'] },
+                    }
+                  : {}),
               },
-            }
-          ).exec();
+              {
+                $set: {
+                  pendingOperationId: null,
+                  isAudited: true,
+                  recoveryOwner: null,
+                  recoveryLeaseExpiresAt: null,
+                },
+              },
+              { session }
+            ).exec();
 
-          if (compFinalizeRes.matchedCount === 0) {
-            throw new ConcurrencyFencingError(
-              `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing compensated decision ${decisionId}`
+            if (compFinalizeRes.matchedCount === 0) {
+              throw new ConcurrencyFencingError(
+                `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease while finalizing compensated decision ${decisionId}`
+              );
+            }
+
+            await operationJournalRepository.transitionJournalState(
+              operationId,
+              workerId,
+              fencingToken,
+              'COMPENSATING',
+              'REVERTED',
+              {},
+              session
             );
-          }
+          });
+          return 'reverted';
         }
 
         await operationJournalRepository.transitionJournalState(

@@ -134,6 +134,11 @@ export interface TestDatabaseOwnershipMetadata {
  * Atomically establishes test run ownership over a database.
  * Fails closed if the database is already owned by a different runId.
  */
+/**
+ * Atomically establishes test run ownership over a database.
+ * Replaces read-then-upsert race with strictly atomic insertOne conditional ownership.
+ * Fails closed if the database is already owned by a different runId or workerId.
+ */
 export async function claimTestDatabaseOwnership(
   connection: Connection,
   runId: string,
@@ -144,36 +149,70 @@ export async function claimTestDatabaseOwnership(
     throw new Error('claimTestDatabaseOwnership: connection has no active db handle');
   }
 
-  const metaCol = db.collection('__test_run_metadata');
-
-  const existing = await metaCol.findOne({ _id: 'ownership_lock' as unknown as import('mongodb').ObjectId });
-
-  if (existing && existing.runId !== runId) {
+  const dbName = db.databaseName;
+  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)+$/.test(dbName);
+  if (!isTestDb) {
     throw new Error(
-      `Test database isolation violation: database is owned by run '${existing.runId}', cannot be claimed by run '${runId}'`
+      `Test database safety guard violation: database '${dbName}' is not a designated test database. Refusing claim.`
     );
   }
 
-  await metaCol.updateOne(
-    { _id: 'ownership_lock' as unknown as import('mongodb').ObjectId },
-    {
-      $set: {
-        runId,
-        workerId: workerId || '0',
-        claimedAt: new Date(),
-      },
-    },
-    { upsert: true }
-  );
+  if (dbName === 'production' || dbName === 'admin' || dbName === 'local' || dbName === 'config') {
+    throw new Error(
+      `Test database safety guard violation: refusing claim on reserved database '${dbName}'.`
+    );
+  }
+
+  const metaCol = db.collection('__test_run_metadata');
+  const normalizedWorker = workerId || '0';
+
+  try {
+    // Atomic unique claim via insertOne
+    await metaCol.insertOne({
+      _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
+      runId,
+      workerId: normalizedWorker,
+      claimedAt: new Date(),
+    });
+  } catch (err: unknown) {
+    const isDuplicateKey =
+      err &&
+      typeof err === 'object' &&
+      ('code' in err) &&
+      (err as { code?: number }).code === 11000;
+
+    if (isDuplicateKey) {
+      // Record already exists -> verify existing ownership identity
+      const existing = await metaCol.findOne({
+        _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
+      });
+
+      if (existing) {
+        const matchesRun = existing.runId === runId;
+        const matchesWorker = !workerId || existing.workerId === normalizedWorker;
+
+        if (matchesRun && matchesWorker) {
+          // Idempotent re-claim by same run and worker
+          return;
+        }
+
+        throw new Error(
+          `Test database isolation violation: database is owned by run '${existing.runId}' worker '${existing.workerId || '0'}', cannot be claimed by run '${runId}' worker '${normalizedWorker}'`
+        );
+      }
+    }
+    throw err;
+  }
 }
 
 /**
- * Asserts that the connected database is owned by the specified runId and safe to clean up.
- * Throws if the database cannot be verified as belonging to the current test run.
+ * Asserts that the connected database is owned by the specified runId and workerId, and safe to clean up.
+ * Throws if the database cannot be verified as belonging to the current test run and worker.
  */
 export async function assertCanCleanupTestDatabase(
   connection: Connection,
-  expectedRunId: string
+  expectedRunId: string,
+  expectedWorkerId?: string
 ): Promise<void> {
   const db = connection.db;
   if (!db) {
@@ -185,6 +224,12 @@ export async function assertCanCleanupTestDatabase(
   if (!isTestDb) {
     throw new Error(
       `Safety guard violation: database '${dbName}' is not a designated test database. Refusing cleanup.`
+    );
+  }
+
+  if (dbName === 'production' || dbName === 'admin' || dbName === 'local' || dbName === 'config') {
+    throw new Error(
+      `Safety guard violation: refusing cleanup on reserved/production database '${dbName}'.`
     );
   }
 
@@ -202,16 +247,23 @@ export async function assertCanCleanupTestDatabase(
       `Safety guard violation: database '${dbName}' is owned by run '${lock.runId}' (expected '${expectedRunId}'). Refusing cleanup of another run's database.`
     );
   }
+
+  if (expectedWorkerId !== undefined && lock.workerId !== undefined && lock.workerId !== expectedWorkerId) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is owned by worker '${lock.workerId}' (expected '${expectedWorkerId}'). Refusing cleanup of another worker's database.`
+    );
+  }
 }
 
 /**
- * Safely cleans up (drops) a test database owned by the current test run.
+ * Safely cleans up (drops) a test database owned by the current test run and worker.
  */
 export async function cleanupTestDatabase(
   connection: Connection,
-  runId: string
+  runId: string,
+  workerId?: string
 ): Promise<void> {
-  await assertCanCleanupTestDatabase(connection, runId);
+  await assertCanCleanupTestDatabase(connection, runId, workerId);
   const db = connection.db;
   if (db) {
     await db.dropDatabase();
