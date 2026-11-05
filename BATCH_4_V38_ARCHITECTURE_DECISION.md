@@ -1,14 +1,15 @@
 # DECISION OS — BATCH 4 V3.8 ARCHITECTURE DECISION
 ## Independent Cleanup Executor, Real MongoDB Privilege Separation & Concurrency Safety
 
-**Document Version:** 1.1.0 (Phase B.1 Hardened Architecture)  
+**Document Version:** 1.2.0 (Phase B.2 Privilege & Redispatch Remediation)  
 **Repository:** `AmiTtiwari43/Decision-OS`  
 **Branch:** `fix/batch4-replica-set-transactional-recovery`  
-**Current HEAD Commit:** `161e59e85bb7183c21926f0b04f788eb43312394`  
-**Baseline Commit:** `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`  
+**Current Baseline Commit:** `943a8e7a433ce1b98804a83c6be403b2fca52e96` (`docs: harden batch 4 v3.8 cleanup executor architecture`)  
+**Prior Lineage Commits:** `161e59e85bb7183c21926f0b04f788eb43312394`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`  
+**Document Revision Commit:** Pending Commit to `fix/batch4-replica-set-transactional-recovery` (Phase B.2 Deliverable)  
 **Phase A Artifact:** `BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`  
 **Date:** 2026-11-06  
-**Status:** ARCHITECTURE DESIGN (Phase B.1 Deliverable — Pending Independent Review)  
+**Status:** ARCHITECTURE DESIGN (Phase B.2 Deliverable — Pending Independent Review & Formal Gate B Approval)  
 
 ---
 
@@ -16,32 +17,38 @@
 
 During Batch 4 V3.7, destructive database teardown operations were centralized behind an in-process `SupervisedCleanupExecutor` in `apps/api/src/db/guard.ts`. While V3.7 introduced coordination fencing concepts, the Phase A architectural audit (`BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`) and the subsequent Phase B.1 security inquest revealed critical architectural defects:
 
-1. **Absence of Real Process Isolation:** The V3.7 executor ran inside the exact same Node.js OS process and memory space as ordinary API workers and Vitest test runners. An in-process TypeScript class, module-level state (`activeSupervisedDropContext`), and in-memory `Map` objects (`completedRequests`, `inFlightByRequestId`) do not constitute an isolation boundary.
-2. **Absence of Native MongoDB Privilege Separation:** Ordinary workers and the cleanup executor shared identical MongoDB connection credentials. Workers possessed native destructive capabilities (`dropDatabase`, `dropCollection`) on the wire; protection was simulated entirely via JavaScript monkey-patching in `stripDirectDestructiveCapability()`, which contained backdoors (`isVerifiedCleanupLocked` local query bypass and `activeSupervisedDropContext`).
-3. **Invalid Privilege Scoping Assumptions (B38-01):** MongoDB RBAC does not support database-name wildcards (`decision_os_test_*`). Passing wildcard strings treats them literally as database names, failing to grant or deny pattern-based privileges natively.
-4. **Unprotected Ownership and Coordination Metadata (B38-02, B38-03):** Ordinary workers were previously granted direct write privileges to `ownership_locks` and `cleanup_ledger`, creating alternate unauthenticated write paths where a compromised worker could manufacture or steal ownership and forge state transitions.
-5. **Self-Referential Request Signing (B38-04):** The payload hash previously included `payloadHash` within the hashed body, creating a circular definition.
-6. **Shared Secrets and Undecided Key Infrastructure (B38-05):** Symmetric shared HMAC secrets allowed any holder to impersonate other callers.
-7. **Unsafe Ambiguous-Outcome Heuristics (B38-06, B38-07):** Point-in-time catalog absence was conflated with command completion, and application-level ledger CAS was erroneously claimed to atomically fence MongoDB server-side DDL commands.
+1. **Absence of Real Process Isolation:** The V3.7 executor ran inside the exact same Node.js OS process and memory space as ordinary API workers and Vitest test runners.
+2. **Absence of Native MongoDB Privilege Separation:** Ordinary workers and the cleanup executor shared identical MongoDB connection credentials; protection was simulated via JavaScript monkey-patching with backdoors (`isVerifiedCleanupLocked` and `activeSupervisedDropContext`).
+3. **Invalid Privilege Scoping Assumptions (B38-01):** MongoDB RBAC does not support database-name wildcards (`decision_os_test_*`). Passing wildcard strings treats them literally as database names.
+4. **Self-Referential Request Signing (B38-04):** The payload hash previously included `payloadHash` within the hashed body.
+5. **Shared Secrets and Undecided Key Infrastructure (B38-05):** Symmetric shared HMAC secrets allowed any holder to impersonate other callers.
+6. **Fencing Interleaving Realism (B38-07):** Application-level ledger CAS was erroneously claimed to atomically fence MongoDB server-side DDL commands.
 
-### Phase B.1 Hardened Architectural Mandate
-This Architecture Decision Record (ADR v1.1.0) establishes the corrected design for **Batch 4 V3.8**:
-- **Supported Native MongoDB Privilege Scoping via Dedicated Test Deployment Isolation:** Because MongoDB does not support database-name wildcards, test workloads run against an isolated MongoDB test deployment. On this deployment, workers are natively denied `dropDatabase` and `dropCollection` on `{ db: "", collection: "" }`, while the cleanup executor holds scoped drop permissions. Production databases do not exist on the test deployment, eliminating blast radius.
-- **Authoritative Executor Ownership & Ledger Management:** Ordinary workers have **zero write access** to `decision_os_coordination.ownership_locks` and `cleanup_ledger`. All ownership registrations (`POST /v1/ownership/claim`) and cleanup requests (`POST /v1/cleanup/request`) are authoritative, validated, and persisted exclusively by the cleanup executor.
-- **RFC 8785 JSON Canonicalization & Asymmetric Ed25519 Signing:** Derived fields (`payloadHash`, `signature`) are strictly excluded from the canonical payload. Payloads are canonicalized per RFC 8785 (JCS), hashed via SHA-256, and bound to a signed canonical string with per-principal Ed25519 key pairs across both production and CI.
-- **Fail-Closed Ambiguous Outcome Policy:** Catalog absence is explicitly ruled out as proof of command completion. Unconfirmed drops remain locked in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`; blind redispatch is strictly prohibited without signed administrative reconciliation.
-- **Fencing Interleaving Realism:** The document explicitly details what ledger CAS can and cannot protect, acknowledging that MongoDB does not enforce application fencing tokens during `dropDatabase`.
-- **Realistic Isolation Guarantees:** Absolute claims are replaced with concrete boundary definitions and explicit residual risks.
+### Phase B.2 Critical Security Remediation
+Independent architectural review of baseline commit `943a8e7a433ce1b98804a83c6be403b2fca52e96` revealed two further critical defects requiring immediate structural remediation prior to Gate B approval:
+
+1. **Additive Role Privilege Flaw (Finding 1 — B38-02, B38-03):**  
+   The v1.1.0 worker role granted `{ db: "", collection: "" }` with actions `find, insert, update, remove, createCollection, createIndex, dropIndex`, and then attempted to make coordination collections read-only by adding `{ db: "decision_os_coordination", collection: "ownership_locks" }` and `cleanup_ledger` with `actions: ["find"]`.  
+   **This is structurally invalid in MongoDB.** MongoDB role privileges are strictly additive (mathematical union). MongoDB has no `deny` rules, no privilege subtraction, and no precedence hierarchy. Because `{ db: "", collection: "" }` authorizes writes on all collections across all non-system databases, workers retained native MongoDB wire permission to insert, update, and remove coordination locks and ledger documents.  
+   **Remediation:** Elimination of broad `{ db: "", collection: "" }` write privileges. Implementation of **Exact Per-Database Application Roles** dynamically provisioned by the Cleanup Executor on ownership claim, combined with **Isolated Deployment / Security Boundaries** for coordination metadata.
+2. **Administrative Redispatch Contradicts Fail-Closed Policy (Finding 2 — B38-06, B38-07):**  
+   While v1.1.0 prohibited redispatch after `DISPATCHING`, Section 11.3 allowed `forceRedispatch === true` when residual collections existed and a point-in-time `currentOp()` check reported no active drop. Section 16.1 Case D repeated this exception.  
+   **This is unsafe.** A paused executor thread may resume, or a delayed TCP wire packet buffered in network queues may arrive at MongoDB later. A point-in-time observation of `currentOp()` or catalog absence does not prove that the earlier drop command can no longer execute. Redispatching risks concurrent or duplicate drop commands executing against active or newly provisioned workloads.  
+   **Remediation:** Complete removal of `forceRedispatch` and all administrative redispatch paths. Once a request reaches `DISPATCHING`, **zero secondary drop commands may ever be issued** by API retries, executor restarts, successor executors, or administrative reconciliation. Definition of an explicit terminal unresolved state: **`QUARANTINED`**, preserving the execution lock indefinitely. Safety strictly takes precedence over automatic cleanup availability.
 
 ---
 
 ## 2. Baseline and Inspected Source References
 
-### 2.1 Git Baseline Verification
+### 2.1 Git Baseline & Provenance Verification
 - **Target Repository:** `AmiTtiwari43/Decision-OS`
 - **Active Branch:** `fix/batch4-replica-set-transactional-recovery`
-- **Current HEAD Commit:** `161e59e85bb7183c21926f0b04f788eb43312394` (`refactor: add architecture decision record for batch 4 v3.8 cleanup executor`)
-- **Parent Baseline Commit:** `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb` (`fix(batch4): isolate destructive cleanup behind supervised executor v3.7`)
+- **Architecture Baseline Commit:** `943a8e7a433ce1b98804a83c6be403b2fca52e96` (`docs: harden batch 4 v3.8 cleanup executor architecture`)
+- **Prior Lineage Commits:**
+  - `161e59e85bb7183c21926f0b04f788eb43312394` (`refactor: add architecture decision record for batch 4 v3.8 cleanup executor`)
+  - `bbaf9bee29ef40f80bb8b958569c7ebbb437b427` (`docs: add batch 4 v3.8 destructive call-site inventory document`)
+  - `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb` (`fix(batch4): isolate destructive cleanup behind supervised executor v3.7`)
+- **Document Revision Commit:** Pending Commit to `fix/batch4-replica-set-transactional-recovery` (Phase B.2 Deliverable)
 - **Target Database Engine:** MongoDB 8.0 (Replica Set `rs0`, as specified in `docker-compose.yml:3`).
 
 ### 2.2 Inspected Source Files & Line Ranges
@@ -70,7 +77,7 @@ To eliminate in-process vulnerability and achieve verifiable privilege separatio
 ### Option A — Dedicated OS Process (Local Daemon / Child Process)
 A separately launched Node.js daemon running on the host OS, communicating with the API/test workers via Unix Domain Sockets (UDS) or a localhost TCP port. It possesses its own process memory, lifecycle, MongoDB connection pool, and privileged credentials loaded from a protected environment file.
 
-### Option B — Dedicated Containerized Service (Microservice)
+### Option B — Dedicated Containerized Service (Microservice) — SELECTED
 An independently packaged and deployed container (`apps/cleanup-executor`), isolated in its own Linux namespaces (mount, pid, net, ipc) and cgroups. In production and staging, it runs as an independent Kubernetes Pod / Docker container. Privileged MongoDB credentials are provisioned exclusively to this container via Kubernetes Secrets or Docker Secret mounts. It exposes an authenticated mTLS / HTTP REST API protected by network policies.
 
 ### Option C — External Job / Queue Worker (Asynchronous Ledger Consumer)
@@ -85,7 +92,7 @@ An asynchronous worker process that pulls cleanup jobs from a durable MongoDB co
 | **3. Failure Domains & Restart** | **Coupled to Host.** If host OS runs low on memory or parent crashes, child process management requires custom process supervision (PM2/systemd) to prevent orphan/zombie processes. | **Isolated & Supervised.** Container runtime (Kubelet/Docker) manages restarts, liveness/readiness probes, and crash loops without affecting API worker containers. | **Decoupled.** Crashing the worker or API has zero effect on the queue; jobs remain buffered. Queue broker crash, however, halts all teardowns. |
 | **4. Authentication & Authorization** | **Local IPC / UDS.** Relies on file permissions on socket file or localhost loopback token. Token management in local files is vulnerable to local file read flaws. | **mTLS / Signed HTTP.** Mutual TLS or cryptographic Ed25519 signatures over HTTP REST interface. Network policy strictly limits ingress to authorized caller categories. | **Queue-Level Authorization.** Workers authorized to write to queue; worker verifies signature in job payload. Synchronous acknowledgement requires bi-directional stream. |
 | **5. Durable Request Handling** | **Requires Local Ledger.** Must persist state to database; if relying on local process queue, crash loses in-flight tracking. | **Native Durable Ledger.** Interacts directly with MongoDB coordination ledger (`cleanup_ledger`) using transactional fencing and atomic CAS transitions. | **Native Queue Durability.** Job is durably stored in queue broker or MongoDB collection ledger. |
-| **6. Crash Recovery & Ambiguity** | **Moderate.** On restart, daemon reads database state; lacks standardized orchestration signals for graceful shutdown. | **Superior.** Container lifecycle hooks (`preStop`, `SIGTERM`) allow graceful draining of in-flight drops. Unacknowledged drops enter `OUTCOME_UNKNOWN` with durable fencing. | **Complex.** If worker crashes mid-drop, queue visibility timeout may cause a second worker to attempt re-dispatch before first drop completes on server. |
+| **6. Crash Recovery & Ambiguity** | **Moderate.** On restart, daemon reads database state; lacks standardized orchestration signals for graceful shutdown. | **Superior.** Container lifecycle hooks (`preStop`, `SIGTERM`) allow graceful draining of in-flight drops. Unacknowledged drops enter `OUTCOME_UNKNOWN` with durable fencing; zero redispatch. | **Complex.** If worker crashes mid-drop, queue visibility timeout may cause a second worker to attempt re-dispatch before first drop completes on server. |
 | **7. Operational Complexity** | **High in Production.** Difficult to monitor, scale, and log separately from main application in containerized environments (Kubernetes). | **Low to Moderate.** Standard cloud-native pattern. Managed via standard Helm charts, Kubernetes Deployments, and Docker Compose for local dev. | **High.** Requires provisioning, clustering, and monitoring an external message broker (RabbitMQ/Redis) or building complex polling on MongoDB collections. |
 | **8. Testability (Vitest Teardown)** | **Fast & Synchronous.** Fast IPC allows test runners (`afterEach`) to block synchronously until drop completes with minimal latency. | **Fast & Deterministic.** HTTP REST endpoint provides synchronous, deterministic completion responses to test workers without polling. | **Poor for Tests.** Asynchronous queue requires test runners to poll for job completion or listen on change streams, adding latency and flakes to CI suites. |
 | **9. Local Development Experience** | **Simplest.** Can be started via `npm run dev:cleanup-daemon` or spawned by test runner. | **Standardized.** Spins up seamlessly in `docker-compose.yml` alongside MongoDB. For containerless local dev, can run via weaker development process profile. | **Heavy.** Requires spinning up Redis/RabbitMQ locally or running multiple background workers for simple unit test suites. |
@@ -97,13 +104,18 @@ An asynchronous worker process that pulls cleanup jobs from a durable MongoDB co
 ## 4. Selected Architecture and Rationale
 
 ### 4.1 Decision
-The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated Containerized Cleanup Service (`apps/cleanup-executor`)**, deployed alongside a **Dedicated Isolated Test MongoDB Deployment** (Alternative B for privilege scoping), backed by an **Authoritative MongoDB Coordination Ledger**, with an explicitly labeled **Development-Only Weaker Mode** for containerless local environments.
+The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated Containerized Cleanup Service (`apps/cleanup-executor`)**, deployed with:
+1. **Exact Per-Database Application Roles (Option 1 for Privilege Scoping):** Eliminating broad `{ db: "", collection: "" }` write grants. Workers receive dynamically provisioned, strictly scoped CRUD privileges on their assigned test databases only.
+2. **Dedicated Deployment / Security Boundaries (Option 2 as Defense-in-Depth):** Physical network and credential separation ensuring coordination collections reside beyond worker reach.
+3. **Authoritative Coordination State Machine:** Sole writer architecture for `ownership_locks` and `cleanup_ledger`.
+4. **Strict Fail-Closed Ambiguous Outcome Policy:** Complete elimination of `forceRedispatch` and redispatch paths, backed by terminal state `QUARANTINED`.
+5. **Development-Only Weaker Mode:** Explicitly labeled child process profile for containerless local developer environments.
 
 ### 4.2 Architectural Justification
-1. **Physical & Credential Segregation:** The privileged MongoDB user (`decision_os_cleanup_executor`) is provisioned **only** within the cleanup executor container filesystem (`/var/run/secrets/cleanup-executor`). API workers receive an unprivileged identity (`decision_os_app_worker`) that is denied `dropDatabase` and `dropCollection` natively by the MongoDB engine.
-2. **Container Security Boundaries:** The executor runs with a read-only root filesystem (`read_only: true`), dropped Linux capabilities (`cap_drop: [ALL]`), no privilege escalation (`allowPrivilegeEscalation: false`), and an unprivileged system user (`UID 10001`).
-3. **Synchronous Determinism for Test Teardowns:** The executor exposes an authenticated REST API (`POST /v1/cleanup/request`). Test runners block synchronously during `afterEach` or `afterAll` hooks, receiving an immediate, verifiable completion response without queue polling latency.
-4. **Authoritative State Fencing:** All ownership claims (`ownership_locks`) and cleanup state transitions (`cleanup_ledger`) are authored exclusively by the executor. Direct worker database writes to coordination collections are completely eliminated.
+1. **Elimination of Additive Privilege Loopholes:** Because MongoDB role privileges are strictly additive, ordinary workers can never be granted `{ db: "", collection: "" }` if coordination collections are to remain protected. Scoping roles dynamically to `{ db: targetTestDb, collection: "" }` guarantees native engine denial of coordination writes.
+2. **Deterministic Destruction Without Dual-Drop Danger:** Eliminating administrative redispatch guarantees that once `{ dropDatabase: 1 }` is transmitted across the wire, no subsequent or delayed drop command can ever execute against a reused or active database namespace.
+3. **Physical & Credential Segregation:** The privileged MongoDB user (`decision_os_cleanup_executor`) is provisioned **only** within the cleanup executor container filesystem (`/var/run/secrets/cleanup-executor`). API workers receive an unprivileged identity (`decision_os_app_worker`) that is denied `dropDatabase` and `dropCollection` natively by the MongoDB engine.
+4. **Container Security Boundaries:** The executor runs with a read-only root filesystem (`read_only: true`), dropped Linux capabilities (`cap_drop: [ALL]`), no privilege escalation (`allowPrivilegeEscalation: false`), and an unprivileged system user (`UID 10001`).
 
 ---
 
@@ -129,22 +141,22 @@ flowchart TD
 
     subgraph ExecutorSpace["Dedicated Cleanup Executor Boundary (Privileged Container)"]
         mTLS --> RequestValidator["Request Validator & Authn/Authz Engine\n(Binds Public Key to Caller ID)"]
-        RequestValidator --> OwnershipManager["Authoritative Ownership Manager\n(SOLE WRITER of ownership_locks)"]
-        RequestValidator --> StateEngine["Durable State Machine Engine\n(SOLE WRITER of cleanup_ledger)"]
+        RequestValidator --> OwnershipManager["Authoritative Ownership & Role Provisioner\n(SOLE WRITER of ownership_locks &\nDynamic Scoped Test DB Roles)"]
+        RequestValidator --> StateEngine["Durable State Machine Engine\n(SOLE WRITER of cleanup_ledger\nManages QUARANTINED State)"]
         OwnershipManager --> StateEngine
         StateEngine --> ExecutionBoundary["Execution Boundary\n(apps/cleanup-executor/src/executor.ts)\n*ONLY Production Allowlisted Drop Site*"]
         ExecutionBoundary --> PrivPool["Privileged MongoDB Connection Pool\n(Identity: decision_os_cleanup_executor)"]
     end
 
-    subgraph TestDatabaseDeployment["Dedicated Isolated Test MongoDB Deployment (rs0 :27018)"]
-        PrivPool -->|1. Authoritative Writes| CoordDB[("Coordination Database\n(decision_os_coordination)\n- ownership_locks\n- cleanup_ledger\n- cleanup_audit_log")]
+    subgraph DatabaseBoundary["MongoDB Test & Coordination Deployment (rs0 :27018)"]
+        PrivPool -->|1. Authoritative Writes & Dynamic Role Mgmt| CoordDB[("Coordination Database\n(decision_os_coordination)\n- ownership_locks\n- cleanup_ledger\n- cleanup_audit_log")]
         PrivPool -->|2. Scoped { dropDatabase: 1 }| TargetTestDB[("Target Test Databases\n(decision_os_test_*)\n*NO PRODUCTION DATABASES EXIST HERE*")]
         
-        OrdinaryPool["Unprivileged Worker MongoDB Pool\n(Identity: decision_os_app_worker)\n*dropDatabase & dropCollection DENIED BY RBAC*\n*ZERO WRITE PRIVILEGES ON COORDINATION DB*"]
+        OrdinaryPool["Unprivileged Worker MongoDB Pool\n(Identity: decision_os_app_worker)\n*NO { db: '', collection: '' } WRITE GRANT*\n*ZERO WRITE PRIVILEGES ON COORDINATION DB*"]
         APIWorker -.-> OrdinaryPool
         TestRunner -.-> OrdinaryPool
-        OrdinaryPool -->|Standard App Reads/Writes ONLY| TargetTestDB
-        OrdinaryPool -.->|BLOCKED BY RBAC: Error 13 Unauthorized| TargetTestDB
+        OrdinaryPool -->|Dynamically Scoped Test DB CRUD ONLY| TargetTestDB
+        OrdinaryPool -.->|BLOCKED BY RBAC: Error 13 Unauthorized on dropDatabase| TargetTestDB
         OrdinaryPool -.->|BLOCKED BY RBAC: Error 13 on ownership_locks/ledger writes| CoordDB
     end
 
@@ -169,98 +181,120 @@ sequenceDiagram
     participant Worker as Unprivileged Worker (API / Test)
     participant Client as CleanupExecutorClient
     participant Executor as Cleanup Executor Service (apps/cleanup-executor)
-    participant Ledger as MongoDB: cleanup_ledger & ownership_locks
-    participant Engine as MongoDB Daemon (rs0 Engine)
+    participant CoordDB as MongoDB: decision_os_coordination
+    participant TestDB as MongoDB: Target Test DB (decision_os_test_*)
 
-    Note over Worker,Engine: PHASE 1: DIRECT WORKER ATTACK (BLOCKED BY MONGODB RBAC)
-    Worker->>Engine: db.runCommand({ dropDatabase: 1 }) using Worker Credentials
-    Engine-->>Worker: MongoServerError: not authorized on db to execute command { dropDatabase: 1 } (Code 13)
-    Worker->>Ledger: db.collection('ownership_locks').insertOne({...})
-    Engine-->>Worker: MongoServerError: not authorized on collection ownership_locks (Code 13)
+    Note over Worker,TestDB: PHASE 1: DIRECT WORKER ATTACK (BLOCKED BY MONGODB RBAC)
+    Worker->>TestDB: db.runCommand({ dropDatabase: 1 }) using Worker Credentials
+    TestDB-->>Worker: MongoServerError: not authorized on db to execute command { dropDatabase: 1 } (Code 13)
+    Worker->>CoordDB: db.collection('ownership_locks').insertOne({...})
+    CoordDB-->>Worker: MongoServerError: not authorized on collection ownership_locks (Code 13)
+    Worker->>CoordDB: db.collection('cleanup_ledger').updateOne({...})
+    CoordDB-->>Worker: MongoServerError: not authorized on collection cleanup_ledger (Code 13)
 
-    Note over Worker,Engine: PHASE 2: AUTHORITATIVE OWNERSHIP REGISTRATION
+    Note over Worker,TestDB: PHASE 2: AUTHORITATIVE OWNERSHIP & DYNAMIC ROLE PROVISIONING
     Worker->>Client: claimTestDatabaseOwnership(dbName, runId, workerId)
     Client->>Client: Sign claim payload using Worker Ed25519 Private Key
     Client->>Executor: POST /v1/ownership/claim (Payload + Ed25519 Signature)
     Executor->>Executor: Verify Signature, Timestamp Window (±30s), Whitelist Regex
-    Executor->>Ledger: Atomic insert/lease into ownership_locks (Executor Credentials)
-    Ledger-->>Executor: Ownership Registered
+    Executor->>CoordDB: Atomic insert/lease into ownership_locks (Executor Credentials)
+    CoordDB-->>Executor: Ownership Registered
+    Executor->>CoordDB: Provision Dynamic Role: db.createRole({ role: "test_role_runA", privileges: [{ resource: { db: dbName, collection: "" }, actions: [CRUD...] }] })
+    Executor->>CoordDB: db.grantRolesToUser("decision_os_app_worker", ["test_role_runA"])
+    CoordDB-->>Executor: Role Granted
     Executor-->>Client: HTTP 200 OK { status: 'CLAIMED', leaseExpiresAt }
 
-    Note over Worker,Engine: PHASE 3: AUTHORIZED DESTRUCTIVE CLEANUP REQUEST
+    Note over Worker,TestDB: PHASE 3: AUTHORIZED DESTRUCTIVE CLEANUP REQUEST
     Worker->>Client: cleanupTestDatabase(dbName, runId, workerId)
-    Client->>Client: Construct CanonicalPayload (excludes derived hash/sig)
-    Client->>Client: Compute RFC 8785 JCS & payloadHash = "sha256:..."
+    Client->>Client: Construct CanonicalPayload & Compute RFC 8785 JCS payloadHash
     Client->>Client: Sign CanonicalSigningString using Worker Ed25519 Private Key
     Client->>Executor: POST /v1/cleanup/request (Headers: Signature, Nonce, CallerId)
     
-    Executor->>Executor: Verify Signature, Nonce Replay, and Timestamp Window (±30s)
-    Executor->>Executor: Verify recomputed payloadHash matches RFC 8785 body
-    Executor->>Ledger: Verify Caller owns active lease in ownership_locks
+    Executor->>Executor: Verify Signature, Nonce Replay, Timestamp Window, Active Lease
+    Executor->>CoordDB: Authoritative Transitions: (None) -> REQUESTED -> CLAIMED -> DISPATCHING
+    Executor->>TestDB: db.runCommand({ dropDatabase: 1 }) using Privileged Connection
     
-    Executor->>Ledger: Authoritative Insert: state = 'REQUESTED' (Executor Credentials)
-    Executor->>Ledger: Atomic Transition: REQUESTED -> CLAIMED (Lease & Gen Bump)
-    Executor->>Ledger: Atomic Transition: CLAIMED -> DISPATCHING (Record wireDispatchedAt)
-    
-    Executor->>Engine: db.runCommand({ dropDatabase: 1 }) using Executor Privileged Credentials
-    Engine-->>Executor: { ok: 1, dropped: "decision_os_test_run_alpha_w0" }
-    
-    Executor->>Ledger: Atomic Transition: DISPATCHING -> CLEANED (dropExecutionLock: false)
-    Executor-->>Client: HTTP 200 OK { status: 'CLEANED', requestId, durationMs }
-    Client-->>Worker: Resolve Cleanup Promise (Success)
+    alt Synchronous Success
+        TestDB-->>Executor: { ok: 1, dropped: "decision_os_test_run_alpha_w0" }
+        Executor->>CoordDB: Atomic Transition: DISPATCHING -> CLEANED (dropExecutionLock: false)
+        Executor->>CoordDB: Revoke & Drop Dynamic Role "test_role_runA"
+        Executor-->>Client: HTTP 200 OK { status: 'CLEANED', durationMs }
+        Client-->>Worker: Resolve Cleanup Promise (Success)
+    else Lost Response / Socket Timeout / Executor Crash
+        TestDB--xExecutor: Socket Severed / Timeout (Ambiguous Drop Outcome)
+        Executor->>CoordDB: Atomic Transition: DISPATCHING -> OUTCOME_UNKNOWN (dropExecutionLock: true PRESERVED)
+        Executor-->>Client: HTTP 504 GATEWAY_TIMEOUT { status: 'OUTCOME_UNKNOWN', error: 'WIRE_TIMEOUT' }
+        Client-->>Worker: Reject Cleanup Promise (Outcome Unknown — Database Locked)
+    end
+
+    Note over Worker,TestDB: PHASE 4: ADMINISTRATIVE RECONCILIATION (FAIL-CLOSED QUARANTINE)
+    Note over Executor,CoordDB: Point-in-time currentOp() absence is NOT proof of completion! Redispatch FORBIDDEN!
+    Executor->>Executor: SRE calls POST /v1/cleanup/reconcile { action: 'QUARANTINE' }
+    Executor->>Executor: Verify ADMIN_OPERATOR Ed25519 Signature, Ticket ID, Narrative Reason
+    Executor->>CoordDB: Atomic Transition: OUTCOME_UNKNOWN -> QUARANTINED (dropExecutionLock: true REMAINS HELD)
+    Executor->>CoordDB: Mark database namespace poisoned in ownership_locks (Cannot be reclaimed)
+    Executor->>CoordDB: Append immutable record to cleanup_audit_log
+    Executor-->>Client: HTTP 200 OK { status: 'QUARANTINED', actionTaken: 'LOCKED_PERMANENTLY' }
 ```
 
 ---
 
 ## 7. MongoDB Privilege Matrix
 
-### 7.1 Addressing MongoDB RBAC Resource Scoping (B38-01)
-MongoDB 8.0 RBAC does **not** support glob or regex pattern matching on database names (`decision_os_test_*`). In MongoDB, resource definitions in custom roles only support:
-1. Exact database name: `{ db: "database_name", collection: "" }`
-2. All non-system databases cluster-wide: `{ db: "", collection: "" }`
-3. Cluster resource: `{ cluster: true }`
+### 7.1 Mathematical Flaw of Additive Roles in MongoDB (B38-02, B38-03)
+MongoDB 8.0 RBAC enforces privileges through **strict additive set union**:
+$$\text{EffectivePrivileges}(U) = \bigcup_{R \in \text{InheritedRoles}(U)} \text{Privileges}(R)$$
 
-#### Evaluation of Scoping Alternatives
-- **Alternative A (Exact database-scoped roles):** Dynamically creating a custom role for each test database requires granting `userAdminAnyDatabase` or `userAdmin` to a dynamic provisioning agent, introducing massive role proliferation, churn, and lifecycle management flaws.
-- **Alternative B (Dedicated Isolated Test MongoDB Deployment) — SELECTED:**
-  Test workloads execute on an independent, isolated MongoDB deployment (e.g. `mongodb-test:27017` / replica set on port 27018). Production databases (`decision_os_production`) **never reside on this deployment**. On this test deployment, the cleanup executor is granted `{ db: "", collection: "" }` destructive privileges. The destructive blast radius is physically contained to test databases by deployment and network boundaries.
-- **Alternative C (Pre-allocated Static Database Pool):** Restricting testing to fixed static databases (`decision_os_test_worker_1`) breaks high-concurrency parallel CI test runs and prevents isolated run IDs.
+MongoDB custom roles and built-in roles:
+1. **Do not support `deny` rules.**
+2. **Do not support privilege subtraction or negative filters.**
+3. **Do not evaluate role precedence or specificity overrides.**
 
-### 7.2 Native MongoDB Authorization vs. Multi-Layer Defense
-
+In the v1.1.0 design, `decision_os_worker_role` granted:
+```javascript
+// BROKEN v1.1.0 SPECIFICATION:
+{
+  resource: { db: "", collection: "" },
+  actions: [ "find", "insert", "update", "remove", "createCollection", "createIndex", "dropIndex" ]
+},
+{
+  resource: { db: "decision_os_coordination", collection: "ownership_locks" },
+  actions: [ "find" ]
+}
 ```
-Layer 1: Native MongoDB RBAC (Daemon-Enforced)
-  - Worker user: DENIED dropDatabase & dropCollection cluster-wide.
-  - Worker user: DENIED all write actions on coordination database.
-  - Executor user: ALLOWED dropDatabase on test cluster ONLY; production cluster unreachable.
+**Consequence:** The resource `{ db: "", collection: "" }` matches **all collections across all non-system databases**, which directly includes `decision_os_coordination.ownership_locks` and `decision_os_coordination.cleanup_ledger`. Adding a privilege granting `find` on `decision_os_coordination.ownership_locks` merely calculates:
+$$\text{Privileges}(\text{ownership\_locks}) = \{ \text{find, insert, update, remove, createCollection, createIndex, dropIndex} \} \cup \{ \text{find} \}$$
+Because the write actions were already in the set, the worker retained full permission to insert, update, and remove locks and ledger records directly on the wire.
 
-Layer 2: Network & Host Isolation
-  - Test MongoDB deployment has distinct port, credentials, and network policy from production.
-  - Executor container possesses test cluster credentials only.
+### 7.2 Evaluation of Privilege Scoping Architectures
 
-Layer 3: Executor Application-Level Validation
-  - Whitelist regex validation: Must match canonical test database naming contract.
-  - Strict blacklist: Rejects production, admin, config, local, system.
-  - Cryptographic identity verification: Ed25519 signature verified against caller key ring.
-  - Ownership validation: Caller must hold active lease in ownership_locks.
-```
+| Evaluation Criteria | Option 1: Exact Per-Database Application Roles (Selected Native RBAC Engine Model) | Option 2: Dedicated Physical / Deployment Security Boundaries (Selected Defense-in-Depth) |
+|---|---|---|
+| **Mechanism** | Worker base role grants **zero** `{ db: "", collection: "" }` write privileges. The Cleanup Executor dynamically provisions an exact per-database role (`decision_os_test_<sanitized_dbName>_role`) strictly scoped to `{ db: targetTestDb, collection: "" }` when ownership is claimed. | Coordination metadata resides on a dedicated MongoDB deployment / replica set instance (`mongodb-coord:27019`). Workers have no network route and no user credentials on that instance. |
+| **Protection of Coordination DB** | **Native Daemon Denial.** Because no role in the worker's union contains write actions for `decision_os_coordination`, MongoDB natively rejects worker writes with Error Code 13 (`Unauthorized`). | **Physical / Network Denial.** Workers cannot reach or authenticate against the coordination MongoDB instance. |
+| **Dynamic Test DB Handling** | Fully authorized via executor handshake `POST /v1/ownership/claim`. Executor validates naming contract and ownership before creating and granting the scoped role. | Requires worker to have `{ db: "", collection: "" }` on test cluster, relying entirely on network segregation to protect coordination DB. |
+| **Indirect Inherited Privileges** | Prevented by configuring `roles: []` on worker base role and dynamic roles, verified by automated RBAC inspection tests. | Prevented by omitting worker user accounts from coordination deployment. |
+| **Lifecycle Overhead** | Requires executor to call `createRole` / `grantRolesToUser` on claim and `revokeRolesFromUser` / `dropRole` on cleanup/lease expiry. | Requires managing two MongoDB connection strings and container network policies. |
 
-### 7.3 Concrete MongoDB Role & User Definitions
+### 7.3 Selected Multi-Layer Privilege Architecture
+Decision OS Batch 4 V3.8 adopts **Option 1 (Exact Per-Database Dynamic Roles)** as the primary daemon-enforced authorization model, reinforced by **Option 2 (Dedicated Isolated Test Deployment Boundaries)**:
+1. **Worker Base Role (`decision_os_worker_base_role`):** Contains **zero** `{ db: "", collection: "" }` privileges. Possesses read-only (`find`) access or zero direct wire access to coordination collections.
+2. **Dynamic Scoped Role (`decision_os_test_<sanitized_dbName>_role`):** Provisioned dynamically by the Cleanup Executor on `POST /v1/ownership/claim`. Scoped strictly to `{ db: targetTestDb, collection: "" }`. Grants worker CRUD, index, and collection creation actions. Strictly excludes `dropDatabase` and `dropCollection`.
+3. **Cleanup Executor Role (`decision_os_cleanup_executor_role`):** Held exclusively by `apps/cleanup-executor`. Authorized to execute `dropDatabase` and `dropCollection` on test databases, full CRUD on `decision_os_coordination.*`, cluster monitoring (`listDatabases`, `inprog`), and role administration (`createRole`, `dropRole`, `grantRole`, `revokeRole`) on `admin`.
+
+### 7.4 Concrete MongoDB Role & User Definitions
 
 ```javascript
 // =============================================================================
-// 1. ORDINARY APPLICATION & TEST WORKER ROLE (Unprivileged)
+// 1. ORDINARY APPLICATION & TEST WORKER BASE ROLE (Unprivileged)
 // Executed on the Dedicated Test MongoDB Deployment
 // =============================================================================
 db.getSiblingDB("admin").createRole({
-  role: "decision_os_worker_role",
+  role: "decision_os_worker_base_role",
   privileges: [
-    // Standard CRUD on any application/test database on this test instance
-    {
-      resource: { db: "", collection: "" },
-      actions: [ "find", "insert", "update", "remove", "createCollection", "createIndex", "dropIndex" ]
-    },
-    // Coordination Database: Worker has READ-ONLY access; CANNOT mutate ownership or ledger!
+    // Read-only inspection of coordination metadata if permitted by policy.
+    // Notice: NO { db: "", collection: "" } grant exists!
+    // Worker CANNOT write to any database by default!
     {
       resource: { db: "decision_os_coordination", collection: "ownership_locks" },
       actions: [ "find" ]
@@ -270,23 +304,51 @@ db.getSiblingDB("admin").createRole({
       actions: [ "find" ]
     }
   ],
-  roles: [] // NO built-in dbAdmin, dbOwner, or readWriteAnyDatabase inherited!
-            // Explicitly lacks dropDatabase and dropCollection!
+  roles: [] // Strictly empty! NO inherited built-in roles (readWrite, dbAdmin, root)!
 });
 
 db.getSiblingDB("admin").createUser({
   user: "decision_os_app_worker",
   pwd: "WORKER_SECURE_PASSWORD_ENV",
-  roles: [ { role: "decision_os_worker_role", db: "admin" } ]
+  roles: [ { role: "decision_os_worker_base_role", db: "admin" } ]
 });
 
 // =============================================================================
-// 2. CLEANUP EXECUTOR ROLE (Privileged, Scoped to Test Deployment)
+// 2. DYNAMICALLY PROVISIONED TEST DATABASE ROLE (Template)
+// Generated per-test-database upon successful POST /v1/ownership/claim
+// =============================================================================
+// Example for targetDatabase = "decision_os_test_run_alpha_w0":
+db.getSiblingDB("admin").createRole({
+  role: "decision_os_test_run_alpha_w0_role",
+  privileges: [
+    {
+      resource: { db: "decision_os_test_run_alpha_w0", collection: "" },
+      actions: [
+        "find",
+        "insert",
+        "update",
+        "remove",
+        "createCollection",
+        "createIndex",
+        "dropIndex"
+      ]
+    }
+  ],
+  roles: [] // Strictly empty! No dropDatabase, no dropCollection, no coordination writes!
+});
+
+// Granted dynamically by executor to worker user:
+db.getSiblingDB("admin").grantRolesToUser("decision_os_app_worker", [
+  { role: "decision_os_test_run_alpha_w0_role", db: "admin" }
+]);
+
+// =============================================================================
+// 3. CLEANUP EXECUTOR ROLE (Privileged, Scoped to Dedicated Service Container)
 // =============================================================================
 db.getSiblingDB("admin").createRole({
   role: "decision_os_cleanup_executor_role",
   privileges: [
-    // Full destructive capabilities on this dedicated test deployment
+    // Destructive drop capabilities on test databases only
     {
       resource: { db: "", collection: "" },
       actions: [ "dropDatabase", "dropCollection", "listCollections", "find" ]
@@ -300,9 +362,21 @@ db.getSiblingDB("admin").createRole({
     {
       resource: { cluster: true },
       actions: [ "listDatabases", "inprog" ]
+    },
+    // Scoped role administration to manage dynamic worker test roles
+    {
+      resource: { db: "admin", collection: "system.roles" },
+      actions: [ "find", "insert", "update", "remove" ]
+    },
+    {
+      resource: { db: "admin", collection: "system.users" },
+      actions: [ "find", "update" ]
     }
   ],
-  roles: []
+  roles: [
+    // Alternatively, userAdmin on admin can be inherited for standardized role management
+    { role: "userAdmin", db: "admin" }
+  ]
 });
 
 db.getSiblingDB("admin").createUser({
@@ -311,6 +385,20 @@ db.getSiblingDB("admin").createUser({
   roles: [ { role: "decision_os_cleanup_executor_role", db: "admin" } ]
 });
 ```
+
+### 7.5 Dynamic Test Database Lifecycle & Scoping Rules
+1. **Dynamic Test DB Creation Handshake:**
+   - When a test runner starts, it calls `POST /v1/ownership/claim` with `{ databaseName, runId, workerId }` and an Ed25519 signature.
+   - The Cleanup Executor verifies caller identity and asserts that `databaseName` strictly conforms to the canonical naming contract.
+   - The Executor records an authoritative lease in `decision_os_coordination.ownership_locks`.
+   - The Executor provisions `decision_os_test_<sanitized_dbName>_role` and grants it to `decision_os_app_worker`.
+   - The worker now possesses native MongoDB CRUD permissions exclusively on its assigned test database.
+2. **De-provisioning on Teardown:**
+   - Upon successful cleanup completion (`POST /v1/cleanup/request`) or transition to `QUARANTINED`, the executor revokes the role from `decision_os_app_worker` and drops the role document from MongoDB `admin`.
+3. **Lease Expiry Reaper:**
+   - An executor background sweep detects expired ownership leases (`leaseExpiresAt < now`). Any dangling dynamic roles associated with abandoned test runs are automatically revoked and dropped.
+4. **Behavior on Unregistered Database Access:**
+   - If an application worker attempts to insert into an unassigned database (e.g. `decision_os_production` or another worker's test DB), MongoDB evaluates the worker's effective privileges. Because no role grants access to that database, MongoDB immediately aborts the command with `MongoServerError: not authorized on <db>... (Code 13)`.
 
 ---
 
@@ -390,14 +478,8 @@ A uniform standard of **Asymmetric Ed25519 Signing** is selected for both Produc
 | **`API_SERVICE`** | Generated per deployment via KMS. | Kubernetes Secret volume mount (`/var/run/secrets/api-key`). | Pre-registered in executor key ring via ConfigMap/Secret. | Can only request cleanup of databases it legitimately owns in `ownership_locks`. |
 | **`TEST_WORKER`** | Generated dynamically per test run/worker pool by test harness. | In-memory V8 heap of worker thread; never written to disk. | Registered with executor via signed registration handshake at test start. | Can only request cleanup of databases matching its assigned `runId` and `workerId`. |
 | **`BENCHMARK_RUNNER`** | Generated per benchmark invocation. | Benchmark CLI runtime memory. | Registered via CLI startup handshake with benchmark token. | Scoped strictly to `decision_os_benchmark_*_test` databases. |
-| **`ADMIN_OPERATOR`** | SRE individual hardware token / offline key pair. | Hardware Security Module (HSM) / secure workstation. | Explicitly loaded into executor admin key store. | Can perform administrative reconciliation; actions bound by mandatory narrative reasons and audit log. |
+| **`ADMIN_OPERATOR`** | SRE individual hardware token / offline key pair. | Hardware Security Module (HSM) / secure workstation. | Explicitly loaded into executor admin key store. | Can perform administrative quarantine / confirmation; actions bound by mandatory narrative reasons and audit log. Cannot issue redispatch drops. |
 | **`EXECUTOR`** | Generated per executor instance. | Container secret volume mount. | Published to workers for response signing / mTLS. | Signs completion responses and audit ledger records. |
-
-> [!WARNING]
-> **Compromise Boundary Reality:** Cryptographic signatures prove authenticity and possession of the private key, but **do not prevent malicious use of a stolen private key**. If a worker is compromised, the attacker can use its key to issue cleanup requests. Security containment relies on:
-> 1. The executor verifies the database ownership lease matches the caller identity.
-> 2. The executor enforces whitelist naming rules.
-> 3. Even with a stolen worker key, the attacker **cannot** drop another worker's database, cannot drop production databases, and cannot execute administrative reconciliation.
 
 ### 8.4 Canonical Database Naming Contract
 Reconciling `getTestDatabaseUri()` from `apps/api/src/db/guard.ts`, the canonical naming contract is formalized as:
@@ -426,11 +508,31 @@ Ordinary workers are denied `insert`, `update`, and `remove` on `decision_os_coo
 2. Executor validates signature, payload hash, and active ownership lease.
 3. Executor creates the `REQUESTED` record atomically (`findOneAndUpdate` with `$setOnInsert`).
 4. Duplicate request handling:
-   - Matching `requestId` + matching `payloadHash`: Returns idempotent status (`IN_PROGRESS` or `CLEANED`).
+   - Matching `requestId` + matching `payloadHash`: Returns idempotent status (`IN_PROGRESS`, `CLEANED`, or `QUARANTINED`).
    - Matching `requestId` + conflicting `payloadHash`: Returns HTTP 409 `IDEMPOTENCY_PAYLOAD_MISMATCH`.
 5. Status Retrieval: Workers poll or query status via `GET /v1/cleanup/request/:requestId` with signed read authorization.
 
 ### 9.3 State Machine Transition Table
+
+```mermaid
+stateDiagram-v2
+    [*] --> REQUESTED: POST /v1/cleanup/request (Executor Sole Writer)
+    REQUESTED --> REJECTED: Validation Failure / Nonce Replay
+    REQUESTED --> CLAIMED: Acquire Execution Lease (Atomic CAS)
+    CLAIMED --> RECONCILIATION_REQUIRED: Authority Superseded / Gen Bumped
+    CLAIMED --> DISPATCHING: Pre-Wire Verification (dropExecutionLock = true)
+    
+    DISPATCHING --> CLEANED: Synchronous Wire Drop Success (dropExecutionLock = false)
+    DISPATCHING --> OUTCOME_UNKNOWN: Wire Timeout / Lost Response / Crash (dropExecutionLock = true)
+    
+    OUTCOME_UNKNOWN --> OUTCOME_UNKNOWN: Catalog Absence Observed (targetAbsentObserved = true)
+    OUTCOME_UNKNOWN --> QUARANTINED: Signed Admin SRE Reconcile (dropExecutionLock = true PRESERVED)
+    OUTCOME_UNKNOWN --> CLEANED: Authoritative Server Oplog Proof ONLY (Rare)
+    
+    QUARANTINED --> [*]: Terminal Locked State (Namespace Abandoned)
+    CLEANED --> [*]: Successful Teardown Complete
+    REJECTED --> [*]: Terminal Validation Failure
+```
 
 | Current State | Event / Trigger | Next State | Permitted Actor | Preconditions & Atomic CAS Guard | Durable Mutations Recorded |
 |---|---|---|---|---|---|
@@ -439,60 +541,60 @@ Ordinary workers are denied `insert`, `update`, and `remove` on `decision_os_coo
 | **`REQUESTED`** | Acquire Execution Lease | `CLAIMED` | Cleanup Executor | Ledger state is `REQUESTED`. Caller verified as active owner in `ownership_locks`. | `$set: { state: 'CLAIMED', claimedBy: executorId, claimGen: gen + 1, leaseExpiresAt: now + 30s }`. |
 | **`CLAIMED`** | Pre-Wire Verification | `DISPATCHING` | Cleanup Executor | Lease active, `ownership_locks` confirms no generation bump, collections present. | `$set: { state: 'DISPATCHING', wireDispatchedAt: now, dropExecutionLock: true }`. |
 | **`CLAIMED`** | Revocation Detected | `RECONCILIATION_REQUIRED` | Cleanup Executor | Ownership superseded by another worker or generation bumped. | `$set: { state: 'RECONCILIATION_REQUIRED', reason: 'AUTHORITY_SUPERSEDED' }`. |
-| **`DISPATCHING`** | Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire. | `$set: { state: 'CLEANED', cleanedAt: now, dropExecutionLock: false }`. |
+| **`DISPATCHING`** | Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire to the original dispatching connection. | `$set: { state: 'CLEANED', cleanedAt: now, dropExecutionLock: false }`. Revokes dynamic test role. |
 | **`DISPATCHING`** | Wire Timeout / Socket Drop / Crash | `OUTCOME_UNKNOWN` | Cleanup Executor / Supervisor | Socket disconnect, driver timeout, or executor restart during wire dispatch. | `$set: { state: 'OUTCOME_UNKNOWN', error: 'SOCKET_TIMEOUT_OR_CRASH', dropExecutionLock: true }`. |
 | **`OUTCOME_UNKNOWN`** | Catalog Absence Observed | `OUTCOME_UNKNOWN` | Cleanup Executor | Catalog query shows 0 collections. **Does NOT transition to CLEANED!** | `$set: { targetAbsentObserved: true, observedQuiescenceAt: now }`. |
-| **`OUTCOME_UNKNOWN`** | Signed Operator Reconciliation | `CLEANED` | Admin Operator (Signed) | Operator reviews evidence, confirms cluster quiescence, signs reconciliation order. | `$set: { state: 'CLEANED', reconciledAt: now, reconciledBy, reconciliationEvidence }`. |
-| **`OUTCOME_UNKNOWN`** | Residual Collections / Conflicting State | `RECONCILIATION_REQUIRED` | Cleanup Executor / Admin | Residual collections found or server drop state unresolved. | `$set: { state: 'RECONCILIATION_REQUIRED', lockedForInvestigation: true }`. |
+| **`OUTCOME_UNKNOWN`** | Signed SRE Reconciliation Order (`action: "QUARANTINE"`) | `QUARANTINED` | Admin Operator (Signed) | SRE reviews incident, verifies evidence, signs quarantine order. **NO redispatch drop is issued!** | `$set: { state: 'QUARANTINED', quarantinedAt: now, quarantinedBy: opId, ticketId, dropExecutionLock: true }`. |
+| **`OUTCOME_UNKNOWN`** | Authoritative Oplog Proof (`action: "CONFIRM_CLEANED"`) | `CLEANED` | Admin Operator (Signed) | Demonstrable server oplog record proves the original drop finished on MongoDB. | `$set: { state: 'CLEANED', reconciledAt: now, proofType: 'OPLOG_VERIFIED', dropExecutionLock: false }`. |
 
 ---
 
 ## 10. Ambiguous Destructive Outcomes & Recovery Matrix
 
-### 10.1 Addressing Ambiguous Outcomes (B38-06)
-A single point-in-time observation of `listDatabases()` or `currentOp()` **is not proof of command completion**. Catalog absence may occur while metadata locks are still unlinking, while a primary is stepping down, or if the database was never created.
+### 10.1 Addressing Ambiguous Outcomes (B38-06, B38-07)
+A single point-in-time observation of `listDatabases()` or `currentOp()` **is not proof of command completion**. Catalog absence or quiescent `currentOp()` may occur while:
+1. File unlinking is occurring asynchronously in background storage threads.
+2. A replica set primary is stepping down or buffering commands.
+3. A paused executor process (e.g. JVM/V8 GC pause, hypervisor CPU starvation) is holding a dispatched packet in OS socket send buffers.
+4. A network routing partition delayed transmission, meaning the original `{ dropDatabase: 1 }` wire packet will arrive at the MongoDB daemon in the future.
 
-#### The Six Operational Dimensions
-1. **Database Absence:** Database is not listed in `listDatabases()`.
-2. **Command Completion:** The MongoDB daemon finished the drop and returned `{ ok: 1 }`.
-3. **Command Quiescence:** No drop operation is actively executing on the cluster at this exact millisecond.
-4. **Executor Process Termination:** The process that sent the wire command is dead.
-5. **Server-Side Command Execution:** The MongoDB server received and processed the wire opcode.
-6. **Durable Confirmation:** The client received and acknowledged the success record.
-
-### 10.2 Mandatory Recovery Policy
-1. If the executor dispatched `{ dropDatabase: 1 }` across the wire, but did not receive durable confirmation, the request **must remain in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`**.
-2. The cleanup lock (`dropExecutionLock: true`) **must remain held**.
-3. Automatic redispatch is **strictly forbidden**.
-4. The state must **never be marked `CLEANED` solely because the database is observed absent**.
-5. Observed absence is recorded in an observation field: `targetAbsentObserved: true`, `observedQuiescenceAt: timestamp`.
-6. Resolving an ambiguous outcome requires an explicitly authorized **Administrative Reconciliation Request** signed by `ADMIN_OPERATOR`.
+### 10.2 Mandatory Fail-Closed Recovery Policy
+1. If the executor dispatched `{ dropDatabase: 1 }` across the wire, but did not receive durable confirmation, the request **must transition to `OUTCOME_UNKNOWN`**.
+2. **Strict Prohibition of Redispatch:** Re-issuing `{ dropDatabase: 1 }` for any request that reached `DISPATCHING` is **strictly prohibited across all execution paths**:
+   - Client API retries are rejected with HTTP 409 / 504.
+   - Restarted executors will not re-claim or re-dispatch.
+   - Successor executors detecting expired leases are forbidden from dispatching.
+   - Administrative reconciliation cannot issue another wire drop.
+3. **Permanent Lock Retention:** The execution lock (`dropExecutionLock: true`) **must remain held** indefinitely while in `OUTCOME_UNKNOWN` and upon transition to `QUARANTINED`.
+4. **No False Completion:** The state must **never be marked `CLEANED` solely because the database is observed absent**.
+5. **Terminal Quarantine:** To resolve operational alerts and close tracking tickets without claiming cleanup succeeded, operators transition requests to `QUARANTINED`.
 
 ### 10.3 Ambiguous-Outcome Recovery Matrix
 
-| Scenario / Failure Point | Physical Cluster State | Ledger State at Crash | Post-Restart Safe Action | Recovery Evidence Required | Blind Redispatch Permitted? |
+| Scenario / Failure Point | Physical Cluster State | Ledger State at Crash | Post-Restart Safe Action | Recovery Evidence Required | Redispatch Permitted? |
 |---|---|---|---|---|---|
 | **1. Crash before claiming** | Target database intact; no drop issued. | `REQUESTED` | Restarted executor finds unexpired request; acquires claim via atomic CAS. | Valid lease acquisition on ledger document. | No (Normal initial dispatch). |
-| **2. Crash after claiming, before dispatch** | Target database intact; no drop issued. | `CLAIMED` (`wireDispatchedAt: null`) | Lease expires. Successor detects `wireDispatchedAt == null`; safe to re-claim and dispatch. | `wireDispatchedAt === null` verified in ledger. | No (Resumes initial dispatch after lease expiry). |
-| **3. Crash immediately before wire dispatch** | Target database intact; command not sent. | `CLAIMED` (`wireDispatchedAt: null`) | Same as Scenario 2. Command was never written to socket. | `wireDispatchedAt === null`. | No. |
-| **4. Crash after dispatch, before response (B38-06)** | Command sent; MongoDB may be actively dropping. | `DISPATCHING` (`wireDispatchedAt: timestamp`) | **FAIL CLOSED.** State moved to `OUTCOME_UNKNOWN`. Lock preserved. Automatic reassignment **STRICTLY FORBIDDEN**. | Administrative reconciliation with SRE signature. | **ABSOLUTELY FORBIDDEN.** |
-| **5. Drop completes on server, response lost (B38-06)** | Database dropped on server; client socket severed. | `DISPATCHING` | Transition to `OUTCOME_UNKNOWN`. Record `targetAbsentObserved: true`. Does **NOT** mark `CLEANED` automatically. | Requires signed operator reconciliation order to confirm `CLEANED`. | **ABSOLUTELY FORBIDDEN.** |
-| **6. Executor receives `{ok:1}`, crashes before ledger update (B38-06)** | Database dropped on server; ledger shows `DISPATCHING`. | `DISPATCHING` | Startup supervisor detects `wireDispatchedAt` set; transitions to `OUTCOME_UNKNOWN`. Lock preserved. | Signed operator reconciliation confirming cluster state. | **ABSOLUTELY FORBIDDEN.** |
+| **2. Crash after claiming, before dispatch** | Target database intact; no drop issued. | `CLAIMED` (`wireDispatchedAt: null`) | Lease expires. Successor detects `wireDispatchedAt == null`; safe to re-claim and dispatch initial drop. | `wireDispatchedAt === null` verified in ledger. | No (Resumes initial dispatch after lease expiry). |
+| **3. Crash immediately before wire dispatch** | Target database intact; command not sent. | `CLAIMED` (`wireDispatchedAt: null`) | Same as Scenario 2. Command was never written to socket. | `wireDispatchedAt === null`. | No (Initial dispatch only). |
+| **4. Crash after dispatch, before response** | Command sent; MongoDB may be actively dropping or delayed. | `DISPATCHING` (`wireDispatchedAt: timestamp`) | **FAIL CLOSED.** State moved to `OUTCOME_UNKNOWN`. Lock preserved. Automatic reassignment forbidden. | SRE signs quarantine order (`action: 'QUARANTINE'`). | **ABSOLUTELY FORBIDDEN ACROSS ALL PATHS.** |
+| **5. Drop completes on server, response lost** | Database dropped on server; client socket severed. | `DISPATCHING` | Transition to `OUTCOME_UNKNOWN`. Record `targetAbsentObserved: true`. Retain lock. | Signed quarantine order OR authoritative oplog verification. | **ABSOLUTELY FORBIDDEN.** |
+| **6. Executor receives `{ok:1}`, crashes before ledger update** | Database dropped on server; ledger shows `DISPATCHING`. | `DISPATCHING` | Startup scanner detects `wireDispatchedAt` set; transitions to `OUTCOME_UNKNOWN`. Lock preserved. | Signed quarantine order OR authoritative oplog verification. | **ABSOLUTELY FORBIDDEN.** |
 | **7. API loses connection after `CLEANED` recorded** | Database dropped; ledger shows `CLEANED`. | `CLEANED` | Client retries with same `requestId`. Executor finds `state === 'CLEANED'`, returns success immediately. | Ledger document shows `state === 'CLEANED'`. | **FORBIDDEN.** Returns cached completion. |
-| **8. MongoDB unavailable during reconciliation** | Target database state unknown. | `OUTCOME_UNKNOWN` | Abort reconciliation attempt. Maintain lock. Retry when replica set primary recovers. | Replica set health verification (`rs.status()`). | **FORBIDDEN.** |
-| **9. Database absent, prior completion unproven** | Database absent from catalog; crash was during dispatch. | `OUTCOME_UNKNOWN` | **CRITICAL CONSTRAINT:** Catalog absence is not proof. Record `targetAbsentObserved: true`. Retain `OUTCOME_UNKNOWN`. | Explicit signed operator reconciliation override. | **ABSOLUTELY FORBIDDEN.** |
-| **10. Executor restarts with ambiguous requests** | Undetermined cluster state. | `DISPATCHING` / `OUTCOME_UNKNOWN` | Startup scanner loads all `DISPATCHING` records with expired leases and flags them `OUTCOME_UNKNOWN`. | Startup audit log entry; SRE alert fired. | **ABSOLUTELY FORBIDDEN.** |
+| **8. MongoDB primary failover during wire drop** | Target database state undetermined; stepdown in progress. | `DISPATCHING` | Move to `OUTCOME_UNKNOWN`. Maintain lock. Refuse re-drop on new primary. | SRE investigation; transition to `QUARANTINED`. | **ABSOLUTELY FORBIDDEN.** |
+| **9. Database absent, prior completion unproven** | Database absent from catalog; crash was during dispatch. | `OUTCOME_UNKNOWN` | **CRITICAL CONSTRAINT:** Catalog absence is not proof. Record `targetAbsentObserved: true`. Move to `QUARANTINED`. | Signed SRE quarantine order. | **ABSOLUTELY FORBIDDEN.** |
+| **10. Executor restarts with ambiguous requests** | Undetermined cluster state. | `DISPATCHING` / `OUTCOME_UNKNOWN` | Startup scanner loads all `DISPATCHING` records and flags them `OUTCOME_UNKNOWN`. Retains locks. | Startup audit log entry; SRE alert fired. | **ABSOLUTELY FORBIDDEN.** |
 
 ---
 
 ## 11. Administrative Reconciliation Design
 
-Administrative reconciliation is an emergency, cryptographically authorized protocol used to resolve databases stuck in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`. It operates under strict security boundaries and **cannot bypass the cleanup executor**.
+Administrative reconciliation is an emergency, cryptographically authorized protocol used to resolve databases stuck in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`. It operates under strict security boundaries and **cannot bypass the fail-closed policy**.
 
 ### 11.1 Authentication & Operator Identity
-- **No String Tokens:** The legacy check `adminToken.startsWith('admin_token_')` is completely removed.
-- **Operator Identity:** Established via an independent **Administrative Key Pair** (`ADMIN_OPERATOR` role). Keys are held only by designated Site Reliability Engineers (SRE) or automated supervisory systems.
-- **Mandatory Narrative Reason:** Every reconciliation request must provide a narrative explanation ($\ge 15$ characters) and an operational ticket ID (e.g. `OPS-1294`).
+- **No String Tokens:** Legacy token checks (`admin_token_`) are completely eliminated.
+- **Operator Identity:** Established via an independent **Administrative Key Pair** (`ADMIN_OPERATOR` role). Keys are held only by designated Site Reliability Engineers (SRE).
+- **Mandatory Narrative Reason:** Every reconciliation request must provide a narrative explanation ($\ge 15$ characters) and an operational ticket ID (e.g. `OPS-8472`).
+- **Complete Elimination of Wire Drops:** Administrative reconciliation **never issues a database drop command**. Every code path capable of redispatching a drop from reconciliation has been removed.
 
 ### 11.2 Reconciliation Request Schema
 ```json
@@ -501,29 +603,40 @@ Administrative reconciliation is an emergency, cryptographically authorized prot
   "targetDatabase": "decision_os_test_run_alpha_w0",
   "operatorId": "sre_operator_amit",
   "ticketId": "OPS-8472",
-  "reason": "Resolving lost socket response from replica set failover during night run",
-  "forceRedispatch": false,
+  "action": "QUARANTINE",
+  "reason": "Replica set primary failover during wire drop severed socket; quarantining namespace per fail-closed policy",
   "evidence": {
     "verifiedCollectionsCount": 0,
     "currentOpConfirmedClean": true,
-    "clusterCatalogAbsent": true
+    "clusterCatalogAbsent": true,
+    "authoritativeServerOplogVerified": false
   },
   "timestamp": "2026-11-06T01:10:00.000Z",
   "signature": "MEQCIA..."
 }
 ```
 
-### 11.3 Execution Flow & Fencing
-1. **Verification of Authority:** The executor verifies the signature against the `ADMIN_OPERATOR` public key. Ordinary worker keys attempting to call `/v1/cleanup/reconcile` are rejected with HTTP 403 `FORBIDDEN_OPERATOR_ROLE`.
-2. **Target Scope Check:** The target database must conform to the canonical test naming convention. Reconciliation on production databases is rejected by executor code and denied natively by MongoDB RBAC.
-3. **Cluster Safety Inspection:**
-   - Executor queries `db.getSiblingDB("admin").currentOp({ "command.dropDatabase": { $exists: true }, "ns": targetDatabase })`.
-   - If a drop operation is currently active on the replica set, reconciliation aborts with HTTP 409 `OPERATION_IN_PROGRESS_ON_CLUSTER`.
-4. **Conditional Drop Execution:**
-   - If the database exists and contains residual collections, and `forceRedispatch === true`, the executor dispatches a drop using its privileged connection.
-   - If collections are 0 or database is absent, no wire drop is dispatched.
-5. **Tamper-Evident Audit Record:** The transition is recorded in `decision_os_coordination.cleanup_audit_log` with an immutable SHA-256 hash chain:
-   $$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{ReconciliationID} + \text{OperatorID} + \text{TargetDB} + \text{Timestamp})$$
+### 11.3 Execution Flow & Supported Actions
+1. **Verification of Authority:** The executor verifies the Ed25519 signature against the `ADMIN_OPERATOR` public key ring. Unprivileged worker keys calling `/v1/cleanup/reconcile` are rejected with HTTP 403 `FORBIDDEN_OPERATOR_ROLE`.
+2. **Target Scope Check:** The target database must conform to the canonical test naming convention. Production databases are rejected by code and blocked natively by MongoDB RBAC.
+3. **Execution by Action Type:**
+   - **Action `QUARANTINE` (Standard Operational Remediation):**
+     - Target request must be in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`.
+     - Executor transitions ledger state to `QUARANTINED`.
+     - Executor permanently marks the database namespace in `ownership_locks` as `QUARANTINED_BLOCKED`.
+     - **Execution lock (`dropExecutionLock: true`) is permanently retained.**
+     - De-provisions any residual dynamic worker roles associated with this database.
+     - **NO wire drop command is dispatched.**
+     - Resolves SRE operational alerts safely without falsely claiming that cleanup succeeded.
+   - **Action `CONFIRM_CLEANED` (Authoritative Proof Required):**
+     - Allowed **only** if `evidence.authoritativeServerOplogVerified === true` and the executor cryptographically or programmatically verifies that the server-side oplog contains the completed `{ dropDatabase: 1 }` entry corresponding to the original wire dispatch timestamp.
+     - If verifiable proof is absent, the executor **rejects the request with HTTP 422 `UNPROVEN_DROP_COMPLETION`**.
+     - If verified, transitions ledger state to `CLEANED` and releases execution lock.
+4. **Tamper-Evident Audit Record:** The transition is appended to `decision_os_coordination.cleanup_audit_log` with an immutable SHA-256 hash chain:
+   $$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{ReconciliationID} + \text{OperatorID} + \text{TargetDB} + \text{Action} + \text{Timestamp})$$
+
+### 11.4 Residual Operational Consequence
+Under this fail-closed architecture, some ambiguous requests will remain in `QUARANTINED` indefinitely. The target database namespace cannot be claimed or reused. In automated test and CI environments, this has **zero operational impact** because subsequent test runs generate unique database names using fresh UUIDs (`decision_os_test_${runId}_w${workerId}`). **Safety (guaranteeing that no delayed or concurrent drop command destroys active data) takes absolute precedence over automatic database namespace recycling.**
 
 ---
 
@@ -538,8 +651,8 @@ Every destructive call site identified in Phase A (`BATCH_4_V38_DESTRUCTIVE_CALL
 | **CS-03** | `apps/api/src/db/guard.ts:307` | `return rawNativeDrop();` in `isVerifiedCleanupLocked` | **Delete bypass.** Eliminate local metadata inspection bypass. No client-side bypass permits raw drop execution. | Verification Test `D38-03`, Static Scan `D38-29` |
 | **CS-04** | `apps/api/src/db/guard.ts:318` | `connection.dropDatabase = async () => cleanupTestDatabase(...)` | **Replace monkey-patch with client proxy.** `cleanupTestDatabase()` delegates to `CleanupExecutorClient.requestCleanup()`, transmitting an Ed25519-signed request to `apps/cleanup-executor`. | Verification Test `D38-04`, Integration Test `npm run test:api` |
 | **CS-05** | `apps/api/src/db/guard.ts:1376` | `await db.dropDatabase();` in `SupervisedCleanupExecutor` | **Move execution to external service.** Delete `SupervisedCleanupExecutor` from `guard.ts`. Move physical drop execution to `apps/cleanup-executor/src/executor.ts`. | Verification Test `D38-05`, Static Scan `D38-29` |
-| **CS-06** | `apps/api/src/db/guard.ts:1487` | `await client.db(dbName).dropDatabase();` in `reconcileTestDatabaseCleanup` | **Route reconciliation through external executor.** Replace direct drop with `CleanupExecutorClient.submitReconciliation()` using admin key. | Verification Test `D38-06`, Integration Test `D38-24` |
-| **CS-07** | `scripts/benchmark.ts:170` | `await mongoose.connection.db.dropDatabase();` | **Safe benchmark isolation.** Generate unique test database `decision_os_benchmark_<runId>_test`, register ownership via `POST /v1/ownership/claim`, and invoke `CleanupExecutorClient.requestCleanup()`. Refuse execution if URI is non-test. | Benchmark CLI run, Static Scan `D38-29` |
+| **CS-06** | `apps/api/src/db/guard.ts:1487` | `await client.db(dbName).dropDatabase();` in `reconcileTestDatabaseCleanup` | **Route reconciliation through external executor.** Replace direct drop with `CleanupExecutorClient.submitReconciliation()` using admin key. Redispatch dropped. | Verification Test `D38-06`, Integration Test `D38-24` |
+| **CS-07** | `scripts/benchmark.ts:170` | `await mongoose.connection.db.dropDatabase();` | **Safe benchmark isolation.** Generate unique test database `decision_os_benchmark_<runId>_test`, register ownership via `POST /v1/ownership/claim`, and invoke `CleanupExecutorClient.requestCleanup()`. | Benchmark CLI run, Static Scan `D38-29` |
 | **CS-08** | `apps/api/tests/batch4_r6_isolation.test.ts:56` | `await connA.dropDatabase();` in Test 3 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(connA, runA, 'A')`. Teardown failure fails test run visibly. | Integration Test `npm run test:api` |
 | **CS-09** | `apps/api/tests/batch4_r6_isolation.test.ts:57` | `await connB.dropDatabase();` in Test 3 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(connB, runB, 'B')`. Teardown failure fails test run visibly. | Integration Test `npm run test:api` |
 | **CS-10** | `apps/api/tests/batch4_r6_isolation.test.ts:106` | `await conn.dropDatabase();` in Test 5 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(conn, runA, '0')`. Fails closed if ownership mismatched. | Integration Test `npm run test:api` |
@@ -570,122 +683,90 @@ The allowlist permits **exactly one production file and line range**:
 - Scope: Inside `PrivilegedExecutionEngine.dispatchNativeDrop()`
 - All other files across the repository must contain zero direct destructive calls.
 
-#### Negative CI Test
-A dedicated verification test (`apps/api/tests/static_guard.test.ts`) verifies that introducing a synthetic `dropDatabase()` call into an application file immediately causes `scripts/verify_no_direct_destructive_calls.ts` to exit with status code 1.
-
 ### 13.2 Runtime Guard (Defense-in-Depth)
-Static scanning is strictly supplementary. Even if a developer bypasses pre-commit hooks or uses dynamic string evaluation (e.g. `db['drop' + 'Database']()`), MongoDB's native RBAC engine enforces authorization on the wire:
+Even if a developer bypasses pre-commit hooks or uses dynamic string evaluation (e.g. `db['drop' + 'Database']()`), MongoDB's native RBAC engine enforces authorization on the wire:
 - Connection authenticated as `decision_os_app_worker` $\rightarrow$ Command rejected by MongoDB daemon with `MongoServerError: not authorized on <db> to execute command { dropDatabase: 1 }` (Code 13).
 
 ---
 
 ## 14. Architecture Security Review — B38-01 through B38-10
 
-This section details the resolution of the ten critical security inquest findings from Phase B.1 review:
+This section details the resolution of all security inquest findings, including Phase B.2 remediations:
 
 ### B38-01: Correct MongoDB Native Privilege Scoping
-- **Original Defect:** Custom role used unsupported wildcard resource `{ db: "decision_os_test_*", collection: "" }`. MongoDB 8.0 RBAC does not support database wildcards.
-- **Corrected Decision:** Adopted **Alternative B (Dedicated Isolated Test MongoDB Deployment)**. Test workloads run against an independent test MongoDB deployment. On this deployment, workers are denied `dropDatabase` and `dropCollection` on `{ db: "", collection: "" }`. The cleanup executor holds `{ db: "", collection: "" }` destructive privileges. Production databases do not exist on the test cluster, bounding the destructive blast radius.
-- **Technical Rationale:** Prevents role churn of dynamic per-database roles (Alternative A) while enforcing hard wire denial of destructive commands against unprivileged workers.
-- **Verification Method:** Planned live test `D38-01` against MongoDB 8.0 with `--auth`.
-- **Residual Risk:** If a developer incorrectly configures the test worker to connect to the production MongoDB cluster, the worker user does not exist or has no roles on production.
+- **Defect:** Custom role used unsupported wildcard resource `{ db: "decision_os_test_*", collection: "" }`.
+- **Resolution:** Adopted Dedicated Isolated Test MongoDB Deployment combined with dynamic per-database roles. Destructive blast radius physically and logically contained.
 - **Status:** APPROVED & CLOSED.
 
-### B38-02: Protect Ownership Metadata
-- **Original Defect:** Worker role granted `insert`, `update`, `remove`, `findAndModify` on `ownership_locks`, allowing a compromised worker to steal or manufacture ownership.
-- **Corrected Decision:** Worker role granted **read-only (`find`)** access. Ownership registration is mediated authoritatively via the executor endpoint `POST /v1/ownership/claim`.
-- **Technical Rationale:** The executor validates caller signatures against registered keys before inserting or updating ownership records in `ownership_locks`.
-- **Verification Method:** Planned integration test `D38-02` proving worker cannot write to `ownership_locks`.
-- **Residual Risk:** If worker private key is compromised, attacker can claim unowned databases, but cannot overwrite another worker's active lease.
-- **Status:** APPROVED & CLOSED.
+### B38-02: Protect Ownership Metadata (Additive Privilege Remediation)
+- **Defect:** Worker role granted `{ db: "", collection: "" }` alongside `find` on `ownership_locks`. Because MongoDB privileges are additive, workers retained full write capabilities on ownership metadata.
+- **Remediation (Phase B.2):** Worker base role completely stripped of `{ db: "", collection: "" }`. Workers receive exact per-database roles provisioned dynamically by the Cleanup Executor upon `POST /v1/ownership/claim`. Zero write privileges on `ownership_locks`.
+- **Status:** REMEDIATED (PHASE B.2) — PENDING INDEPENDENT REVIEW.
 
-### B38-03: Protect the Cleanup Ledger
-- **Original Defect:** Worker role permitted direct `insert` on `cleanup_ledger`, creating an unauthenticated bypass path.
-- **Corrected Decision:** Worker role stripped of all write privileges on `cleanup_ledger`. The executor is the **authoritative sole writer** of ledger state transitions.
-- **Technical Rationale:** Ensures every ledger record is cryptographically validated and monotonically transitioned through the state machine.
-- **Verification Method:** Planned integration test `D38-03` proving worker insertion into `cleanup_ledger` fails with MongoDB Error 13.
-- **Residual Risk:** Ledger write availability is bound to executor availability.
-- **Status:** APPROVED & CLOSED.
+### B38-03: Protect the Cleanup Ledger (Additive Privilege Remediation)
+- **Defect:** Worker role retained write capability on `cleanup_ledger` due to additive `{ db: "", collection: "" }` grant.
+- **Remediation (Phase B.2):** Worker roles contain zero write actions on `decision_os_coordination.cleanup_ledger`. The Cleanup Executor is the authoritative sole writer of ledger state machine transitions. Worker writes fail with MongoDB Error 13.
+- **Status:** REMEDIATED (PHASE B.2) — PENDING INDEPENDENT REVIEW.
 
 ### B38-04: Fix Request Hash & Signature Construction
-- **Original Defect:** Circular hash definition `payloadHash = SHA256(CanonicalJSON(body))` where `body` contained `payloadHash`.
-- **Corrected Decision:** Formulated `CanonicalPayload` schema strictly excluding derived fields (`payloadHash`, `signature`). Applied RFC 8785 JCS, SHA-256 payload hashing, and bound canonical signing bytes to an 8-line string.
-- **Technical Rationale:** Eliminates ambiguity and ensures deterministic byte serialization across implementations.
-- **Verification Method:** Deterministic test vector in Section 8.2 verified via automated unit test `D38-04`.
-- **Residual Risk:** Client libraries must strictly adhere to RFC 8785 sorting.
+- **Defect:** Circular hash definition `payloadHash = SHA256(CanonicalJSON(body))` where `body` contained `payloadHash`.
+- **Resolution:** Formulated `CanonicalPayload` schema strictly excluding derived fields (`payloadHash`, `signature`). Applied RFC 8785 JCS, SHA-256 payload hashing, and bound canonical signing bytes to an 8-line string.
 - **Status:** APPROVED & CLOSED.
 
 ### B38-05: Finalize Cryptographic Identity & Key Management
-- **Original Defect:** Left Ed25519 vs HMAC undecided; suggested shared HMAC for CI, allowing cross-caller impersonation.
-- **Corrected Decision:** Selected **Asymmetric Ed25519 Signing** as uniform protocol across all environments. Every principal has a dedicated key pair; caller identity is bound to registered public keys.
-- **Technical Rationale:** Prevents any worker from forging requests for another worker, even within shared CI runner environments.
-- **Verification Method:** Planned unit test `D38-05` testing key impersonation rejection.
-- **Residual Risk:** Compromised worker can issue requests using its own identity, but blast radius is bounded by ownership validation.
+- **Defect:** Symmetric shared HMAC secrets allowed caller impersonation.
+- **Resolution:** Selected **Asymmetric Ed25519 Signing** as uniform protocol across all environments. Every principal has a dedicated key pair; caller identity is bound to registered public keys.
 - **Status:** APPROVED & CLOSED.
 
-### B38-06: Correct Ambiguous Outcome Recovery
-- **Original Defect:** Permitted transition to `CLEANED` if catalog absence was observed, conflating catalog absence with command completion.
-- **Corrected Decision:** Catalog absence is explicitly ruled out as proof of completion. Unconfirmed drops remain locked in `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED`. Automatic redispatch is prohibited.
-- **Technical Rationale:** A command may be unlinking or a replica set primary stepping down; redispatching causes dual execution.
-- **Verification Method:** Planned adversarial test `D38-06` proving executor preserves lock on lost response.
-- **Residual Risk:** Requires manual SRE reconciliation if a network partition severs wire ACK during drop.
-- **Status:** APPROVED & CLOSED.
+### B38-06: Correct Ambiguous Outcome Recovery (Fail-Closed Remediation)
+- **Defect:** Section 11.3 allowed `forceRedispatch === true` if residual collections existed and `currentOp()` reported no active drop. This contradicted fail-closed principles.
+- **Remediation (Phase B.2):** Complete removal of `forceRedispatch`. Strict prohibition of redispatch across all execution paths once `DISPATCHING` is reached. Introduction of terminal state `QUARANTINED`, permanently retaining the execution lock.
+- **Status:** REMEDIATED (PHASE B.2) — PENDING INDEPENDENT REVIEW.
 
-### B38-07: Correct Fencing and Wire-Dispatch Claims
-- **Original Defect:** Claimed monotonic generation and pre-wire CAS atomically fences MongoDB `dropDatabase`.
-- **Corrected Decision:** Documented that ledger CAS serializes the transition to `DISPATCHING`, but MongoDB does not enforce application tokens. Analyzed the 4 interleavings (Cases A–D) and instituted strict fail-closed prohibition of redispatch once `DISPATCHING` is entered.
-- **Technical Rationale:** Accurately reflects MongoDB engine capabilities without false atomicity claims.
-- **Verification Method:** Planned multi-process test `D38-07` simulating paused executor.
-- **Residual Risk:** Delayed wire packet from paused executor cannot be rejected by MongoDB daemon; risk mitigated by process termination fencing.
-- **Status:** APPROVED & CLOSED.
+### B38-07: Correct Fencing and Wire-Dispatch Claims (Redispatch Elimination)
+- **Defect:** Claimed monotonic generation and pre-wire CAS atomically fences MongoDB `dropDatabase`, and allowed Case D administrative redispatch.
+- **Remediation (Phase B.2):** Documented that ledger CAS serializes the transition to `DISPATCHING`, but MongoDB does not enforce application tokens. Completely removed redispatch in Case D. Preserved execution lock on ambiguity.
+- **Status:** REMEDIATED (PHASE B.2) — PENDING INDEPENDENT REVIEW.
 
 ### B38-08: Correct Local Containerless Security Claims
-- **Original Defect:** Equated same-user child process to container isolation.
-- **Corrected Decision:** Explicitly labeled child process runner as **Option B: Development-Only Weaker Mode**. Required Docker Compose or container runtime in CI and production.
-- **Technical Rationale:** A same-user child process shares `/proc` and memory inspection capabilities with the parent, offering no defense against a compromised parent.
-- **Verification Method:** Environment check in test harness verifying container isolation in CI.
-- **Residual Risk:** Local developers running containerless mode have process separation but not kernel security isolation.
+- **Defect:** Equated same-user child process to container isolation.
+- **Resolution:** Explicitly labeled child process runner as **Development-Only Weaker Mode**. Required Docker Compose or container runtime in CI and production.
 - **Status:** APPROVED & CLOSED.
 
 ### B38-09: Correct Network and Client Identity Policy
-- **Original Defect:** Ingress policy restricted to API pods, omitting test runners and benchmark CLI.
-- **Corrected Decision:** Defined network identities for all 4 caller categories (`API_SERVICE`, `TEST_RUNNER`, `BENCHMARK_RUNNER`, `ADMIN_OPERATOR`). Emphasized that network reachability does not grant authorization.
-- **Technical Rationale:** Decouples network transport from cryptographic authorization.
-- **Verification Method:** Network policy review and integration tests.
-- **Residual Risk:** Open ingress within Kubernetes cluster mitigated by mandatory Ed25519 signature checks.
+- **Defect:** Ingress policy restricted to API pods, omitting test runners and benchmark CLI.
+- **Resolution:** Defined network identities for all 4 caller categories (`API_SERVICE`, `TEST_RUNNER`, `BENCHMARK_RUNNER`, `ADMIN_OPERATOR`). Emphasized that network reachability does not grant authorization.
 - **Status:** APPROVED & CLOSED.
 
 ### B38-10: Correct Isolation and Security Claims
-- **Original Defect:** Used absolute terms ("Absolute Credential Isolation", "zero shared memory", "guaranteed safety").
-- **Corrected Decision:** Replaced absolute statements with precise boundary descriptions, acknowledging shared Linux kernel risks and container boundaries.
-- **Technical Rationale:** Maintains engineering and cryptographic integrity.
-- **Verification Method:** Comprehensive documentation review.
-- **Residual Risk:** Container breakout via Linux kernel 0-day vulnerability.
+- **Defect:** Used absolute terms ("Absolute Credential Isolation", "zero shared memory").
+- **Resolution:** Replaced absolute statements with precise boundary descriptions, acknowledging shared Linux kernel risks and container boundaries.
 - **Status:** APPROVED & CLOSED.
 
 ---
 
-## 15. Threat Model
+## 15. Threat Model & Required Adversarial Analysis
 
-### 15.1 Compromised-Worker Attack Walkthrough (B38-02, B38-05)
+### 15.1 Compromised-Worker Attack Walkthrough
 Assume an adversary gains arbitrary code execution inside a test runner thread (`Worker X`, holding `PrivateKey_X`):
-1. **Attack Vector 1: Direct MongoDB Wire Drop:**
-   - Worker X issues `await connection.db.dropDatabase()` or `db.command({ dropDatabase: 1 })`.
-   - **Result:** MongoDB engine rejects command with `MongoServerError: not authorized on <db> to execute command { dropDatabase: 1 }` (Code 13). Direct destructive access is denied.
-2. **Attack Vector 2: Tampering with Ownership Records:**
-   - Worker X attempts to overwrite `ownership_locks` to claim `decision_os_test_run_beta_w0` (owned by Worker Y).
-   - **Result:** MongoDB engine rejects write with Code 13 (`decision_os_worker_role` has read-only `find` permission on `ownership_locks`).
-3. **Attack Vector 3: Forging Ownership Claim via Executor:**
-   - Worker X calls `POST /v1/ownership/claim` targeting Worker Y's database.
-   - **Result:** The executor verifies active ownership in `ownership_locks`. Because Worker Y holds an active lease, Worker X's claim is rejected with HTTP 409 `OWNERSHIP_CONFLICT`.
-4. **Attack Vector 4: Forging Cleanup Request via Executor:**
-   - Worker X calls `POST /v1/cleanup/request` targeting Worker Y's database, signed with `PrivateKey_X`.
-   - **Result:** The executor verifies the signature against Key X, then queries `ownership_locks`. The registered owner is Worker Y (`run_beta:w0`), but the authenticated caller is Worker X (`run_alpha:w0`). The executor rejects the request with HTTP 403 `CALLER_NOT_DATABASE_OWNER`.
-5. **Attack Vector 5: Attempting Administrative Reconciliation:**
-   - Worker X calls `POST /v1/cleanup/reconcile` signed with `PrivateKey_X`.
-   - **Result:** The executor checks Key X against the `ADMIN_OPERATOR` key ring. Key X is rejected with HTTP 403 `FORBIDDEN_OPERATOR_ROLE`.
+1. **Direct Wire Drop:** Worker X issues `db.command({ dropDatabase: 1 })`. Rejection: MongoDB daemon rejects command with `MongoServerError: not authorized on <db> to execute command { dropDatabase: 1 }` (Code 13).
+2. **Tampering with Ownership Records:** Worker X attempts to overwrite `ownership_locks` to claim Worker Y's database. Rejection: Worker has no write privileges on `decision_os_coordination`; MongoDB throws Code 13.
+3. **Forging Ownership Claim via Executor:** Worker X calls `POST /v1/ownership/claim` targeting Worker Y's database. Rejection: Executor verifies active ownership lease held by Worker Y; rejects claim with HTTP 409 `OWNERSHIP_CONFLICT`.
+4. **Forging Cleanup Request via Executor:** Worker X calls `POST /v1/cleanup/request` targeting Worker Y's database. Rejection: Executor checks `ownership_locks`; caller X does not match owner Y; rejected with HTTP 403 `CALLER_NOT_DATABASE_OWNER`.
+5. **Attempting Administrative Reconciliation:** Worker X calls `POST /v1/cleanup/reconcile`. Rejection: Worker key X is not in `ADMIN_OPERATOR` key ring; rejected with HTTP 403 `FORBIDDEN_OPERATOR_ROLE`.
 
-**Containment Summary:** A compromised worker can only request cleanup of databases it legitimately owns, strictly within the test namespace. It cannot destroy other workers' databases, production databases, or coordination metadata.
+### 15.2 Explicit Adversarial Analysis Matrix (Mandatory Scenarios 1–8)
+
+| Scenario ID | Attack Vector / Adversarial Event | Permitted Action | Prohibited Action | Concrete Enforcement Mechanism |
+|---|---|---|---|---|
+| **Scenario 1** | **Worker attempts direct coordination writes through broad database privileges.** Worker executes `db.getSiblingDB("decision_os_coordination").ownership_locks.insertOne({...})` using its production-equivalent connection. | Permitted: Read-only `find` query on coordination collections (if authorized by base role). | **PROHIBITED:** Any `insert`, `update`, `remove`, `findAndModify`, or index creation on coordination collections. | **MongoDB RBAC Engine:** `decision_os_worker_base_role` possesses zero write privileges. No `{ db: "", collection: "" }` write grant exists. Daemon throws `MongoServerError: not authorized on decision_os_coordination (Code 13)`. |
+| **Scenario 2** | **Worker inherits write permissions through another MongoDB role.** Adversary attempts to leverage role inheritance to gain elevated write access. | Permitted: Actions explicitly granted in the primary base role and dynamic test database role. | **PROHIBITED:** Inheriting built-in roles (`readWrite`, `dbAdmin`, `dbOwner`, `root`) or custom administrative roles. | **MongoDB RBAC Engine & Audit:** `roles: []` is enforced on all worker roles. Verification test `D38-02` programmatically inspects effective privileges via `db.getUser()` and asserts that the granted role list is strictly controlled. |
+| **Scenario 3** | **Executor A pauses after entering `DISPATCHING`.** Executor A marks `DISPATCHING` in the ledger, then suffers a 45-second thread stall before writing to the wire socket. | Permitted: Executor A may attempt to write to socket when resumed, but must fail closed if lease expired. | **PROHIBITED:** Successor Executor B claiming the request or issuing a secondary drop command while A is in `DISPATCHING`. | **State Machine Transition Guard:** Once a request enters `DISPATCHING`, the state machine permanently locks it. Successor Executor B detects `state === 'DISPATCHING'` and refuses to claim or redispatch. |
+| **Scenario 4** | **Executor A resumes after an operator observes no active `currentOp()`.** SRE queries `currentOp()`, sees no active drop, and attempts administrative action while Executor A wakes up. | Permitted: SRE may transition the request to `QUARANTINED` to record the incident. | **PROHIBITED:** SRE or system issuing a second `{ dropDatabase: 1 }` command. | **Schema & Code Enforcement:** `forceRedispatch` is removed. The reconciliation handler contains no code path to execute a drop. If Executor A later delivers its drop, no concurrent drop was issued. |
+| **Scenario 5** | **A delayed wire command arrives after operator's observation.** TCP send buffer delays cause Executor A's drop packet to arrive 30 seconds after SRE observed database quiescence. | Permitted: MongoDB processes or rejects the original delayed packet. | **PROHIBITED:** Reusing or assigning the database name to a new test run while the drop outcome remains ambiguous. | **Permanent Execution Lock:** `dropExecutionLock: true` remains held in `QUARANTINED` state. Namespace is marked poisoned in `ownership_locks`. New test runs are blocked from claiming the name. |
+| **Scenario 6** | **Administrator attempts to redispatch an ambiguous request.** Operator submits `POST /v1/cleanup/reconcile` attempting to force a re-drop of residual collections. | Permitted: Transition request to `QUARANTINED` (locking namespace) or `CONFIRM_CLEANED` (with server oplog proof). | **PROHIBITED:** Submitting `forceRedispatch`, or requesting any secondary drop command. | **Reconciliation API Validation:** Schema validation rejects any payload containing `forceRedispatch` with HTTP 400. API provides no dispatch mechanism. |
+| **Scenario 7** | **Executor restarts with an unresolved request.** Cleanup Executor crashes while a request is in `DISPATCHING`. On reboot, startup scanner encounters the record. | Permitted: Startup scanner transitions expired `DISPATCHING` records to `OUTCOME_UNKNOWN` and raises an SRE alert. | **PROHIBITED:** Startup supervisor re-claiming the request or re-issuing `{ dropDatabase: 1 }`. | **Crash Recovery Policy:** The startup scanner inspects `wireDispatchedAt`. Because `wireDispatchedAt !== null`, redispatch is strictly forbidden. State moves to `OUTCOME_UNKNOWN` with lock held. |
+| **Scenario 8** | **Residual collections exist, but previous command's completion is unproven.** Target DB shows collections, but ledger shows `DISPATCHING` and socket was severed. | Permitted: Moving request to `QUARANTINED` and leaving database intact for forensic inspection. | **PROHIBITED:** Assuming that residual collections prove the drop failed and issuing another drop. | **Fail-Closed Rule:** The presence of residual collections does not guarantee that a delayed command or secondary primary failover will not execute. Drop is strictly prohibited; namespace is quarantined. |
 
 ---
 
@@ -713,17 +794,17 @@ Because MongoDB does not enforce application fencing tokens during `dropDatabase
 1. Executor A transmits `{ dropDatabase: 1 }`. MongoDB begins execution.
 2. Network connection severed; response lost.
 3. Executor B starts after lease expires.
-4. **Safety Outcome:** Ledger shows `DISPATCHING` or `OUTCOME_UNKNOWN`. Executor B **fails closed**. Automatic redispatch is prohibited. The database remains locked until signed SRE administrative reconciliation occurs. Safe against premature re-drop.
+4. **Safety Outcome:** Ledger shows `DISPATCHING` or `OUTCOME_UNKNOWN`. Executor B **fails closed**. Automatic redispatch is prohibited. The database remains locked until signed SRE administrative quarantine occurs. Safe against premature re-drop.
 
 #### Case D: Admin attempts reconciliation while earlier executor may still execute
 1. Earlier executor dispatched command, response lost.
 2. Administrator triggers `/v1/cleanup/reconcile`.
-3. **Safety Outcome:** The executor queries `db.getSiblingDB("admin").currentOp({ "command.dropDatabase": { $exists: true }, "ns": dbName })`. If an operation is actively executing, reconciliation aborts with HTTP 409. Furthermore, admin reconciliation does not blindly redispatch unless `forceRedispatch: true` is explicitly passed and verified quiescent.
+3. **Safety Outcome (Remediated Phase B.2):** SRE reconciliation **contains no drop capability**. Reconcile transitions request to terminal `QUARANTINED`, preserving `dropExecutionLock: true` and marking the namespace poisoned. Even if the earlier executor's delayed wire command arrives later or the server unlinks asynchronously, zero secondary drop commands are ever issued. Safe against dual drop and race conditions.
 
 ### 16.2 Explicit Statement of Residual Risks
-1. **Linux Kernel Integrity:** Container isolation relies on Linux cgroups and namespaces. A container breakout vulnerability in the host Linux kernel could allow an attacker in the API container to access the host or adjacent containers.
-2. **Delayed Wire Packet Delivery:** If an executor process is paused after transmitting a wire packet into the TCP send buffer, network stack delays could cause the packet to arrive at MongoDB much later. Fencing mitigates this by requiring lease timeouts significantly longer than TCP socket timeouts.
-3. **Replica Set Failover during DDL:** If a primary steps down while unlinking database files, the drop may be rolled back or completed asynchronously. The system fails closed with `OUTCOME_UNKNOWN`.
+1. **Quarantined Database Proliferation:** Under frequent network partitions or replica set failovers, ambiguous test databases remain in `QUARANTINED` status and are not automatically reclaimed. In test environments, this is mitigated by unique `runId` UUIDs. Periodic manual SRE maintenance during scheduled maintenance windows can purge confirmed quiescent test instances.
+2. **Delayed Wire Packet Delivery:** If an executor process is paused after transmitting a wire packet into the TCP send buffer, network stack delays could cause the packet to arrive at MongoDB much later. Quarantining the namespace and permanently retaining the execution lock ensures that no active workload is provisioned into that namespace.
+3. **Linux Kernel Integrity:** Container isolation relies on Linux cgroups and namespaces. A container breakout vulnerability in the host Linux kernel could allow an attacker in the API container to access the host or adjacent containers.
 
 ---
 
@@ -732,11 +813,7 @@ Because MongoDB does not enforce application fencing tokens during `dropDatabase
 ### 17.1 Production & CI Deployment (Container Isolated)
 - **Deployment Spec:** Kubernetes Deployment (`apps/cleanup-executor`), distroless container image.
 - **Container Security:** `readOnlyRootFilesystem: true`, `runAsNonRoot: true`, `runAsUser: 10001`, dropped capabilities `[ALL]`.
-- **Network Ingress Policy:** Ingress on port 8088 allowed from:
-  - `app.kubernetes.io/component: api`
-  - `app.kubernetes.io/component: test-runner`
-  - `app.kubernetes.io/component: benchmark-runner`
-  - Administrative bastion network (mTLS authenticated).
+- **Network Ingress Policy:** Ingress on port 8088 allowed from API, test runners, benchmark runners, and admin bastion.
 - **Network Egress Policy:** Egress strictly restricted to test MongoDB deployment port 27017/27018.
 
 ### 17.2 Local Development Profile: Development-Only Weaker Mode (B38-08)
@@ -763,9 +840,12 @@ All log events emitted by `apps/cleanup-executor` follow standard structured log
   "runId": "run_alpha",
   "workerId": "w0",
   "databaseName": "decision_os_test_run_alpha_w0",
-  "event": "WIRE_DROP_COMPLETED",
-  "durationMs": 38,
-  "clusterPrimary": "mongodb-test:27018"
+  "event": "STATE_TRANSITION",
+  "fromState": "OUTCOME_UNKNOWN",
+  "toState": "QUARANTINED",
+  "operatorId": "sre_operator_amit",
+  "ticketId": "OPS-8472",
+  "executionLockRetained": true
 }
 ```
 
@@ -774,8 +854,8 @@ All state transitions are appended to `decision_os_coordination.cleanup_audit_lo
 $$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{AuditID} + \text{RequestID} + \text{ToState} + \text{Actor} + \text{Timestamp})$$
 
 ### 18.3 Metrics & Alerting
-- Prometheus metrics: `cleanup_requests_total`, `cleanup_duration_seconds`, `cleanup_ambiguous_outcomes_total`.
-- Alert: Any transition to `OUTCOME_UNKNOWN` or `RECONCILIATION_REQUIRED` fires high-priority SRE alert.
+- Prometheus metrics: `cleanup_requests_total`, `cleanup_duration_seconds`, `cleanup_ambiguous_outcomes_total`, `cleanup_quarantined_total`.
+- Alert: Any transition to `OUTCOME_UNKNOWN`, `RECONCILIATION_REQUIRED`, or `QUARANTINED` fires high-priority SRE alert.
 
 ---
 
@@ -783,8 +863,8 @@ $$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{AuditID} + \text{Requ
 
 ```mermaid
 flowchart LR
-    PhaseC1["Phase C1:\nMongoDB RBAC & Test Deployment Setup"] --> PhaseC2["Phase C2:\napps/cleanup-executor Service & Ed25519 Engine"]
-    PhaseC2 --> PhaseC3["Phase C3:\nAuthoritative Ownership & Ledger APIs"]
+    PhaseC1["Phase C1:\nMongoDB Exact Scoped RBAC & Test Deployment Setup"] --> PhaseC2["Phase C2:\napps/cleanup-executor Service & Ed25519 Engine"]
+    PhaseC2 --> PhaseC3["Phase C3:\nDynamic Role Provisioning & Quarantine State Machine"]
     PhaseC3 --> PhaseC4["Phase C4:\nCleanupExecutorClient in apps/api"]
     PhaseC4 --> PhaseC5["Phase C5:\nRemediate Call Sites (CS-01 to CS-17)"]
     PhaseC5 --> PhaseC6["Phase C6:\nStatic Guard Script & CI Negative Test"]
@@ -800,19 +880,20 @@ All verification items are **PLANNED** for implementation and execution during P
 | Test ID | Test Category | Description & Target Assertion | Target Phase |
 |---|---|---|---|
 | **`D38-01`** | **Real MongoDB Authorization Test** | Authenticate as `decision_os_app_worker` on MongoDB 8.0 with `--auth`. Assert `db.dropDatabase()` and `db.command({ dropDatabase: 1 })` throw Error Code 13 (`Unauthorized`). | Phase C1 |
-| **`D38-02`** | **Real MongoDB Authorization Test** | Authenticate as `decision_os_app_worker`. Assert direct write/update/delete on `ownership_locks` throws Error Code 13. | Phase C1 |
-| **`D38-03`** | **Real MongoDB Authorization Test** | Authenticate as `decision_os_app_worker`. Assert direct insert on `cleanup_ledger` throws Error Code 13. | Phase C1 |
+| **`D38-02`** | **Real MongoDB Authorization Test (Finding 1)** | Authenticate as `decision_os_app_worker`. Assert direct write/update/delete on `decision_os_coordination.ownership_locks` throws Error Code 13. Verify no indirect inherited write privileges via `db.getUser()`. | Phase C1 |
+| **`D38-03`** | **Real MongoDB Authorization Test (Finding 1)** | Authenticate as `decision_os_app_worker`. Assert direct insert/update/delete on `decision_os_coordination.cleanup_ledger` throws Error Code 13. | Phase C1 |
 | **`D38-04`** | **Unit Test** | Execute RFC 8785 deterministic test vector. Verify canonical JSON, SHA-256 payload hash (`b636...`), and Ed25519 signature verification succeed with test vector constants. | Phase C2 |
 | **`D38-05`** | **Mocked Integration Test** | Submit cleanup request signed with valid key for Caller A targeting database owned by Caller B. Verify HTTP 403 `CALLER_NOT_DATABASE_OWNER`. | Phase C2 |
-| **`D38-06`** | **Multi-Process Adversarial Test** | Simulate lost wire response via socket drop during drop command. Verify ledger records `OUTCOME_UNKNOWN` and automatic redispatch is rejected. | Phase C3 |
-| **`D38-07`** | **Multi-Process Adversarial Test** | Simulate paused executor after CAS to `DISPATCHING`. Verify successor executor refuses reassignment and does not issue dual drop. | Phase C3 |
-| **`D38-08`** | **Mocked Integration Test** | Observe database absence after lost response. Verify state remains `OUTCOME_UNKNOWN` with `targetAbsentObserved: true`, refusing transition to `CLEANED` without operator signature. | Phase C3 |
-| **`D38-09`** | **Mocked Integration Test** | Submit administrative reconciliation with valid SRE signature, narrative reason, and ticket ID. Verify transition to `CLEANED` with tamper-evident audit record. | Phase C3 |
+| **`D38-06`** | **Multi-Process Adversarial Test (Finding 2)** | Simulate lost wire response via socket drop during drop command. Verify ledger records `OUTCOME_UNKNOWN` and automatic redispatch is rejected across API retries, restarts, and successors. | Phase C3 |
+| **`D38-07`** | **Multi-Process Adversarial Test (Finding 2)** | Simulate paused executor after CAS to `DISPATCHING`. Verify successor executor refuses reassignment and does not issue secondary drop. | Phase C3 |
+| **`D38-08`** | **Mocked Integration Test (Finding 2)** | Observe database absence after lost response. Verify state remains `OUTCOME_UNKNOWN` with `targetAbsentObserved: true`, refusing transition to `CLEANED` without authoritative server oplog proof. | Phase C3 |
+| **`D38-09`** | **Mocked Integration Test (Finding 2)** | Submit administrative reconciliation with valid SRE signature and `action: 'QUARANTINE'`. Verify transition to `QUARANTINED`, retention of execution lock, and verification that zero wire drops are dispatched. Assert rejection if `forceRedispatch` is supplied. | Phase C3 |
 | **`D38-10`** | **Operational / Manual Verification** | Verify test runner in CI verifies container isolation and refuses to start if containerless mode is attempted in CI environment. | Phase C4 |
 | **`D38-11`** | **Unit / Static AST Test** | Introduce synthetic `db.dropDatabase()` call into application code. Verify `scripts/verify_no_direct_destructive_calls.ts` detects call and exits with status 1. | Phase C6 |
-| **`D38-12`** | **Integration Test** | Execute benchmark script `scripts/benchmark.ts`. Verify isolated test database creation, ownership claim, and executor-mediated teardown without raw drop. | Phase C5 |
+| **`D38-12`** | **Integration Test** | Execute benchmark script `scripts/benchmark.ts`. Verify isolated test database creation, ownership claim, dynamic role provisioning, and executor-mediated teardown without raw drop. | Phase C5 |
 | **`D38-13`** | **Real MongoDB Authorization Test** | Connect as `decision_os_cleanup_executor`. Attempt `dropDatabase()` on `decision_os_production`. Assert rejection by naming guard and physical absence of DB on test deployment. | Phase C1 |
 | **`D38-14`** | **Full Monorepo Regression** | Execute all 51 test suites across `@decision-os/api`, `@decision-os/decision-engine`, and `@decision-os/web`. Golden Fixtures G1–G10 pass 100%. | Phase C7 |
+| **`D38-15`** | **Dynamic Role Lifecycle Test (Finding 1)** | Verify dynamic role creation on `POST /v1/ownership/claim`. Worker performs CRUD on assigned DB. Worker is blocked with Error 13 on other test DBs and coordination DB. Verify role revocation on cleanup completion. | Phase C1 / C3 |
 
 ---
 
@@ -832,19 +913,19 @@ All verification items are **PLANNED** for implementation and execution during P
 
 ## Gate B Completion Sign-Off Checklist
 
-- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at `161e59e85bb7183c21926f0b04f788eb43312394`
+- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at baseline commit `943a8e7a433ce1b98804a83c6be403b2fca52e96`
 - [x] Phase A destructive inventory (`CS-01` to `CS-17`) thoroughly inspected and addressed
-- [x] B38-01 resolved: MongoDB RBAC wildcards removed; Alternative B (Dedicated Isolated Test Deployment) established
-- [x] B38-02 resolved: Worker write access to `ownership_locks` revoked; ownership mediated authoritatively by executor
-- [x] B38-03 resolved: Worker write access to `cleanup_ledger` revoked; executor is sole authoritative writer
+- [x] B38-01 resolved: MongoDB RBAC wildcards removed; Dedicated Isolated Test Deployment established
+- [ ] **B38-02 remediated (Phase B.2):** Worker role additive privilege defect corrected; exact per-database scoped roles eliminate coordination write access (Pending Independent Review)
+- [ ] **B38-03 remediated (Phase B.2):** Worker write access to `cleanup_ledger` blocked natively by MongoDB RBAC (Pending Independent Review)
 - [x] B38-04 resolved: Self-referential hash eliminated; RFC 8785 JCS + deterministic test vector established
 - [x] B38-05 resolved: Asymmetric Ed25519 standard selected; caller identities bound to registered public keys
-- [x] B38-06 resolved: Ambiguous outcome policy corrected; catalog absence is not completion; redispatch strictly blocked
-- [x] B38-07 resolved: Fencing interleaving limitations documented; CAS does not fence wire DDL; Case A–D analyzed
+- [ ] **B38-06 remediated (Phase B.2):** Administrative `forceRedispatch` removed; point-in-time checks rejected as proof; terminal `QUARANTINED` state introduced (Pending Independent Review)
+- [ ] **B38-07 remediated (Phase B.2):** All redispatch paths prohibited after `DISPATCHING`; Case D updated (Pending Independent Review)
 - [x] B38-08 resolved: Local containerless runner labeled as Development-Only Weaker Mode; disabled in CI
 - [x] B38-09 resolved: Network identities defined for all 4 caller categories; network reachability decoupled from authn
 - [x] B38-10 resolved: Absolute claims replaced with precise guarantees and explicit residual risks
 - [x] Canonical database naming contract reconciled with baseline `getTestDatabaseUri()`
-- [x] Expanded verification plan (D38-01 to D38-14) categorized and explicitly marked as planned
+- [x] Expanded verification plan (`D38-01` to `D38-15`) categorized and explicitly marked as planned
 - [x] Zero application or test files modified; architecture design revision only
-- [x] STOP gate observed; awaiting independent architecture review and approval before Phase C
+- [x] **STOP gate observed:** Phase B.2 completed; awaiting independent architecture review and formal Gate B approval before Phase C.
