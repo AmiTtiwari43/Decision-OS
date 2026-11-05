@@ -144,6 +144,7 @@ export interface TestDatabaseOwnershipMetadata {
   dropInProgress?: boolean;
   dropExecutionLock?: boolean;
   dropExecutionToken?: string;
+  executorPid?: number;
   dropStartedAt?: Date;
   dropRetriedAt?: Date;
   cleanedAt?: Date;
@@ -162,7 +163,34 @@ export interface CleanupTestInjectionHooks {
 
 export interface CleanupTestOptions {
   expectedGeneration?: number;
+  signal?: AbortSignal;
   _testHooks?: CleanupTestInjectionHooks;
+}
+
+/**
+ * Verifies whether an OS process with the given PID has terminated.
+ * Uses process.kill(pid, 0) which tests for process existence without sending a signal.
+ * - If ESRCH is thrown: the process does not exist (confirmed terminated).
+ * - If no error: the process is alive.
+ * - If EPERM or any other error: process exists or status cannot be verified (treated as alive / fail-closed).
+ */
+export function isExecutorTerminated(pid?: number): boolean {
+  if (pid === undefined || pid === null || typeof pid !== 'number' || pid <= 0) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (err: unknown) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? (err as { code?: string }).code
+        : undefined;
+    if (code === 'ESRCH') {
+      return true;
+    }
+    return false;
+  }
 }
 
 /**
@@ -640,6 +668,29 @@ export async function cleanupTestDatabase(
   }
 
   if (
+    existingCoord.dropExecutionLock === true &&
+    existingCoord.executorPid !== undefined &&
+    existingCoord.executorPid !== process.pid &&
+    !isExecutorTerminated(existingCoord.executorPid)
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' drop is in progress by active executor PID ${existingCoord.executorPid}. Refusing concurrent or superseded execution while old executor is alive.`
+    );
+  }
+
+  if (
+    existingCoord.dropExecutionLock === true &&
+    (existingCoord.executorPid === undefined ||
+      existingCoord.executorPid === null ||
+      !isExecutorTerminated(existingCoord.executorPid)) &&
+    existingCoord.executorPid !== process.pid
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' drop is locked by prior executor (PID: ${existingCoord.executorPid ?? 'unknown'}). Cannot confirm termination; refusing reassignment fail-closed.`
+    );
+  }
+
+  if (
     expectedGen !== undefined &&
     existingCoord.cleanupGeneration !== undefined &&
     existingCoord.cleanupGeneration !== expectedGen
@@ -743,6 +794,16 @@ export async function cleanupTestDatabase(
         existing.lifecycleState === 'DROP_IN_PROGRESS') &&
       existing.cleanupOwner === cleanWorker
     ) {
+      if (
+        existing.lifecycleState === 'DROP_IN_PROGRESS' &&
+        existing.executorPid !== undefined &&
+        existing.executorPid !== process.pid &&
+        !isExecutorTerminated(existing.executorPid)
+      ) {
+        throw new Error(
+          `Safety guard violation: database '${dbName}' drop is in progress by active executor PID ${existing.executorPid}. Refusing concurrent retry while executor process is alive.`
+        );
+      }
       // Valid idempotent retry by the same crash-recovery cleanup owner
       activeGeneration = existing.cleanupGeneration || 1;
       isRetry = true;
@@ -848,6 +909,7 @@ export async function cleanupTestDatabase(
         lifecycleState: 'DROP_IN_PROGRESS',
         dropInProgress: true,
         dropExecutionLock: true,
+        executorPid: process.pid,
         dropStartedAt: new Date(),
         ...(isRetry ? { dropRetriedAt: new Date() } : {}),
       },
@@ -882,6 +944,7 @@ export async function cleanupTestDatabase(
         dropInProgress: true,
         dropExecutionLock: true,
         dropExecutionToken: currentDropToken,
+        executorPid: process.pid,
         dropStartedAt: new Date(),
       },
     },
@@ -921,6 +984,16 @@ export async function cleanupTestDatabase(
         `Safety guard violation: database '${dbName}' is already cleaned in coordination registry.`
       );
     }
+    if (
+      existingCoord.dropExecutionLock === true &&
+      existingCoord.executorPid !== undefined &&
+      existingCoord.executorPid !== process.pid &&
+      !isExecutorTerminated(existingCoord.executorPid)
+    ) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' drop is in progress by active executor PID ${existingCoord.executorPid}. Refusing concurrent or superseded execution while old executor is alive.`
+      );
+    }
     throw new Error(
       `Safety guard violation: database '${dbName}' destructive drop authority not acquired from coordination registry. Refusing drop.`
     );
@@ -958,11 +1031,66 @@ export async function cleanupTestDatabase(
     );
   }
 
-  // Execute dropDatabase
-  if (testHooks?.overrideDropDatabase) {
-    await testHooks.overrideDropDatabase(() => db.dropDatabase());
-  } else {
+  // In-process supervised execution gate & AbortController
+  const dropAbortController = new AbortController();
+
+  if (optionsOrGeneration && typeof optionsOrGeneration === 'object' && optionsOrGeneration.signal) {
+    if (optionsOrGeneration.signal.aborted) {
+      dropAbortController.abort();
+    } else {
+      optionsOrGeneration.signal.addEventListener('abort', () => dropAbortController.abort(), { once: true });
+    }
+  }
+
+  const executeGuardedDrop = async () => {
+    // 1. In-process synchronous abort check
+    if (dropAbortController.signal.aborted) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' destructive drop aborted: execution authority was revoked or cancelled before dispatch.`
+      );
+    }
+
+    // 2. Pre-wire verification directly against coordination registry immediately prior to native drop
+    const preWireCoord = await coordCol.findOne({
+      _id: dbName as unknown as import('mongodb').ObjectId,
+    });
+
+    if (!preWireCoord) {
+      dropAbortController.abort();
+      throw new Error(
+        `Safety guard violation: database '${dbName}' has no coordination record in registry. Refusing destructive drop.`
+      );
+    }
+
+    if (
+      preWireCoord.runId !== cleanRun ||
+      preWireCoord.cleanupOwner !== cleanWorker ||
+      (preWireCoord.cleanupGeneration !== undefined && preWireCoord.cleanupGeneration > activeGeneration) ||
+      preWireCoord.lifecycleState !== 'DROP_IN_PROGRESS' ||
+      preWireCoord.dropExecutionToken !== currentDropToken ||
+      preWireCoord.dropExecutionLock !== true
+    ) {
+      dropAbortController.abort();
+      throw new Error(
+        `Safety guard violation: database '${dbName}' cleanup authority superseded before drop (revoked or stale generation ${activeGeneration} or token mismatch).`
+      );
+    }
+
+    if (dropAbortController.signal.aborted) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' destructive drop aborted: execution authority was revoked or cancelled before dispatch.`
+      );
+    }
+
+    // 3. Issue native MongoDB drop
     await db.dropDatabase();
+  };
+
+  // Execute dropDatabase through guarded dispatcher
+  if (testHooks?.overrideDropDatabase) {
+    await testHooks.overrideDropDatabase(() => executeGuardedDrop());
+  } else {
+    await executeGuardedDrop();
   }
 
   if (testHooks?.afterDropBeforeCleaned) {
