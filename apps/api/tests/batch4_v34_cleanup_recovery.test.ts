@@ -266,7 +266,7 @@ describe('DECISION OS — BATCH 4 V3.4 CLEANUP RECOVERY ADVERSARIAL SUITE (D34-0
       if (rejected.length > 0) {
         const error = (rejected[0] as PromiseRejectedResult).reason as Error;
         expect(error.message).toMatch(
-          /(?:drop is already in progress concurrently|The database is currently being dropped)/
+          /(?:drop is already in progress concurrently|cleanup authority superseded before drop|The database is currently being dropped)/
         );
       }
     } finally {

@@ -142,6 +142,8 @@ export interface TestDatabaseOwnershipMetadata {
   cleanupGeneration?: number;
   cleanupStartedAt?: Date;
   dropInProgress?: boolean;
+  dropExecutionLock?: boolean;
+  dropExecutionToken?: string;
   dropStartedAt?: Date;
   dropRetriedAt?: Date;
   cleanedAt?: Date;
@@ -151,7 +153,8 @@ export interface CleanupTestInjectionHooks {
   beforeLockAcquisition?: () => Promise<void> | void;
   afterLockAcquired?: (metadata: TestDatabaseOwnershipMetadata) => Promise<void> | void;
   afterRegistrySync?: (metadata: TestDatabaseOwnershipMetadata) => Promise<void> | void;
-  beforeDropDatabase?: (metadata: TestDatabaseOwnershipMetadata) => Promise<void> | void;
+  afterCoordDropLock?: (metadata: TestDatabaseOwnershipMetadata, token?: string) => Promise<void> | void;
+  beforeDropDatabase?: (metadata: TestDatabaseOwnershipMetadata, token?: string) => Promise<void> | void;
   overrideDropDatabase?: (originalDrop: () => Promise<unknown>) => Promise<unknown>;
   afterDropBeforeCleaned?: () => Promise<void> | void;
   simulateRegistryError?: boolean;
@@ -224,6 +227,27 @@ export async function claimTestDatabaseOwnership(
 
   try {
     // Atomic unique claim via insertOne in OWNED state
+    const client =
+      typeof connection.getClient === 'function'
+        ? connection.getClient()
+        : (connection as unknown as { client?: import('mongodb').MongoClient })?.client;
+
+    if (client) {
+      const coordCol = client.db('decision_os_test_coordination_test').collection('cleanup_registry');
+      const existingCoord = await coordCol.findOne({
+        _id: dbName as unknown as import('mongodb').ObjectId,
+      });
+      if (
+        existingCoord &&
+        (existingCoord.dropExecutionLock === true ||
+          (existingCoord.lifecycleState === 'DROP_IN_PROGRESS' && existingCoord.cleanupInProgress === true))
+      ) {
+        throw new Error(
+          `Test database safety guard violation: database '${dbName}' is locked for cleanup in coordination registry (state: '${existingCoord.lifecycleState}'). Re-entry prohibited.`
+        );
+      }
+    }
+
     await metaCol.insertOne({
       _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
       runId: cleanRun,
@@ -235,10 +259,6 @@ export async function claimTestDatabaseOwnership(
       lastClaimVerifiedAt: new Date(),
     });
 
-    const client =
-      typeof connection.getClient === 'function'
-        ? connection.getClient()
-        : (connection as unknown as { client?: import('mongodb').MongoClient })?.client;
     if (client) {
       const coordCol = client.db('decision_os_test_coordination_test').collection('cleanup_registry');
       await coordCol.updateOne(
@@ -249,6 +269,8 @@ export async function claimTestDatabaseOwnership(
             workerId: cleanWorker,
             lifecycleState: 'OWNED',
             cleanupInProgress: false,
+            dropInProgress: false,
+            dropExecutionLock: false,
             claimedAt: new Date(),
           },
         },
@@ -297,6 +319,8 @@ export async function claimTestDatabaseOwnership(
                 workerId: cleanWorker,
                 lifecycleState: 'OWNED',
                 cleanupInProgress: false,
+                dropInProgress: false,
+                dropExecutionLock: false,
                 lastClaimVerifiedAt: new Date(),
               },
             },
@@ -495,53 +519,81 @@ export async function cleanupTestDatabase(
   const collections = await db.listCollections().toArray();
   if (collections.length === 0) {
     // Database has zero collections. Check independent durable registry for verified crash-recovery
-    if (coordCol) {
-      const regDoc = await coordCol.findOne({
-        _id: dbName as unknown as import('mongodb').ObjectId,
-      });
-
-      if (
-        regDoc &&
-        regDoc.runId === cleanRun &&
-        (regDoc.workerId === cleanWorker || regDoc.cleanupOwner === cleanWorker) &&
-        (regDoc.lifecycleState === 'CLEANUP_LOCKED' ||
-          regDoc.lifecycleState === 'DROP_IN_PROGRESS' ||
-          regDoc.lifecycleState === 'CLEANED')
-      ) {
-        if (
-          expectedGen !== undefined &&
-          regDoc.cleanupGeneration !== undefined &&
-          regDoc.cleanupGeneration !== expectedGen
-        ) {
-          throw new Error(
-            `Safety guard violation: database '${dbName}' cleanup generation ${expectedGen} is superseded by newer generation ${regDoc.cleanupGeneration}.`
-          );
-        }
-        if (regDoc.lifecycleState !== 'CLEANED') {
-          await coordCol.updateOne(
-            {
-              _id: dbName as unknown as import('mongodb').ObjectId,
-              runId: cleanRun,
-              cleanupGeneration: regDoc.cleanupGeneration,
-              lifecycleState: { $in: ['CLEANUP_LOCKED', 'DROP_IN_PROGRESS'] },
-            },
-            {
-              $set: {
-                lifecycleState: 'CLEANED',
-                cleanedAt: new Date(),
-                cleanupInProgress: false,
-                dropInProgress: false,
-              },
-            }
-          );
-        }
-        return;
-      }
+    if (!coordCol) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' has no collections and coordination registry is unavailable. Refusing cleanup.`
+      );
     }
 
-    throw new Error(
-      `Safety guard violation: database '${dbName}' has no collections and no verified cleanup lock in registry. Refusing cleanup.`
+    const regDoc = await coordCol.findOne({
+      _id: dbName as unknown as import('mongodb').ObjectId,
+    });
+
+    if (!regDoc) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' has no collections and no verified cleanup lock in registry. Refusing cleanup.`
+      );
+    }
+
+    if (regDoc.runId !== cleanRun) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' is owned by run '${regDoc.runId}' (expected '${cleanRun}'). Refusing cleanup of another run's database.`
+      );
+    }
+
+    if (regDoc.workerId !== cleanWorker && regDoc.cleanupOwner !== cleanWorker) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' is owned by worker '${regDoc.workerId || regDoc.cleanupOwner}' (expected '${cleanWorker}'). Refusing cleanup of another worker's database.`
+      );
+    }
+
+    if (
+      regDoc.lifecycleState !== 'CLEANUP_LOCKED' &&
+      regDoc.lifecycleState !== 'DROP_IN_PROGRESS' &&
+      regDoc.lifecycleState !== 'CLEANED'
+    ) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' has invalid lifecycle state '${regDoc.lifecycleState}' in registry for empty database. Refusing cleanup.`
+      );
+    }
+
+    if (regDoc.cleanupGeneration === undefined) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' coordination record has missing cleanupGeneration. Refusing cleanup.`
+      );
+    }
+
+    if (
+      expectedGen !== undefined &&
+      regDoc.cleanupGeneration !== expectedGen
+    ) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' cleanup generation ${expectedGen} is superseded by newer generation ${regDoc.cleanupGeneration}.`
+      );
+    }
+
+    if (regDoc.lifecycleState === 'CLEANED') {
+      return;
+    }
+
+    await coordCol.updateOne(
+      {
+        _id: dbName as unknown as import('mongodb').ObjectId,
+        runId: cleanRun,
+        cleanupGeneration: regDoc.cleanupGeneration,
+        lifecycleState: { $in: ['CLEANUP_LOCKED', 'DROP_IN_PROGRESS'] },
+      },
+      {
+        $set: {
+          lifecycleState: 'CLEANED',
+          cleanedAt: new Date(),
+          cleanupInProgress: false,
+          dropInProgress: false,
+          dropExecutionLock: false,
+        },
+      }
     );
+    return;
   }
 
   if (testHooks?.beforeLockAcquisition) {
@@ -549,6 +601,62 @@ export async function cleanupTestDatabase(
   }
 
   await assertCanCleanupTestDatabase(connection, runId, workerId);
+
+  if (!coordCol) {
+    throw new Error(
+      `Safety guard violation: coordination registry unavailable. Refusing cleanup.`
+    );
+  }
+
+  const existingCoord = await coordCol.findOne({
+    _id: dbName as unknown as import('mongodb').ObjectId,
+  });
+
+  if (!existingCoord) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' has no coordination record in registry. Refusing cleanup.`
+    );
+  }
+
+  if (existingCoord.runId !== cleanRun) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is owned by run '${existingCoord.runId}' (expected '${cleanRun}'). Refusing cleanup of another run's database.`
+    );
+  }
+
+  if (
+    existingCoord.workerId !== cleanWorker &&
+    existingCoord.cleanupOwner !== cleanWorker
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is owned by worker '${existingCoord.workerId || existingCoord.cleanupOwner}' (expected '${cleanWorker}'). Refusing cleanup of another worker's database.`
+    );
+  }
+
+  if (existingCoord.lifecycleState === 'CLEANED') {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is already cleaned.`
+    );
+  }
+
+  if (
+    expectedGen !== undefined &&
+    existingCoord.cleanupGeneration !== undefined &&
+    existingCoord.cleanupGeneration !== expectedGen
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' cleanup generation ${expectedGen} is superseded by newer generation ${existingCoord.cleanupGeneration}.`
+    );
+  }
+
+  if (
+    existingCoord.lifecycleState !== 'OWNED' &&
+    existingCoord.cleanupGeneration === undefined
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' coordination record has missing cleanupGeneration. Refusing cleanup.`
+    );
+  }
 
   const metaCol = db.collection('__test_run_metadata');
 
@@ -669,29 +777,50 @@ export async function cleanupTestDatabase(
     throw new Error('SIMULATED_REGISTRY_ERROR');
   }
 
-  if (coordCol) {
-    await coordCol.updateOne(
-      {
-        _id: dbName as unknown as import('mongodb').ObjectId,
-        $or: [
-          { runId: cleanRun, cleanupGeneration: { $lte: activeGeneration } },
-          { runId: cleanRun, cleanupGeneration: { $exists: false } },
-          { runId: cleanRun, lifecycleState: 'OWNED' },
-        ],
-      },
-      {
-        $set: {
-          runId: cleanRun,
-          workerId: cleanWorker,
-          cleanupOwner: cleanWorker,
-          cleanupGeneration: activeGeneration,
-          lifecycleState: 'CLEANUP_LOCKED',
-          cleanupInProgress: true,
-          dropInProgress: false,
-          cleanupStartedAt: new Date(),
+  if (!coordCol) {
+    throw new Error(
+      `Safety guard violation: coordination registry unavailable. Refusing cleanup.`
+    );
+  }
+
+  const coordSync = await coordCol.findOneAndUpdate(
+    {
+      _id: dbName as unknown as import('mongodb').ObjectId,
+      runId: cleanRun,
+      $and: [
+        {
+          $or: [
+            { workerId: cleanWorker },
+            { cleanupOwner: cleanWorker },
+          ],
         },
+        {
+          $or: [
+            { cleanupGeneration: { $lte: activeGeneration } },
+            { cleanupGeneration: { $exists: false }, lifecycleState: 'OWNED' },
+          ],
+        },
+      ],
+    },
+    {
+      $set: {
+        runId: cleanRun,
+        workerId: cleanWorker,
+        cleanupOwner: cleanWorker,
+        cleanupGeneration: activeGeneration,
+        lifecycleState: 'CLEANUP_LOCKED',
+        cleanupInProgress: true,
+        dropInProgress: false,
+        dropExecutionLock: false,
+        cleanupStartedAt: new Date(),
       },
-      { upsert: true }
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!coordSync) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' has no coordination record in registry. Refusing cleanup.`
     );
   }
 
@@ -699,7 +828,7 @@ export async function cleanupTestDatabase(
     await testHooks.afterRegistrySync(currentMetadata);
   }
 
-  // Stage 3: Atomically transition from CLEANUP_LOCKED to DROP_IN_PROGRESS
+  // Stage 3: Atomically transition from CLEANUP_LOCKED to DROP_IN_PROGRESS in target database
   // Serializes concurrent drops by the same worker and fences by cleanupGeneration
   const dropFilter: import('mongodb').Filter<import('mongodb').Document> = {
     _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
@@ -718,6 +847,7 @@ export async function cleanupTestDatabase(
       $set: {
         lifecycleState: 'DROP_IN_PROGRESS',
         dropInProgress: true,
+        dropExecutionLock: true,
         dropStartedAt: new Date(),
         ...(isRetry ? { dropRetriedAt: new Date() } : {}),
       },
@@ -731,45 +861,101 @@ export async function cleanupTestDatabase(
     );
   }
 
-  // Synchronize DROP_IN_PROGRESS state to coordination registry
-  if (coordCol) {
-    await coordCol.updateOne(
-      {
-        _id: dbName as unknown as import('mongodb').ObjectId,
-        runId: cleanRun,
-        cleanupGeneration: activeGeneration,
-        lifecycleState: { $in: ['CLEANUP_LOCKED', 'DROP_IN_PROGRESS'] },
+  // Atomically acquire exclusive destructive drop authority in independent coordination registry
+  const currentDropToken = `drop_token_${cleanWorker}_${activeGeneration}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+  const coordDropLock = await coordCol.findOneAndUpdate(
+    {
+      _id: dbName as unknown as import('mongodb').ObjectId,
+      runId: cleanRun,
+      cleanupOwner: cleanWorker,
+      cleanupGeneration: activeGeneration,
+      lifecycleState: { $in: ['CLEANUP_LOCKED', 'DROP_IN_PROGRESS'] },
+      $or: [
+        { dropExecutionLock: { $ne: true } },
+        ...(isRetry ? [{ dropExecutionLock: true, cleanupOwner: cleanWorker }] : []),
+      ],
+    },
+    {
+      $set: {
+        lifecycleState: 'DROP_IN_PROGRESS',
+        dropInProgress: true,
+        dropExecutionLock: true,
+        dropExecutionToken: currentDropToken,
+        dropStartedAt: new Date(),
       },
-      {
-        $set: {
-          lifecycleState: 'DROP_IN_PROGRESS',
-          dropInProgress: true,
-          dropStartedAt: new Date(),
-        },
-      }
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!coordDropLock) {
+    // Explicit fail-closed diagnosis: check why authority was denied
+    const existingCoord = await coordCol.findOne({
+      _id: dbName as unknown as import('mongodb').ObjectId,
+    });
+    if (!existingCoord) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' has no coordination record in registry. Refusing destructive drop.`
+      );
+    }
+    if (existingCoord.runId !== cleanRun) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' is owned by run '${existingCoord.runId}' (expected '${cleanRun}'). Refusing drop.`
+      );
+    }
+    if (existingCoord.cleanupOwner && existingCoord.cleanupOwner !== cleanWorker) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' cleanup is in progress by another worker '${existingCoord.cleanupOwner}'. Refusing drop.`
+      );
+    }
+    if (
+      existingCoord.cleanupGeneration !== undefined &&
+      existingCoord.cleanupGeneration > activeGeneration
+    ) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' cleanup authority superseded before drop (stale generation ${activeGeneration}, active ${existingCoord.cleanupGeneration}).`
+      );
+    }
+    if (existingCoord.lifecycleState === 'CLEANED') {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' is already cleaned in coordination registry.`
+      );
+    }
+    throw new Error(
+      `Safety guard violation: database '${dbName}' destructive drop authority not acquired from coordination registry. Refusing drop.`
     );
   }
 
-  if (testHooks?.beforeDropDatabase) {
-    await testHooks.beforeDropDatabase(dropLock as unknown as TestDatabaseOwnershipMetadata);
+  if (testHooks?.afterCoordDropLock) {
+    await testHooks.afterCoordDropLock(dropLock as unknown as TestDatabaseOwnershipMetadata, currentDropToken);
   }
 
-  // Fencing check before destructive drop: verify ownership and generation were not superseded
-  if (coordCol) {
-    const latestCoord = await coordCol.findOne({
-      _id: dbName as unknown as import('mongodb').ObjectId,
-    });
-    if (
-      latestCoord &&
-      (latestCoord.runId !== cleanRun ||
-        latestCoord.cleanupOwner !== cleanWorker ||
-        (latestCoord.cleanupGeneration !== undefined && latestCoord.cleanupGeneration > activeGeneration) ||
-        latestCoord.lifecycleState === 'CLEANED')
-    ) {
-      throw new Error(
-        `Safety guard violation: database '${dbName}' cleanup authority superseded before drop (stale generation ${activeGeneration}).`
-      );
-    }
+  if (testHooks?.beforeDropDatabase) {
+    await testHooks.beforeDropDatabase(dropLock as unknown as TestDatabaseOwnershipMetadata, currentDropToken);
+  }
+
+  // Pre-drop atomic verification of coordination authority: fails closed if missing, superseded, or token mismatch
+  const verifiedCoord = await coordCol.findOne({
+    _id: dbName as unknown as import('mongodb').ObjectId,
+  });
+
+  if (!verifiedCoord) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' has no coordination record in registry. Refusing destructive drop.`
+    );
+  }
+
+  if (
+    verifiedCoord.runId !== cleanRun ||
+    verifiedCoord.cleanupOwner !== cleanWorker ||
+    (verifiedCoord.cleanupGeneration !== undefined && verifiedCoord.cleanupGeneration > activeGeneration) ||
+    verifiedCoord.lifecycleState === 'CLEANED' ||
+    verifiedCoord.dropExecutionToken !== currentDropToken ||
+    verifiedCoord.dropExecutionLock !== true
+  ) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' cleanup authority superseded before drop (revoked or stale generation ${activeGeneration} or token mismatch).`
+    );
   }
 
   // Execute dropDatabase
@@ -784,22 +970,22 @@ export async function cleanupTestDatabase(
   }
 
   // Stage 4: Mark CLEANED in coordination registry
-  if (coordCol) {
-    await coordCol.updateOne(
-      {
-        _id: dbName as unknown as import('mongodb').ObjectId,
-        runId: cleanRun,
-        cleanupGeneration: activeGeneration,
-        lifecycleState: 'DROP_IN_PROGRESS',
+  await coordCol.updateOne(
+    {
+      _id: dbName as unknown as import('mongodb').ObjectId,
+      runId: cleanRun,
+      cleanupGeneration: activeGeneration,
+      lifecycleState: 'DROP_IN_PROGRESS',
+      dropExecutionToken: currentDropToken,
+    },
+    {
+      $set: {
+        lifecycleState: 'CLEANED',
+        cleanupInProgress: false,
+        dropInProgress: false,
+        dropExecutionLock: false,
+        cleanedAt: new Date(),
       },
-      {
-        $set: {
-          lifecycleState: 'CLEANED',
-          cleanupInProgress: false,
-          dropInProgress: false,
-          cleanedAt: new Date(),
-        },
-      }
-    );
-  }
+    }
+  );
 }
