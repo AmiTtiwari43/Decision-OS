@@ -19,6 +19,30 @@ export const NON_TERMINAL_OPERATION_STATES: OperationState[] = [
 ];
 
 /**
+ * Safely aborts a caller-provided or active MongoDB ClientSession transaction on failure.
+ * Guarantees that any partially staged operations (e.g. journal writes) cannot be committed
+ * by callers that catch errors and proceed to commit.
+ */
+async function abortTransactionIfActive(
+  session?: mongoose.ClientSession,
+  cause?: unknown
+): Promise<void> {
+  if (session && session.inTransaction()) {
+    try {
+      await session.abortTransaction();
+    } catch (abortErr) {
+      if (cause instanceof Error) {
+        throw new Error(
+          `Failed to abort transaction (${abortErr instanceof Error ? abortErr.message : String(abortErr)}) after fencing failure: ${cause.message}`,
+          { cause: abortErr }
+        );
+      }
+      throw abortErr;
+    }
+  }
+}
+
+/**
  * Validates that lease duration is a finite, positive, bounded integer.
  * Default: 30,000ms. Min: 1,000ms. Max: 300,000ms (5 minutes).
  */
@@ -162,7 +186,17 @@ export class OperationJournalRepository {
     };
 
     if (existingSession) {
-      return executeClaim(existingSession);
+      if (existingSession.hasEnded || !existingSession.inTransaction()) {
+        throw new ConcurrencyFencingError(
+          `Journal claim failed: provided session is invalid, ended, or not in an active transaction`
+        );
+      }
+      try {
+        return await executeClaim(existingSession);
+      } catch (err) {
+        await abortTransactionIfActive(existingSession, err);
+        throw err;
+      }
     }
 
     try {
@@ -301,7 +335,17 @@ export class OperationJournalRepository {
     };
 
     if (session) {
-      return executeRenew(session);
+      if (session.hasEnded || !session.inTransaction()) {
+        throw new ConcurrencyFencingError(
+          `Lease renewal failed for operation ${operationId}: provided session is invalid, ended, or not in an active transaction`
+        );
+      }
+      try {
+        return await executeRenew(session);
+      } catch (err) {
+        await abortTransactionIfActive(session, err);
+        throw err;
+      }
     }
 
     try {
@@ -337,30 +381,41 @@ export class OperationJournalRepository {
       ? { $in: fromState }
       : fromState;
 
-    const result = await OperationJournalModel.updateOne(
-      {
-        operationId,
-        recoveryOwner: workerId,
-        fencingToken, // Guarantees this worker still holds the valid lease
-        state: stateCondition,
-        $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] }, // Database-time lease validity
-      },
-      [
+    try {
+      const result = await OperationJournalModel.updateOne(
         {
-          $set: {
-            state: toState,
-            heartbeatAt: '$$NOW',
-            ...extraFields,
-          },
+          operationId,
+          recoveryOwner: workerId,
+          fencingToken, // Guarantees this worker still holds the valid lease
+          state: stateCondition,
+          $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] }, // Database-time lease validity
         },
-      ],
-      { session, updatePipeline: true }
-    ).exec();
+        [
+          {
+            $set: {
+              state: toState,
+              heartbeatAt: '$$NOW',
+              ...extraFields,
+            },
+          },
+        ],
+        { session, updatePipeline: true }
+      ).exec();
 
-    if (result.matchedCount === 0) {
-      throw new ConcurrencyFencingError(
-        `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease or state mismatch for operation ${operationId}`
-      );
+      if (result.matchedCount === 0) {
+        const err = new ConcurrencyFencingError(
+          `Fencing violation: Worker ${workerId} with token ${fencingToken} lost lease or state mismatch for operation ${operationId}`
+        );
+        if (session) {
+          await abortTransactionIfActive(session, err);
+        }
+        throw err;
+      }
+    } catch (err) {
+      if (session) {
+        await abortTransactionIfActive(session, err);
+      }
+      throw err;
     }
   }
 

@@ -614,14 +614,14 @@ describe('Batch 4 Adversarial Regression Suite — Replica Set & Transactional R
       const eventId = 'notif-dup-check-999';
 
       let executed = 0;
-      const firstPass = await outboxService.deduplicateConsumerEvent(consumerId, eventId, async () => {
+      const firstPass = await outboxService.deduplicateConsumerEvent(consumerId, eventId, 'worker-1', async () => {
         executed++;
         return 'sent';
       });
       expect(firstPass).toBe(true); // First delivery processed
       expect(executed).toBe(1);
 
-      const duplicatePass = await outboxService.deduplicateConsumerEvent(consumerId, eventId, async () => {
+      const duplicatePass = await outboxService.deduplicateConsumerEvent(consumerId, eventId, 'worker-1', async () => {
         executed++;
         return 'sent';
       });

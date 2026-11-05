@@ -124,13 +124,20 @@ export function getTestDatabaseUri(
   return uri;
 }
 
+export type TestDatabaseLifecycleState = 'OWNED' | 'CLEANUP_LOCKED' | 'CLEANED';
+
 export interface TestDatabaseOwnershipMetadata {
   runId: string;
   workerId: string;
+  ownershipGeneration: number;
+  lifecycleState: TestDatabaseLifecycleState;
   claimedAt: Date;
+  lastClaimVerifiedAt?: Date;
   cleanupInProgress?: boolean;
   cleanupOwner?: string;
+  cleanupGeneration?: number;
   cleanupStartedAt?: Date;
+  cleanedAt?: Date;
 }
 
 /**
@@ -162,6 +169,7 @@ export function validateTestIdentity(
  * Atomically establishes test run ownership over a database.
  * Replaces read-then-upsert race with strictly atomic insertOne conditional ownership.
  * Fails closed if the database is already owned by a different runId or workerId.
+ * Strictly blocks re-entry if cleanup lock has been acquired or state is CLEANUP_LOCKED/CLEANED.
  */
 export async function claimTestDatabaseOwnership(
   connection: Connection,
@@ -193,12 +201,16 @@ export async function claimTestDatabaseOwnership(
   const metaCol = db.collection('__test_run_metadata');
 
   try {
-    // Atomic unique claim via insertOne
+    // Atomic unique claim via insertOne in OWNED state
     await metaCol.insertOne({
       _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
       runId: cleanRun,
       workerId: cleanWorker,
+      ownershipGeneration: 1,
+      lifecycleState: 'OWNED',
+      cleanupInProgress: false,
       claimedAt: new Date(),
+      lastClaimVerifiedAt: new Date(),
     });
   } catch (err: unknown) {
     const isDuplicateKey =
@@ -208,24 +220,65 @@ export async function claimTestDatabaseOwnership(
       (err as { code?: number }).code === 11000;
 
     if (isDuplicateKey) {
-      // Record already exists -> verify existing ownership identity
+      // Record already exists -> atomically verify conditional ownership re-claim.
+      // Strictly rejected if cleanup is in progress or state is CLEANUP_LOCKED / CLEANED!
+      const confirmedClaim = await metaCol.findOneAndUpdate(
+        {
+          _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
+          runId: cleanRun,
+          workerId: cleanWorker,
+          lifecycleState: 'OWNED',
+          cleanupInProgress: { $ne: true },
+        },
+        {
+          $set: {
+            lastClaimVerifiedAt: new Date(),
+          },
+        },
+        { returnDocument: 'after' }
+      );
+
+      if (confirmedClaim) {
+        // Atomic verification succeeded: same run, same worker, active OWNED state
+        return;
+      }
+
+      // Conditional verification failed -> inspect existing metadata to throw exact typed violation
       const existing = await metaCol.findOne({
         _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
       });
 
-      if (existing) {
-        const matchesRun = existing.runId === cleanRun;
-        const matchesWorker = existing.workerId === cleanWorker;
+      if (!existing) {
+        throw new Error(
+          `Test database isolation violation: ownership lock on database '${dbName}' was dropped or removed concurrently.`
+        );
+      }
 
-        if (matchesRun && matchesWorker) {
-          // Idempotent re-claim by same run and worker
-          return;
-        }
+      if (!existing.runId || !existing.workerId) {
+        throw new Error(
+          `Test database safety guard violation: database '${dbName}' has malformed or missing identity metadata.`
+        );
+      }
 
+      if (
+        existing.cleanupInProgress === true ||
+        existing.lifecycleState === 'CLEANUP_LOCKED' ||
+        existing.lifecycleState === 'CLEANED'
+      ) {
+        throw new Error(
+          `Test database safety guard violation: database '${dbName}' is locked for cleanup or already cleaned (state: '${existing.lifecycleState || 'CLEANUP_LOCKED'}'). Re-entry prohibited.`
+        );
+      }
+
+      if (existing.runId !== cleanRun || existing.workerId !== cleanWorker) {
         throw new Error(
           `Test database isolation violation: database is owned by run '${existing.runId}' worker '${existing.workerId || '0'}', cannot be claimed by run '${cleanRun}' worker '${cleanWorker}'`
         );
       }
+
+      throw new Error(
+        `Test database isolation violation: unable to acquire ownership of database '${dbName}'.`
+      );
     }
     throw err;
   }
@@ -278,6 +331,12 @@ export async function assertCanCleanupTestDatabase(
     );
   }
 
+  if (!lock.runId) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' ownership record is missing or malformed identity fields. Refusing cleanup.`
+    );
+  }
+
   if (lock.runId !== cleanRun) {
     throw new Error(
       `Safety guard violation: database '${dbName}' is owned by run '${lock.runId}' (expected '${cleanRun}'). Refusing cleanup of another run's database.`
@@ -289,22 +348,42 @@ export async function assertCanCleanupTestDatabase(
       `Safety guard violation: database '${dbName}' is owned by worker '${lock.workerId}' (expected '${cleanWorker}'). Refusing cleanup of another worker's database.`
     );
   }
+
+  if (lock.lifecycleState === 'CLEANED') {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is already cleaned.`
+    );
+  }
+
+  if (lock.cleanupInProgress === true && lock.cleanupOwner && lock.cleanupOwner !== cleanWorker) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' cleanup is in progress by another worker '${lock.cleanupOwner}'.`
+    );
+  }
 }
 
 /**
  * Safely cleans up (drops) a test database owned by the current test run and worker.
  * Uses an atomic cleanup-lock transition to eliminate concurrency race gaps between check and drop.
+ * Fenced by cleanup generation and idempotent for crash recovery retries.
  */
 export async function cleanupTestDatabase(
   connection: Connection,
   runId: string,
-  workerId: string
+  workerId: string,
+  cleanupGeneration: number = 1
 ): Promise<void> {
-  await assertCanCleanupTestDatabase(connection, runId, workerId);
-
   const { runId: cleanRun, workerId: cleanWorker } = validateTestIdentity(runId, workerId);
   const db = connection.db;
   if (!db) return;
+
+  const collections = await db.listCollections().toArray();
+  if (collections.length === 0) {
+    // Database was already dropped in a previous crash-recovery attempt
+    return;
+  }
+
+  await assertCanCleanupTestDatabase(connection, runId, workerId);
 
   const dbName = db.databaseName;
   const metaCol = db.collection('__test_run_metadata');
@@ -315,12 +394,15 @@ export async function cleanupTestDatabase(
       _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
       runId: cleanRun,
       workerId: cleanWorker,
+      lifecycleState: 'OWNED',
       cleanupInProgress: { $ne: true },
     },
     {
       $set: {
+        lifecycleState: 'CLEANUP_LOCKED',
         cleanupInProgress: true,
         cleanupOwner: cleanWorker,
+        cleanupGeneration,
         cleanupStartedAt: new Date(),
       },
     },
@@ -328,6 +410,33 @@ export async function cleanupTestDatabase(
   );
 
   if (!cleanupLock) {
+    // If atomic transition failed, check if this is an idempotent retry by the same cleanup owner
+    const existing = await metaCol.findOne({
+      _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
+    });
+
+    if (!existing) {
+      // Database was already dropped in a previous crash-recovery attempt
+      return;
+    }
+
+    if (
+      existing.runId === cleanRun &&
+      existing.cleanupOwner === cleanWorker &&
+      existing.lifecycleState === 'CLEANUP_LOCKED' &&
+      existing.cleanupGeneration === cleanupGeneration
+    ) {
+      // Idempotent retry by the same crash-recovery cleanup owner with matching generation
+      await db.dropDatabase();
+      return;
+    }
+
+    if (existing.cleanupGeneration && existing.cleanupGeneration > cleanupGeneration) {
+      throw new Error(
+        `Safety guard violation: database '${dbName}' cleanup generation ${cleanupGeneration} is superseded by newer generation ${existing.cleanupGeneration}.`
+      );
+    }
+
     throw new Error(
       `Safety guard violation: database '${dbName}' cleanup lock acquisition failed (already in progress or ownership lost).`
     );

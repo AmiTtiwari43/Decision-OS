@@ -107,24 +107,29 @@ export class OutboxRepository {
 
   /**
    * Marks a notification as successfully delivered with claim generation fencing.
+   * Both workerId and claimGeneration are strictly mandatory.
    * A stale dispatcher whose lease expired or whose generation was superseded will be rejected.
    */
   async markDelivered(
     notificationId: string,
-    workerId?: string,
-    claimGeneration?: number
+    workerId: string,
+    claimGeneration: number,
+    expectedState: string = 'CLAIMED'
   ): Promise<boolean> {
+    if (!workerId || typeof workerId !== 'string' || !workerId.trim()) {
+      throw new Error('markDelivered violation: mandatory workerId is missing or empty.');
+    }
+    if (typeof claimGeneration !== 'number' || !Number.isFinite(claimGeneration) || claimGeneration <= 0) {
+      throw new Error('markDelivered violation: mandatory claimGeneration must be a positive integer.');
+    }
+
     const filter: Record<string, unknown> = {
       notificationId,
-      status: 'CLAIMED',
+      status: expectedState,
+      dispatchOwner: workerId,
+      claimGeneration,
+      $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
     };
-    if (workerId) {
-      filter.dispatchOwner = workerId;
-      filter.$expr = { $gt: ['$leaseExpiresAt', '$$NOW'] };
-    }
-    if (claimGeneration !== undefined) {
-      filter.claimGeneration = claimGeneration;
-    }
 
     const res = await NotificationOutboxModel.updateOne(
       filter,
@@ -146,25 +151,30 @@ export class OutboxRepository {
 
   /**
    * Records a dispatch failure and resets state to PENDING for exponential backoff retry.
+   * Both workerId and claimGeneration are strictly mandatory.
    * Rejects stale dispatchers with mismatched owner, generation, or expired lease.
    */
   async markFailed(
     notificationId: string,
     error: string,
-    workerId?: string,
-    claimGeneration?: number
+    workerId: string,
+    claimGeneration: number,
+    expectedState: string = 'CLAIMED'
   ): Promise<boolean> {
+    if (!workerId || typeof workerId !== 'string' || !workerId.trim()) {
+      throw new Error('markFailed violation: mandatory workerId is missing or empty.');
+    }
+    if (typeof claimGeneration !== 'number' || !Number.isFinite(claimGeneration) || claimGeneration <= 0) {
+      throw new Error('markFailed violation: mandatory claimGeneration must be a positive integer.');
+    }
+
     const filter: Record<string, unknown> = {
       notificationId,
-      status: 'CLAIMED',
+      status: expectedState,
+      dispatchOwner: workerId,
+      claimGeneration,
+      $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
     };
-    if (workerId) {
-      filter.dispatchOwner = workerId;
-      filter.$expr = { $gt: ['$leaseExpiresAt', '$$NOW'] };
-    }
-    if (claimGeneration !== undefined) {
-      filter.claimGeneration = claimGeneration;
-    }
 
     const res = await NotificationOutboxModel.updateOne(
       filter,

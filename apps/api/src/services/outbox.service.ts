@@ -12,12 +12,31 @@ export interface DispatcherResult {
   failed: number;
 }
 
+export interface ConsumerEventContext<TPayload = Record<string, unknown>> {
+  idempotencyKey: string;
+  consumerId: string;
+  notificationId: string;
+  claimGeneration: number;
+  workerId: string;
+  attemptCount: number;
+  payload?: TPayload;
+}
+
+export interface DestinationAdapter<TResult = unknown, TPayload = Record<string, unknown>> {
+  readonly destinationName: string;
+  readonly supportsIdempotency: boolean;
+  execute: (context: ConsumerEventContext<TPayload>) => Promise<TResult>;
+}
+
 export interface ConsumerProcessingResult<T = unknown> {
   executed: boolean;
   duplicate: boolean;
   result?: T;
   error?: string;
   status: 'COMPLETED' | 'DUPLICATE' | 'LOCKED' | 'FAILED' | 'RETRYABLE_ERROR';
+  deliverySemantics: 'idempotent_destination' | 'at_least_once_risk';
+  idempotencyKey: string;
+  claimGeneration?: number;
 }
 
 export interface ConsumerClaimResult {
@@ -56,13 +75,14 @@ export class OutboxService {
     let failed = 0;
 
     for (const item of claimed) {
+      const claimGen = typeof item.claimGeneration === 'number' ? item.claimGeneration : 1;
       try {
         await dispatcherFn(item);
-        await outboxRepository.markDelivered(item.notificationId, workerId, item.claimGeneration);
+        await outboxRepository.markDelivered(item.notificationId, workerId, claimGen);
         succeeded++;
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        await outboxRepository.markFailed(item.notificationId, message, workerId, item.claimGeneration);
+        await outboxRepository.markFailed(item.notificationId, message, workerId, claimGen);
         failed++;
       }
     }
@@ -253,17 +273,34 @@ export class OutboxService {
 
   /**
    * End-to-end durable consumer execution lifecycle.
+   * Supports DestinationAdapter interface or direct side-effect execution.
    * Atomically claims lease -> executes side effect with stable idempotency key -> conditionally marks COMPLETED.
    * If a crash occurs before side effect, subsequent deliveries safely reclaim the lease.
    */
-  async processConsumerEvent<T>(
+  async processConsumerEvent<T = unknown, P = Record<string, unknown>>(
     consumerId: string,
     notificationId: string,
     workerId: string,
-    sideEffectFn: (idempotencyKey: string) => Promise<T>,
-    options?: { leaseDurationMs?: number; maxAttempts?: number }
+    adapterOrFn: DestinationAdapter<T, P> | ((idempotencyKey: string, context?: ConsumerEventContext<P>) => Promise<T>),
+    options?: {
+      leaseDurationMs?: number;
+      maxAttempts?: number;
+      payload?: P;
+      supportsIdempotency?: boolean;
+    }
   ): Promise<ConsumerProcessingResult<T>> {
+    if (!workerId || typeof workerId !== 'string' || !workerId.trim()) {
+      throw new Error('processConsumerEvent violation: mandatory workerId is missing or empty.');
+    }
+
     const idempotencyKey = `${consumerId}:${notificationId}`;
+
+    const isAdapter = typeof adapterOrFn === 'object' && adapterOrFn !== null && 'execute' in adapterOrFn;
+    const supportsIdempotency = isAdapter
+      ? Boolean(adapterOrFn.supportsIdempotency)
+      : Boolean(options?.supportsIdempotency ?? false);
+
+    const deliverySemantics = supportsIdempotency ? 'idempotent_destination' : 'at_least_once_risk';
 
     const claim = await this.claimConsumerProcessing(
       consumerId,
@@ -274,7 +311,14 @@ export class OutboxService {
     );
 
     if (claim.status === 'ALREADY_COMPLETED') {
-      return { executed: false, duplicate: true, status: 'DUPLICATE' };
+      return {
+        executed: false,
+        duplicate: true,
+        status: 'DUPLICATE',
+        deliverySemantics,
+        idempotencyKey,
+        claimGeneration: claim.record?.claimGeneration,
+      };
     }
 
     if (claim.status === 'LOCKED') {
@@ -282,6 +326,8 @@ export class OutboxService {
         executed: false,
         duplicate: false,
         status: 'LOCKED',
+        deliverySemantics,
+        idempotencyKey,
         error: 'Notification currently locked by another worker',
       };
     }
@@ -291,12 +337,27 @@ export class OutboxService {
         executed: false,
         duplicate: false,
         status: 'FAILED',
+        deliverySemantics,
+        idempotencyKey,
         error: 'Maximum retry limit exceeded for notification',
       };
     }
 
+    const context: ConsumerEventContext<P> = {
+      idempotencyKey,
+      consumerId,
+      notificationId,
+      claimGeneration: claim.claimGeneration!,
+      workerId,
+      attemptCount: claim.record?.attemptCount ?? 1,
+      payload: options?.payload,
+    };
+
     try {
-      const result = await sideEffectFn(idempotencyKey);
+      const result = isAdapter
+        ? await adapterOrFn.execute(context)
+        : await adapterOrFn(idempotencyKey, context);
+
       const completed = await this.completeConsumerProcessing(
         consumerId,
         notificationId,
@@ -310,11 +371,22 @@ export class OutboxService {
           duplicate: false,
           result,
           status: 'RETRYABLE_ERROR',
+          deliverySemantics,
+          idempotencyKey,
+          claimGeneration: claim.claimGeneration,
           error: 'Side effect executed but completion rejected due to expired lease or superseded worker',
         };
       }
 
-      return { executed: true, duplicate: false, result, status: 'COMPLETED' };
+      return {
+        executed: true,
+        duplicate: false,
+        result,
+        status: 'COMPLETED',
+        deliverySemantics,
+        idempotencyKey,
+        claimGeneration: claim.claimGeneration,
+      };
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
       await this.failConsumerProcessing(
@@ -330,25 +402,27 @@ export class OutboxService {
 
   /**
    * Safe consumer deduplication wrapper.
-   * Requires sideEffectFn to ensure completion is never marked before external side effect succeeds.
-   * Rejects unsafe invocation without side effect execution.
+   * Requires explicit workerId and sideEffect execution to prevent default identity inference.
+   * Rejects unsafe legacy invocation without worker identity or side effect execution.
    */
-  async deduplicateConsumerEvent(
+  async deduplicateConsumerEvent<T = unknown>(
     consumerId: string,
     notificationId: string,
-    sideEffectFn?: (idempotencyKey: string) => Promise<unknown>
+    workerOrSideEffect?: string | ((key: string, ctx?: ConsumerEventContext) => Promise<T>),
+    sideEffectFn?: (key: string, ctx?: ConsumerEventContext) => Promise<T>
   ): Promise<boolean> {
-    if (sideEffectFn) {
+    if (typeof workerOrSideEffect === 'string' && (typeof sideEffectFn === 'function' || typeof sideEffectFn === 'object')) {
       const res = await this.processConsumerEvent(
         consumerId,
         notificationId,
-        'default-worker',
+        workerOrSideEffect,
         sideEffectFn
       );
       return res.status === 'COMPLETED';
     }
+
     throw new Error(
-      'Unsafe legacy deduplicateConsumerEvent invocation without side-effect execution is removed. Use processConsumerEvent(consumerId, notificationId, workerId, sideEffectFn) or provide sideEffectFn.'
+      'Unsafe legacy deduplicateConsumerEvent invocation without side-effect execution is removed. Use processConsumerEvent(consumerId, notificationId, workerId, destinationAdapter) or supply explicit workerId and sideEffectFn.'
     );
   }
 

@@ -293,7 +293,9 @@ describe('BATCH 4 V3.1 COMPREHENSIVE ADVERSARIAL REMEDIATION SUITE', () => {
           )
         ).rejects.toThrowError(ConcurrencyFencingError);
       } finally {
-        await session.abortTransaction();
+        if (session.inTransaction()) {
+          await session.abortTransaction();
+        }
         await session.endSession();
       }
     });

@@ -197,7 +197,9 @@ describe('BATCH 4 V3.1 BASELINE REPRODUCTION & INVARIANT VERIFICATION SUITE', ()
           )
         ).rejects.toThrow(ConcurrencyFencingError);
       } finally {
-        await session.abortTransaction();
+        if (session.inTransaction()) {
+          await session.abortTransaction();
+        }
         await session.endSession();
       }
     });

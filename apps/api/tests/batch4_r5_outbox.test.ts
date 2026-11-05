@@ -151,7 +151,7 @@ describe('Batch 4 Phase 5 — Durable Notification Outbox & Consumer Deduplicati
 
     let sideEffectExecutionCount = 0;
     const processNotification = async (notifId: string) => {
-      await outboxService.deduplicateConsumerEvent(consumerId, notifId, async () => {
+      await outboxService.deduplicateConsumerEvent(consumerId, notifId, 'worker-consumer-1', async () => {
         sideEffectExecutionCount++;
         return 'processed';
       });
@@ -175,8 +175,8 @@ describe('Batch 4 Phase 5 — Durable Notification Outbox & Consumer Deduplicati
     const notificationId = crypto.randomUUID();
 
     let executions = 0;
-    const executeFanout = async () => {
-      const isNew = await outboxService.deduplicateConsumerEvent(consumerId, notificationId, async () => {
+    const executeFanout = async (workerId: string) => {
+      const isNew = await outboxService.deduplicateConsumerEvent(consumerId, notificationId, workerId, async () => {
         executions++;
         return 'executed';
       });
@@ -188,11 +188,11 @@ describe('Batch 4 Phase 5 — Durable Notification Outbox & Consumer Deduplicati
 
     // 5 concurrent attempts to process the exact same notification
     const results = await Promise.all([
-      executeFanout(),
-      executeFanout(),
-      executeFanout(),
-      executeFanout(),
-      executeFanout(),
+      executeFanout('worker-1'),
+      executeFanout('worker-2'),
+      executeFanout('worker-3'),
+      executeFanout('worker-4'),
+      executeFanout('worker-5'),
     ]);
 
     expect(executions).toBe(1);
