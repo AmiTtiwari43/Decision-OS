@@ -881,19 +881,55 @@ describe('BATCH 4 V3.2 ADVERSARIAL VERIFICATION & CLOSURE SUITE', () => {
       }
     });
 
-    it('D6-T7: Crash after drop: caller retry is safe when database is already removed', async () => {
+    it('D6-T7: End-to-end crash-after-drop recovery: establishes ownership, acquires cleanup lock, drops DB, injects crash before completion, and retries safely', async () => {
       const conn = mongoose.connection;
       const runId = 'run-d6-t7';
       const workerId = 'worker-t7';
 
-      // Simulate database already dropped: collections are dropped
-      const collections = await conn.db!.listCollections().toArray();
-      for (const col of collections) {
-        await conn.db!.dropCollection(col.name);
+      // 1. Establish valid ownership
+      await claimTestDatabaseOwnership(conn, runId, workerId);
+
+      const dbName = conn.db!.databaseName;
+      const coordCol = conn.getClient().db('decision_os_test_coordination_test').collection('cleanup_registry');
+
+      // 2 & 3. Acquire cleanup lock and drop database
+      // 4. Inject failure after database drop succeeds but before completion record is persisted
+      const origDrop = conn.db!.dropDatabase.bind(conn.db);
+      conn.db!.dropDatabase = async () => {
+        await origDrop();
+        // Database is now dropped (collections count is 0).
+        // Simulate crash right here by throwing before registry is updated to CLEANED!
+        throw new Error('SIMULATED_POST_DROP_CRASH');
+      };
+
+      try {
+        await expect(cleanupTestDatabase(conn, runId, workerId, 1)).rejects.toThrow('SIMULATED_POST_DROP_CRASH');
+      } finally {
+        conn.db!.dropDatabase = origDrop;
       }
 
-      // Retrying cleanup on dropped DB must safely complete without error
+      // 5. Verify database has 0 collections, and registry is in CLEANUP_LOCKED
+      const collections = await conn.db!.listCollections().toArray();
+      expect(collections.length).toBe(0);
+
+      const regBefore = await coordCol.findOne({ _id: dbName as unknown as import('mongodb').ObjectId });
+      expect(regBefore?.lifecycleState).toBe('CLEANUP_LOCKED');
+      expect(regBefore?.cleanupOwner).toBe(workerId);
+
+      // 6 & 7. Retry cleanup using the exact same run and cleanup identity
       await expect(cleanupTestDatabase(conn, runId, workerId, 1)).resolves.toBeUndefined();
+
+      // 8. Verify the independent cleanup record reaches CLEANED exactly once
+      const regAfter = await coordCol.findOne({ _id: dbName as unknown as import('mongodb').ObjectId });
+      expect(regAfter?.lifecycleState).toBe('CLEANED');
+
+      // 9. Verify a different worker cannot claim or continue cleanup
+      await expect(cleanupTestDatabase(conn, runId, 'different-worker', 1)).rejects.toThrow();
+
+      // 10. Verify an old generation cannot continue cleanup
+      await expect(cleanupTestDatabase(conn, runId, workerId, 0)).rejects.toThrow(
+        /cleanup generation 0 is superseded by newer generation 1/
+      );
     });
 
     it('D6-T8: Reserved databases (admin, local, config, production) are strictly protected', async () => {

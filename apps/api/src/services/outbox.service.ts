@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { outboxRepository } from '../repositories/outbox.repository.js';
 import {
@@ -6,10 +7,30 @@ import {
   type NotificationConsumerRecordDocument,
 } from '../models/index.js';
 
+export function computePayloadHash(payload: unknown): string {
+  if (payload === undefined || payload === null) {
+    return 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+  }
+  const serialized = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  return crypto.createHash('sha256').update(serialized).digest('hex');
+}
+
+export type DispatchOutcome = 'DELIVERED' | 'ACKNOWLEDGEMENT_LOST' | 'DESTINATION_FAILED' | 'CLAIM_LOST';
+
+export interface DispatchEventDetail {
+  notificationId: string;
+  outcome: DispatchOutcome;
+  claimGeneration: number;
+  error?: string;
+}
+
 export interface DispatcherResult {
   processed: number;
   succeeded: number;
   failed: number;
+  acknowledgementLost: number;
+  claimLost: number;
+  events: DispatchEventDetail[];
 }
 
 export interface ConsumerEventContext<TPayload = Record<string, unknown>> {
@@ -20,6 +41,8 @@ export interface ConsumerEventContext<TPayload = Record<string, unknown>> {
   workerId: string;
   attemptCount: number;
   payload?: TPayload;
+  payloadHash?: string;
+  destinationName?: string;
 }
 
 export interface DestinationAdapter<TResult = unknown, TPayload = Record<string, unknown>> {
@@ -70,20 +93,58 @@ export class OutboxService {
     limit: number = 10,
     dispatcherFn: (event: NotificationOutboxDocument) => Promise<void>
   ): Promise<DispatcherResult> {
+    if (!workerId || typeof workerId !== 'string' || !workerId.trim()) {
+      throw new Error('dispatchPending requires a valid, non-empty workerId');
+    }
+
     const claimed = await outboxRepository.claimPending(workerId, limit);
     let succeeded = 0;
     let failed = 0;
+    let acknowledgementLost = 0;
+    let claimLost = 0;
+    const events: DispatchEventDetail[] = [];
 
     for (const item of claimed) {
       const claimGen = typeof item.claimGeneration === 'number' ? item.claimGeneration : 1;
       try {
         await dispatcherFn(item);
-        await outboxRepository.markDelivered(item.notificationId, workerId, claimGen);
-        succeeded++;
+        const acked = await outboxRepository.markDelivered(item.notificationId, workerId, claimGen);
+        if (acked) {
+          succeeded++;
+          events.push({
+            notificationId: item.notificationId,
+            outcome: 'DELIVERED',
+            claimGeneration: claimGen,
+          });
+        } else {
+          acknowledgementLost++;
+          events.push({
+            notificationId: item.notificationId,
+            outcome: 'ACKNOWLEDGEMENT_LOST',
+            claimGeneration: claimGen,
+            error: 'Destination execution succeeded but outbox acknowledgement was rejected (claim lost or expired)',
+          });
+        }
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
-        await outboxRepository.markFailed(item.notificationId, message, workerId, claimGen);
-        failed++;
+        const failRecorded = await outboxRepository.markFailed(item.notificationId, message, workerId, claimGen);
+        if (failRecorded) {
+          failed++;
+          events.push({
+            notificationId: item.notificationId,
+            outcome: 'DESTINATION_FAILED',
+            claimGeneration: claimGen,
+            error: message,
+          });
+        } else {
+          claimLost++;
+          events.push({
+            notificationId: item.notificationId,
+            outcome: 'CLAIM_LOST',
+            claimGeneration: claimGen,
+            error: `Destination execution failed (${message}) and failure could not be recorded (claim lost or expired)`,
+          });
+        }
       }
     }
 
@@ -91,6 +152,9 @@ export class OutboxService {
       processed: claimed.length,
       succeeded,
       failed,
+      acknowledgementLost,
+      claimLost,
+      events,
     };
   }
 
@@ -249,6 +313,13 @@ export class OutboxService {
     error: string,
     session?: mongoose.ClientSession
   ): Promise<boolean> {
+    if (!workerId || typeof workerId !== 'string' || !workerId.trim()) {
+      throw new Error('failConsumerProcessing requires a valid, non-empty workerId');
+    }
+    if (typeof claimGeneration !== 'number' || !Number.isFinite(claimGeneration)) {
+      throw new Error('failConsumerProcessing requires a valid numeric claimGeneration');
+    }
+
     const res = await NotificationConsumerRecordModel.updateOne(
       {
         consumerId,
@@ -256,16 +327,23 @@ export class OutboxService {
         processingOwner: workerId,
         claimGeneration,
         status: 'PROCESSING',
+        $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
       },
-      {
-        $set: {
-          status: 'FAILED',
-          lastError: error,
-          processingOwner: null,
-          leaseExpiresAt: null,
+      [
+        {
+          $set: {
+            status: 'FAILED',
+            lastError: error,
+            failedAt: '$$NOW',
+            processingOwner: null,
+            leaseExpiresAt: null,
+          },
         },
-      },
-      session ? { session } : undefined
+      ],
+      {
+        session,
+        updatePipeline: true,
+      }
     ).exec();
 
     return res.matchedCount === 1;
@@ -351,6 +429,8 @@ export class OutboxService {
       workerId,
       attemptCount: claim.record?.attemptCount ?? 1,
       payload: options?.payload,
+      payloadHash: computePayloadHash(options?.payload),
+      destinationName: isAdapter ? adapterOrFn.destinationName : undefined,
     };
 
     try {
