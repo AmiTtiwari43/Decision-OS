@@ -742,7 +742,7 @@ describe('Batch 4 Remediation V3 — Adversarial Verification Suite', () => {
       await metaCol.deleteMany({});
 
       await expect(
-        assertCanCleanupTestDatabase(mongoose.connection, 'any-run-id')
+        assertCanCleanupTestDatabase(mongoose.connection, 'any-run-id', 'worker-1')
       ).rejects.toThrowError(/has no ownership lock metadata\. Refusing cleanup\./);
     });
 
@@ -750,12 +750,12 @@ describe('Batch 4 Remediation V3 — Adversarial Verification Suite', () => {
       const fakeConnection = {
         db: {
           databaseName: 'production',
-          collection: () => ({ findOne: async () => ({ runId: 'run-prod' }) }),
+          collection: () => ({ findOne: async () => ({ runId: 'run-prod', workerId: 'worker-1' }) }),
         },
       } as unknown as mongoose.Connection;
 
       await expect(
-        assertCanCleanupTestDatabase(fakeConnection, 'run-prod')
+        assertCanCleanupTestDatabase(fakeConnection, 'run-prod', 'worker-1')
       ).rejects.toThrowError(/Safety guard violation/);
     });
   });

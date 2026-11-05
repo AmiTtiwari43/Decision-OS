@@ -42,22 +42,21 @@ export class OutboxRepository {
   }
 
   /**
-   * Atomically claims unleased or expired pending notifications for dispatch.
+   * Atomically claims unleased or expired pending notifications for dispatch using database server-time.
    */
   async claimPending(
     workerId: string,
     limit: number = 10,
     leaseDurationMs: number = 30000
   ): Promise<NotificationOutboxDocument[]> {
-    const now = new Date();
-    const leaseExpiration = new Date(now.getTime() + leaseDurationMs);
+    const validDuration = Math.min(Math.max(1000, leaseDurationMs || 30000), 300000);
 
     const candidates = await NotificationOutboxModel.find({
       status: { $in: ['PENDING', 'CLAIMED'] },
       $or: [
         { status: 'PENDING' },
         { leaseExpiresAt: null },
-        { leaseExpiresAt: { $lt: now } },
+        { $expr: { $lt: ['$leaseExpiresAt', '$$NOW'] } },
       ],
       retryCount: { $lt: 5 },
     })
@@ -73,18 +72,30 @@ export class OutboxRepository {
           $or: [
             { status: 'PENDING' },
             { leaseExpiresAt: null },
-            { leaseExpiresAt: { $lt: now } },
+            { $expr: { $lt: ['$leaseExpiresAt', '$$NOW'] } },
           ],
         },
-        {
-          $set: {
-            status: 'CLAIMED',
-            dispatchOwner: workerId,
-            leaseExpiresAt: leaseExpiration,
+        [
+          {
+            $set: {
+              status: 'CLAIMED',
+              dispatchOwner: workerId,
+              leaseExpiresAt: {
+                $dateAdd: {
+                  startDate: '$$NOW',
+                  unit: 'millisecond',
+                  amount: validDuration,
+                },
+              },
+              retryCount: { $add: [{ $ifNull: ['$retryCount', 0] }, 1] },
+              claimGeneration: { $add: [{ $ifNull: ['$claimGeneration', 0] }, 1] },
+            },
           },
-          $inc: { retryCount: 1, claimGeneration: 1 },
-        },
-        { new: true }
+        ],
+        {
+          returnDocument: 'after',
+          updatePipeline: true,
+        }
       ).exec();
 
       if (updated) {
@@ -103,14 +114,13 @@ export class OutboxRepository {
     workerId?: string,
     claimGeneration?: number
   ): Promise<boolean> {
-    const now = new Date();
     const filter: Record<string, unknown> = {
       notificationId,
       status: 'CLAIMED',
     };
     if (workerId) {
       filter.dispatchOwner = workerId;
-      filter.leaseExpiresAt = { $gt: now };
+      filter.$expr = { $gt: ['$leaseExpiresAt', '$$NOW'] };
     }
     if (claimGeneration !== undefined) {
       filter.claimGeneration = claimGeneration;
@@ -118,14 +128,17 @@ export class OutboxRepository {
 
     const res = await NotificationOutboxModel.updateOne(
       filter,
-      {
-        $set: {
-          status: 'DELIVERED',
-          deliveredAt: now,
-          leaseExpiresAt: null,
-          dispatchOwner: null,
+      [
+        {
+          $set: {
+            status: 'DELIVERED',
+            deliveredAt: '$$NOW',
+            leaseExpiresAt: null,
+            dispatchOwner: null,
+          },
         },
-      }
+      ],
+      { updatePipeline: true }
     ).exec();
 
     return res.matchedCount === 1;
@@ -141,14 +154,13 @@ export class OutboxRepository {
     workerId?: string,
     claimGeneration?: number
   ): Promise<boolean> {
-    const now = new Date();
     const filter: Record<string, unknown> = {
       notificationId,
       status: 'CLAIMED',
     };
     if (workerId) {
       filter.dispatchOwner = workerId;
-      filter.leaseExpiresAt = { $gt: now };
+      filter.$expr = { $gt: ['$leaseExpiresAt', '$$NOW'] };
     }
     if (claimGeneration !== undefined) {
       filter.claimGeneration = claimGeneration;

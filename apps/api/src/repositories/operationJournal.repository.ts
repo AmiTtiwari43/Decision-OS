@@ -18,6 +18,22 @@ export const NON_TERMINAL_OPERATION_STATES: OperationState[] = [
   'COMPENSATING',
 ];
 
+/**
+ * Validates that lease duration is a finite, positive, bounded integer.
+ * Default: 30,000ms. Min: 1,000ms. Max: 300,000ms (5 minutes).
+ */
+export function validateLeaseDuration(
+  durationMs: unknown,
+  defaultMs = 30000,
+  minMs = 1000,
+  maxMs = 300000
+): number {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return defaultMs;
+  }
+  return Math.max(minMs, Math.min(Math.floor(durationMs), maxMs));
+}
+
 export class OperationJournalRepository {
   /**
    * Creates a new pending operation journal entry.
@@ -67,7 +83,7 @@ export class OperationJournalRepository {
   }
 
   /**
-   * Atomically claims an unleased or expired operation journal entry.
+   * Atomically claims an unleased or expired operation journal entry using MongoDB server-derived time.
    * Monotonically increments fencingToken and retryCount.
    */
   async claimJournalOperation(
@@ -76,10 +92,9 @@ export class OperationJournalRepository {
     operationId?: string,
     existingSession?: mongoose.ClientSession
   ): Promise<OperationJournalDocument | null> {
-    const executeClaim = async (session?: mongoose.ClientSession) => {
-      const now = new Date();
-      const leaseExpiration = new Date(now.getTime() + leaseDurationMs);
+    const validDuration = validateLeaseDuration(leaseDurationMs);
 
+    const executeClaim = async (session?: mongoose.ClientSession) => {
       const query: Record<string, unknown> = {
         state: { $in: NON_TERMINAL_OPERATION_STATES },
         $or: [
@@ -95,23 +110,31 @@ export class OperationJournalRepository {
         query.operationId = operationId;
       }
 
+      // MongoDB server-time update pipeline: $$NOW and $dateAdd
       const claimed = await OperationJournalModel.findOneAndUpdate(
         query,
-        {
-          $set: {
-            recoveryOwner: workerId,
-            leaseExpiresAt: leaseExpiration,
-            heartbeatAt: now,
+        [
+          {
+            $set: {
+              recoveryOwner: workerId,
+              heartbeatAt: '$$NOW',
+              leaseExpiresAt: {
+                $dateAdd: {
+                  startDate: '$$NOW',
+                  unit: 'millisecond',
+                  amount: validDuration,
+                },
+              },
+              fencingToken: { $add: [{ $ifNull: ['$fencingToken', 0] }, 1] },
+              retryCount: { $add: [{ $ifNull: ['$retryCount', 0] }, 1] },
+            },
           },
-          $inc: {
-            fencingToken: 1, // Monotonically increasing generation number
-            retryCount: 1,
-          },
-        },
+        ],
         {
-          new: true,
+          returnDocument: 'after',
           sort: { createdAt: 1 }, // FIFO oldest first
           session,
+          updatePipeline: true,
         }
       ).exec();
 
@@ -119,13 +142,13 @@ export class OperationJournalRepository {
         return null;
       }
 
-      // Immediately bind ownership and fencing generation to the Decision document.
+      // Bind ownership and exact server-derived lease timestamp to the Decision document.
       // In a transaction, this guarantees journal claim and decision lease binding are atomic.
       const bound = await this.bindDecisionLease(
         claimed.decisionId.toString(),
         workerId,
         claimed.fencingToken,
-        leaseExpiration,
+        claimed.leaseExpiresAt!,
         session
       );
 
@@ -189,9 +212,13 @@ export class OperationJournalRepository {
   }
 
   /**
-   * Renews the recovery lease during active processing.
+   * Renews the recovery lease during active processing using server-side time ($$NOW + $dateAdd).
    * Conditional on { operationId, recoveryOwner: workerId, fencingToken }.
-   * Returns false if lease was lost or token was superseded.
+   *
+   * Transaction Contract:
+   * When caller provides an existing ClientSession, failures throw ConcurrencyFencingError
+   * to guarantee the caller's transaction is aborted and partial state is never committed.
+   * When internally managed, catches the error and returns false.
    */
   async renewOperationLease(
     operationId: string,
@@ -201,28 +228,45 @@ export class OperationJournalRepository {
     decisionId?: string,
     session?: mongoose.ClientSession
   ): Promise<boolean> {
-    const newExpiration = new Date(Date.now() + leaseDurationMs);
+    const validDuration = validateLeaseDuration(leaseDurationMs);
 
     const executeRenew = async (sess?: mongoose.ClientSession): Promise<boolean> => {
       // CRITICAL (F2): A heartbeat must NEVER resurrect an expired lease.
       // Strict database-time server check $$NOW and matching owner + fencingToken.
-      const result = await OperationJournalModel.updateOne(
+      const journalDoc = await OperationJournalModel.findOneAndUpdate(
         {
           operationId,
           recoveryOwner: workerId,
           fencingToken, // Strict fencing token match
           $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
         },
-        {
-          $set: {
-            leaseExpiresAt: newExpiration,
-            heartbeatAt: new Date(),
+        [
+          {
+            $set: {
+              heartbeatAt: '$$NOW',
+              leaseExpiresAt: {
+                $dateAdd: {
+                  startDate: '$$NOW',
+                  unit: 'millisecond',
+                  amount: validDuration,
+                },
+              },
+            },
           },
-        },
-        { session: sess }
+        ],
+        {
+          returnDocument: 'after',
+          session: sess,
+          updatePipeline: true,
+        }
       ).exec();
 
-      if (result.matchedCount === 0) {
+      if (!journalDoc) {
+        if (session) {
+          throw new ConcurrencyFencingError(
+            `Lease renewal failed for operation ${operationId}: journal lease expired or superseded`
+          );
+        }
         return false;
       }
 
@@ -237,13 +281,18 @@ export class OperationJournalRepository {
           },
           {
             $set: {
-              recoveryLeaseExpiresAt: newExpiration,
+              recoveryLeaseExpiresAt: journalDoc.leaseExpiresAt,
             },
           },
           { session: sess }
         ).exec();
 
         if (decRes.matchedCount === 0) {
+          if (session) {
+            throw new ConcurrencyFencingError(
+              `Lease renewal failed for decision ${decisionId}: decision quarantined or lease expired`
+            );
+          }
           return false;
         }
       }
@@ -296,14 +345,16 @@ export class OperationJournalRepository {
         state: stateCondition,
         $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] }, // Database-time lease validity
       },
-      {
-        $set: {
-          state: toState,
-          heartbeatAt: new Date(),
-          ...extraFields,
+      [
+        {
+          $set: {
+            state: toState,
+            heartbeatAt: '$$NOW',
+            ...extraFields,
+          },
         },
-      },
-      { session }
+      ],
+      { session, updatePipeline: true }
     ).exec();
 
     if (result.matchedCount === 0) {

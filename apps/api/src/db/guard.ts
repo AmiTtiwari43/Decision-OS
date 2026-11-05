@@ -126,14 +126,38 @@ export function getTestDatabaseUri(
 
 export interface TestDatabaseOwnershipMetadata {
   runId: string;
-  workerId?: string;
+  workerId: string;
   claimedAt: Date;
+  cleanupInProgress?: boolean;
+  cleanupOwner?: string;
+  cleanupStartedAt?: Date;
 }
 
 /**
- * Atomically establishes test run ownership over a database.
- * Fails closed if the database is already owned by a different runId.
+ * Validates that both runId and workerId are provided, non-empty, and well-formed.
+ * Prevents identity omissions or cross-worker impersonation during test DB lifecycle.
  */
+export function validateTestIdentity(
+  runId: unknown,
+  workerId: unknown
+): { runId: string; workerId: string } {
+  if (typeof runId !== 'string' || !runId.trim()) {
+    throw new Error('Test database safety guard violation: mandatory runId is missing or empty.');
+  }
+  if (typeof workerId !== 'string' || !workerId.trim()) {
+    throw new Error('Test database safety guard violation: mandatory workerId is missing or empty.');
+  }
+  const cleanRun = runId.trim();
+  const cleanWorker = workerId.trim();
+  if (!/^[a-zA-Z0-9_-]+$/.test(cleanRun)) {
+    throw new Error(`Test database safety guard violation: malformed runId '${cleanRun}'.`);
+  }
+  if (!/^[a-zA-Z0-9_-]+$/.test(cleanWorker)) {
+    throw new Error(`Test database safety guard violation: malformed workerId '${cleanWorker}'.`);
+  }
+  return { runId: cleanRun, workerId: cleanWorker };
+}
+
 /**
  * Atomically establishes test run ownership over a database.
  * Replaces read-then-upsert race with strictly atomic insertOne conditional ownership.
@@ -142,20 +166,16 @@ export interface TestDatabaseOwnershipMetadata {
 export async function claimTestDatabaseOwnership(
   connection: Connection,
   runId: string,
-  workerId?: string
+  workerId: string
 ): Promise<void> {
+  const { runId: cleanRun, workerId: cleanWorker } = validateTestIdentity(runId, workerId);
+
   const db = connection.db;
   if (!db) {
     throw new Error('claimTestDatabaseOwnership: connection has no active db handle');
   }
 
   const dbName = db.databaseName;
-  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)+$/.test(dbName);
-  if (!isTestDb) {
-    throw new Error(
-      `Test database safety guard violation: database '${dbName}' is not a designated test database. Refusing claim.`
-    );
-  }
 
   if (dbName === 'production' || dbName === 'admin' || dbName === 'local' || dbName === 'config') {
     throw new Error(
@@ -163,15 +183,21 @@ export async function claimTestDatabaseOwnership(
     );
   }
 
+  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)+$/.test(dbName);
+  if (!isTestDb) {
+    throw new Error(
+      `Test database safety guard violation: database '${dbName}' is not a designated test database. Refusing claim.`
+    );
+  }
+
   const metaCol = db.collection('__test_run_metadata');
-  const normalizedWorker = workerId || '0';
 
   try {
     // Atomic unique claim via insertOne
     await metaCol.insertOne({
       _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
-      runId,
-      workerId: normalizedWorker,
+      runId: cleanRun,
+      workerId: cleanWorker,
       claimedAt: new Date(),
     });
   } catch (err: unknown) {
@@ -188,8 +214,8 @@ export async function claimTestDatabaseOwnership(
       });
 
       if (existing) {
-        const matchesRun = existing.runId === runId;
-        const matchesWorker = !workerId || existing.workerId === normalizedWorker;
+        const matchesRun = existing.runId === cleanRun;
+        const matchesWorker = existing.workerId === cleanWorker;
 
         if (matchesRun && matchesWorker) {
           // Idempotent re-claim by same run and worker
@@ -197,7 +223,7 @@ export async function claimTestDatabaseOwnership(
         }
 
         throw new Error(
-          `Test database isolation violation: database is owned by run '${existing.runId}' worker '${existing.workerId || '0'}', cannot be claimed by run '${runId}' worker '${normalizedWorker}'`
+          `Test database isolation violation: database is owned by run '${existing.runId}' worker '${existing.workerId || '0'}', cannot be claimed by run '${cleanRun}' worker '${cleanWorker}'`
         );
       }
     }
@@ -208,28 +234,32 @@ export async function claimTestDatabaseOwnership(
 /**
  * Asserts that the connected database is owned by the specified runId and workerId, and safe to clean up.
  * Throws if the database cannot be verified as belonging to the current test run and worker.
+ * Both runId and workerId are strictly mandatory.
  */
 export async function assertCanCleanupTestDatabase(
   connection: Connection,
-  expectedRunId: string,
-  expectedWorkerId?: string
+  runId: string,
+  workerId: string
 ): Promise<void> {
+  const { runId: cleanRun, workerId: cleanWorker } = validateTestIdentity(runId, workerId);
+
   const db = connection.db;
   if (!db) {
     throw new Error('assertCanCleanupTestDatabase: connection has no active db handle');
   }
 
   const dbName = db.databaseName;
-  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)+$/.test(dbName);
-  if (!isTestDb) {
-    throw new Error(
-      `Safety guard violation: database '${dbName}' is not a designated test database. Refusing cleanup.`
-    );
-  }
 
   if (dbName === 'production' || dbName === 'admin' || dbName === 'local' || dbName === 'config') {
     throw new Error(
       `Safety guard violation: refusing cleanup on reserved/production database '${dbName}'.`
+    );
+  }
+
+  const isTestDb = dbName.endsWith('_test') || /_test(?:_[a-zA-Z0-9_-]+)+$/.test(dbName);
+  if (!isTestDb) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is not a designated test database. Refusing cleanup.`
     );
   }
 
@@ -242,30 +272,66 @@ export async function assertCanCleanupTestDatabase(
     );
   }
 
-  if (lock.runId !== expectedRunId) {
+  if (!lock.workerId) {
     throw new Error(
-      `Safety guard violation: database '${dbName}' is owned by run '${lock.runId}' (expected '${expectedRunId}'). Refusing cleanup of another run's database.`
+      `Safety guard violation: database '${dbName}' ownership record is missing workerId. Refusing cleanup.`
     );
   }
 
-  if (expectedWorkerId !== undefined && lock.workerId !== undefined && lock.workerId !== expectedWorkerId) {
+  if (lock.runId !== cleanRun) {
     throw new Error(
-      `Safety guard violation: database '${dbName}' is owned by worker '${lock.workerId}' (expected '${expectedWorkerId}'). Refusing cleanup of another worker's database.`
+      `Safety guard violation: database '${dbName}' is owned by run '${lock.runId}' (expected '${cleanRun}'). Refusing cleanup of another run's database.`
+    );
+  }
+
+  if (lock.workerId !== cleanWorker) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' is owned by worker '${lock.workerId}' (expected '${cleanWorker}'). Refusing cleanup of another worker's database.`
     );
   }
 }
 
 /**
  * Safely cleans up (drops) a test database owned by the current test run and worker.
+ * Uses an atomic cleanup-lock transition to eliminate concurrency race gaps between check and drop.
  */
 export async function cleanupTestDatabase(
   connection: Connection,
   runId: string,
-  workerId?: string
+  workerId: string
 ): Promise<void> {
   await assertCanCleanupTestDatabase(connection, runId, workerId);
+
+  const { runId: cleanRun, workerId: cleanWorker } = validateTestIdentity(runId, workerId);
   const db = connection.db;
-  if (db) {
-    await db.dropDatabase();
+  if (!db) return;
+
+  const dbName = db.databaseName;
+  const metaCol = db.collection('__test_run_metadata');
+
+  // Atomically acquire cleanup lock to prevent competing cleanup or ownership changes
+  const cleanupLock = await metaCol.findOneAndUpdate(
+    {
+      _id: 'ownership_lock' as unknown as import('mongodb').ObjectId,
+      runId: cleanRun,
+      workerId: cleanWorker,
+      cleanupInProgress: { $ne: true },
+    },
+    {
+      $set: {
+        cleanupInProgress: true,
+        cleanupOwner: cleanWorker,
+        cleanupStartedAt: new Date(),
+      },
+    },
+    { returnDocument: 'after' }
+  );
+
+  if (!cleanupLock) {
+    throw new Error(
+      `Safety guard violation: database '${dbName}' cleanup lock acquisition failed (already in progress or ownership lost).`
+    );
   }
+
+  await db.dropDatabase();
 }

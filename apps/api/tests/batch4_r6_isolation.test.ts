@@ -70,10 +70,10 @@ describe('Batch 4 Phase 6 — Test Database Isolation, Safety Guards & Cleanup F
       await conn.collection('dummy').insertOne({ test: 1 });
 
       // Verifying assertCanCleanup passes
-      await expect(assertCanCleanupTestDatabase(conn, runId)).resolves.not.toThrow();
+      await expect(assertCanCleanupTestDatabase(conn, runId, '0')).resolves.not.toThrow();
 
       // Clean drop
-      await cleanupTestDatabase(conn, runId);
+      await cleanupTestDatabase(conn, runId, '0');
 
       const dbList = await conn.db?.admin().listDatabases();
       const dbName = getDatabaseNameFromUri(uri);
@@ -99,7 +99,7 @@ describe('Batch 4 Phase 6 — Test Database Isolation, Safety Guards & Cleanup F
       );
 
       // Attempting to cleanup with runB must fail closed
-      await expect(cleanupTestDatabase(conn, runB)).rejects.toThrow(
+      await expect(cleanupTestDatabase(conn, runB, '0')).rejects.toThrow(
         /Refusing cleanup of another run's database/
       );
     } finally {

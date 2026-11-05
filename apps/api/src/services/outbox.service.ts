@@ -75,7 +75,7 @@ export class OutboxService {
   }
 
   /**
-   * Atomically claims or reclaims a consumer notification processing lease.
+   * Atomically claims or reclaims a consumer notification processing lease using MongoDB server-derived time ($$NOW + $dateAdd).
    * Guards against race conditions, reclaims expired leases, and rejects already-completed notifications.
    */
   async claimConsumerProcessing(
@@ -86,62 +86,46 @@ export class OutboxService {
     maxAttempts: number = 5,
     session?: mongoose.ClientSession
   ): Promise<ConsumerClaimResult> {
+    const validDuration = Math.min(Math.max(1000, leaseDurationMs || 30000), 300000);
     const idempotencyKey = `${consumerId}:${notificationId}`;
-    const leaseExpiration = new Date(Date.now() + leaseDurationMs);
 
-    // 1. Check existing record
-    const query = NotificationConsumerRecordModel.findOne({ consumerId, notificationId });
-    if (session) query.session(session);
-    let record = await query.exec();
-
-    if (!record) {
-      try {
-        const created = new NotificationConsumerRecordModel({
-          consumerId,
-          notificationId,
-          idempotencyKey,
-          status: 'PROCESSING',
-          processingOwner: workerId,
-          leaseExpiresAt: leaseExpiration,
-          claimGeneration: 1,
-          attemptCount: 1,
-          createdAt: new Date(),
-        });
-        record = await created.save(session ? { session } : undefined);
-        return {
-          status: 'CLAIMED',
-          record,
-          claimGeneration: record.claimGeneration,
-        };
-      } catch (err: unknown) {
-        const isDuplicateKey =
-          err && typeof err === 'object' && ('code' in err) && (err as { code?: number }).code === 11000;
-        if (!isDuplicateKey) {
-          throw err;
-        }
-        // Concurrent insert lost race; reload existing record
-        const reloadQ = NotificationConsumerRecordModel.findOne({ consumerId, notificationId });
-        if (session) reloadQ.session(session);
-        record = await reloadQ.exec();
+    // 1. Ensure record exists in PENDING state atomically
+    try {
+      const created = new NotificationConsumerRecordModel({
+        consumerId,
+        notificationId,
+        idempotencyKey,
+        status: 'PENDING',
+        claimGeneration: 0,
+        attemptCount: 0,
+      });
+      await created.save(session ? { session } : undefined);
+    } catch (err: unknown) {
+      const isDuplicateKey =
+        err && typeof err === 'object' && ('code' in err) && (err as { code?: number }).code === 11000;
+      if (!isDuplicateKey) {
+        throw err;
       }
     }
 
-    if (!record) {
-      return { status: 'LOCKED' };
+    // 2. Check if already completed or exceeded retries
+    const existingQ = NotificationConsumerRecordModel.findOne({ consumerId, notificationId });
+    if (session) existingQ.session(session);
+    const existing = await existingQ.exec();
+
+    if (existing?.status === 'COMPLETED') {
+      return { status: 'ALREADY_COMPLETED', record: existing };
     }
 
-    if (record.status === 'COMPLETED') {
-      return { status: 'ALREADY_COMPLETED', record };
+    if (existing && existing.attemptCount >= maxAttempts && existing.status === 'FAILED') {
+      return { status: 'MAX_RETRIES_EXCEEDED', record: existing };
     }
 
-    if (record.attemptCount >= maxAttempts && record.status === 'FAILED') {
-      return { status: 'MAX_RETRIES_EXCEEDED', record };
-    }
-
-    // Atomic conditional claim/reclaim
+    // 3. Atomically claim/reclaim using database server time ($$NOW + $dateAdd)
     const claimedDoc = await NotificationConsumerRecordModel.findOneAndUpdate(
       {
-        _id: record._id,
+        consumerId,
+        notificationId,
         status: { $in: ['PENDING', 'FAILED', 'PROCESSING'] },
         $or: [
           { status: { $in: ['PENDING', 'FAILED'] } },
@@ -150,19 +134,26 @@ export class OutboxService {
         ],
         attemptCount: { $lt: maxAttempts },
       },
-      {
-        $set: {
-          status: 'PROCESSING',
-          processingOwner: workerId,
-          leaseExpiresAt: leaseExpiration,
+      [
+        {
+          $set: {
+            status: 'PROCESSING',
+            processingOwner: workerId,
+            leaseExpiresAt: {
+              $dateAdd: {
+                startDate: '$$NOW',
+                unit: 'millisecond',
+                amount: validDuration,
+              },
+            },
+            claimGeneration: { $add: [{ $ifNull: ['$claimGeneration', 0] }, 1] },
+            attemptCount: { $add: [{ $ifNull: ['$attemptCount', 0] }, 1] },
+          },
         },
-        $inc: {
-          claimGeneration: 1,
-          attemptCount: 1,
-        },
-      },
+      ],
       {
         returnDocument: 'after',
+        updatePipeline: true,
         ...(session ? { session } : {}),
       }
     ).exec();
@@ -188,7 +179,7 @@ export class OutboxService {
   }
 
   /**
-   * Conditionally marks consumer processing as COMPLETED.
+   * Conditionally marks consumer processing as COMPLETED using database server time.
    * Enforces exact worker ownership, active claimGeneration, and unexpired database lease.
    */
   async completeConsumerProcessing(
@@ -207,16 +198,21 @@ export class OutboxService {
         status: 'PROCESSING',
         $expr: { $gt: ['$leaseExpiresAt', '$$NOW'] },
       },
-      {
-        $set: {
-          status: 'COMPLETED',
-          completedAt: new Date(),
-          processedAt: new Date(),
-          processingOwner: null,
-          leaseExpiresAt: null,
+      [
+        {
+          $set: {
+            status: 'COMPLETED',
+            completedAt: '$$NOW',
+            processedAt: '$$NOW',
+            processingOwner: null,
+            leaseExpiresAt: null,
+          },
         },
-      },
-      session ? { session } : undefined
+      ],
+      {
+        session,
+        updatePipeline: true,
+      }
     ).exec();
 
     return res.matchedCount === 1;
@@ -257,16 +253,18 @@ export class OutboxService {
 
   /**
    * End-to-end durable consumer execution lifecycle.
-   * Atomically claims lease -> executes side effect -> conditionally marks COMPLETED.
+   * Atomically claims lease -> executes side effect with stable idempotency key -> conditionally marks COMPLETED.
    * If a crash occurs before side effect, subsequent deliveries safely reclaim the lease.
    */
   async processConsumerEvent<T>(
     consumerId: string,
     notificationId: string,
     workerId: string,
-    sideEffectFn: () => Promise<T>,
+    sideEffectFn: (idempotencyKey: string) => Promise<T>,
     options?: { leaseDurationMs?: number; maxAttempts?: number }
   ): Promise<ConsumerProcessingResult<T>> {
+    const idempotencyKey = `${consumerId}:${notificationId}`;
+
     const claim = await this.claimConsumerProcessing(
       consumerId,
       notificationId,
@@ -298,7 +296,7 @@ export class OutboxService {
     }
 
     try {
-      const result = await sideEffectFn();
+      const result = await sideEffectFn(idempotencyKey);
       const completed = await this.completeConsumerProcessing(
         consumerId,
         notificationId,
@@ -331,33 +329,27 @@ export class OutboxService {
   }
 
   /**
-   * Durable consumer idempotency verification utility backed by MongoDB unique compound index.
-   * Marks status COMPLETED immediately on record creation.
-   * Returns true if the message has NOT been processed before by this consumer.
-   * Returns false if it is a duplicate delivery.
+   * Safe consumer deduplication wrapper.
+   * Requires sideEffectFn to ensure completion is never marked before external side effect succeeds.
+   * Rejects unsafe invocation without side effect execution.
    */
-  async deduplicateConsumerEvent(consumerId: string, notificationId: string): Promise<boolean> {
-    try {
-      await NotificationConsumerRecordModel.create({
+  async deduplicateConsumerEvent(
+    consumerId: string,
+    notificationId: string,
+    sideEffectFn?: (idempotencyKey: string) => Promise<unknown>
+  ): Promise<boolean> {
+    if (sideEffectFn) {
+      const res = await this.processConsumerEvent(
         consumerId,
         notificationId,
-        idempotencyKey: `${consumerId}:${notificationId}`,
-        status: 'COMPLETED',
-        completedAt: new Date(),
-        processedAt: new Date(),
-      });
-      return true; // First-time delivery
-    } catch (err: unknown) {
-      const isDuplicateKey =
-        err &&
-        typeof err === 'object' &&
-        ('code' in err) &&
-        (err as { code?: number }).code === 11000;
-      if (isDuplicateKey) {
-        return false; // Duplicate
-      }
-      throw err;
+        'default-worker',
+        sideEffectFn
+      );
+      return res.status === 'COMPLETED';
     }
+    throw new Error(
+      'Unsafe legacy deduplicateConsumerEvent invocation without side-effect execution is removed. Use processConsumerEvent(consumerId, notificationId, workerId, sideEffectFn) or provide sideEffectFn.'
+    );
   }
 
   async resetConsumerRegistry(consumerId?: string): Promise<void> {

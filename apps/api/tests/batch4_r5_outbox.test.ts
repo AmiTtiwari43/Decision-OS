@@ -151,11 +151,10 @@ describe('Batch 4 Phase 5 — Durable Notification Outbox & Consumer Deduplicati
 
     let sideEffectExecutionCount = 0;
     const processNotification = async (notifId: string) => {
-      const isNew = await outboxService.deduplicateConsumerEvent(consumerId, notifId);
-      if (!isNew) {
-        return; // Skip duplicate
-      }
-      sideEffectExecutionCount++;
+      await outboxService.deduplicateConsumerEvent(consumerId, notifId, async () => {
+        sideEffectExecutionCount++;
+        return 'processed';
+      });
     };
 
     // First attempt: processes successfully
@@ -177,9 +176,11 @@ describe('Batch 4 Phase 5 — Durable Notification Outbox & Consumer Deduplicati
 
     let executions = 0;
     const executeFanout = async () => {
-      const isNew = await outboxService.deduplicateConsumerEvent(consumerId, notificationId);
-      if (isNew) {
+      const isNew = await outboxService.deduplicateConsumerEvent(consumerId, notificationId, async () => {
         executions++;
+        return 'executed';
+      });
+      if (isNew) {
         return 'executed';
       }
       return 'deduplicated';

@@ -89,10 +89,20 @@ export async function executeCompensatingRollback(
           `Fencing ownership mismatch on compensating decision write for operation ${operationId}: owned by ${journalDoc.recoveryOwner}, caller is ${workerId}`
         );
       }
-      if (journalDoc.recoveryOwner && journalDoc.leaseExpiresAt && journalDoc.leaseExpiresAt.getTime() < Date.now()) {
-        throw new ConcurrencyFencingError(
-          `Recovery lease expired for operation ${operationId} (worker: ${workerId}, fencingToken: ${fencingToken})`
-        );
+      if (journalDoc.recoveryOwner) {
+        const expiredJournal = await OperationJournalModel.findOne({
+          operationId,
+          recoveryOwner: workerId,
+          fencingToken,
+          leaseExpiresAt: { $ne: null },
+          $expr: { $lte: ['$leaseExpiresAt', '$$NOW'] },
+        }).exec();
+
+        if (expiredJournal) {
+          throw new ConcurrencyFencingError(
+            `Recovery lease expired for operation ${operationId} (worker: ${workerId}, fencingToken: ${fencingToken})`
+          );
+        }
       }
     }
   }
