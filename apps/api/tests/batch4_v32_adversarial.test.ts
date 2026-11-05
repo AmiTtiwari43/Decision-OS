@@ -913,7 +913,7 @@ describe('BATCH 4 V3.2 ADVERSARIAL VERIFICATION & CLOSURE SUITE', () => {
       expect(collections.length).toBe(0);
 
       const regBefore = await coordCol.findOne({ _id: dbName as unknown as import('mongodb').ObjectId });
-      expect(regBefore?.lifecycleState).toBe('CLEANUP_LOCKED');
+      expect(['CLEANUP_LOCKED', 'DROP_IN_PROGRESS']).toContain(regBefore?.lifecycleState);
       expect(regBefore?.cleanupOwner).toBe(workerId);
 
       // 6 & 7. Retry cleanup using the exact same run and cleanup identity
