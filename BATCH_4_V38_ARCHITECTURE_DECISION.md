@@ -1,22 +1,22 @@
 # DECISION OS — BATCH 4 V3.8 ARCHITECTURE DECISION
 ## Independent Cleanup Executor, Real MongoDB Privilege Separation & Concurrency Safety
 
-**Document Version:** 1.5.0 (Phase B.5 Privilege Boundary Separation & Revocation Hardening)
+**Document Version:** 1.6.0 (Phase B.6 Provisioning Scope, Revocation Authority & Cryptographic Nonce Correction)
 **Repository:** `AmiTtiwari43/Decision-OS`
 **Branch:** `fix/batch4-replica-set-transactional-recovery`
-**Current Baseline Commit:** `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (`docs: harden batch 4 v3.8 revocation and recovery protocol`)
-**Parent Baseline Commit:** `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
-**Prior Lineage Commits:** `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
-**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (Phase B.5 Deliverable)
+**Current Baseline Commit:** `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (`docs: separate destructive and provisioning privilege boundaries and harden revocation protocol`)
+**Parent Baseline Commit:** `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (`docs: harden batch 4 v3.8 revocation and recovery protocol`)
+**Prior Lineage Commits:** `949ca35a7154f4c4db308dd73badf85221a98c9f`, `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
+**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (Phase B.6 Deliverable)
 **Phase A Artifact:** `BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`
 **Date:** 2026-11-06
-**Status:** ARCHITECTURE DESIGN (Phase B.5 Deliverable — Pending Independent Review & Formal Gate B Approval)
+**Status:** ARCHITECTURE DESIGN (Phase B.6 Deliverable — Pending Independent Review & Formal Gate B Approval)
 
 ---
 
 ## 1. Executive Summary
 
-During Batch 4 V3.7, destructive database teardown operations were centralized behind an in-process `SupervisedCleanupExecutor` in `apps/api/src/db/guard.ts`. While V3.7 introduced coordination fencing concepts, the Phase A architectural audit (`BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`) and subsequent Phase B.1 through Phase B.4 security inquests revealed critical architectural defects:
+During Batch 4 V3.7, destructive database teardown operations were centralized behind an in-process `SupervisedCleanupExecutor` in `apps/api/src/db/guard.ts`. While V3.7 introduced coordination fencing concepts, the Phase A architectural audit (`BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`) and subsequent Phase B.1 through Phase B.5 security inquests revealed critical architectural defects:
 
 1. **Absence of Real Process Isolation:** The V3.7 executor ran inside the exact same Node.js OS process and memory space as ordinary API workers and Vitest test runners.
 2. **Absence of Native MongoDB Privilege Separation:** Ordinary workers and the cleanup executor shared identical MongoDB connection credentials; protection was simulated via JavaScript monkey-patching with backdoors (`isVerifiedCleanupLocked` and `activeSupervisedDropContext`).
@@ -43,46 +43,26 @@ Independent architectural review of baseline commit `949ca35a7154f4c4db308dd73ba
 2. **Technically Unsupportable Oplog Evidence Protocol (Finding B38-16):** Reworked Section 10.4 using exact MongoDB 8.0 `replSetGetStatus` fields (`optimes.lastCommittedOpTime.ts/.t`). Acknowledged that `local` ignores read concern. Formulated lexicographical OpTime comparison. Formally classified comment preservation in `local.oplog.rs` as an unverified hypothesis (`D38-21`).
 3. **Crash-Unsafe Ephemeral Credential Recovery (Finding B38-17):** Designed a crash-safe credential recovery protocol utilizing a Caller-Bound Encrypted Credential Envelope stored in `ownership_locks.credentialEnvelope` (AES-256-GCM). Provided fallback to controlled rotation via `updateUser` before activation.
 4. **False Provisioning Atomicity Claims (Finding B38-18):** Replaced false atomicity claims with a Durable Idempotent Provisioning Saga with explicit states, transition recovery, and orphan reaper proof.
-5. **Genuinely Tamper-Evident Audit Ledger (Finding B38-19):** Separated audit log permissions from coordination CRUD. Scoped executor privileges on `cleanup_audit_log` strictly to append-only (`find`, `insert`, `createIndex`). Established external chain-head checkpoint storage.
+5. **Genuinely Tamper-Evident Audit Ledger (Finding B38-19):** Separated audit log privileges from coordination CRUD. Scoped executor privileges on `cleanup_audit_log` strictly to append-only (`find`, `insert`, `createIndex`). Established external chain-head checkpoint storage.
 
 ### Phase B.5 Privilege Boundary Separation & Revocation Hardening Remediation
-Independent architectural inquest of baseline commit `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (and parent `949ca35a7154f4c4db308dd73badf85221a98c9f`) identified critical privilege-boundary and revocation vulnerabilities requiring deep structural remediation:
+Independent architectural inquest of baseline commit `f0fbfc1b6d04ad947f85277435d0803282cd03cd` identified critical privilege-boundary and revocation vulnerabilities:
+1. **Destructive Authority Separation from Coordination and Audit Data (Finding B38-20):** Established a strict physical/logical two-deployment boundary between `rs_coord:27019` (coordination and append-only audit) and `rs_test:27018` (ephemeral test databases), rendering coordination destruction physically impossible for the cleanup executor.
+2. **Restricting Role Provisioning Authority & Decoupling Services (Finding B38-24):** Decoupled provisioning authority into `apps/provisioner` (`decision_os_provisioner`), distinct from `apps/cleanup-executor` (`decision_os_destructive_executor`). Created worker roles directly on target test databases.
+3. **Permanent Multi-Layer Worker Revocation (Finding B38-25):** Established server-side revocation defending against hostile workers retaining TCP sockets, coordinating operation abort, logical session kill, user deletion, daemon authorization cache invalidation, and network isolation.
 
-1. **Destructive Authority Separation from Coordination and Audit Data (Finding B38-20):**
-   The v1.4.0 cleanup executor possessed `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` on the same deployment as `decision_os_coordination` and `cleanup_audit_log`. Because MongoDB RBAC evaluates permissions additively without negative filters, an identity with `{ db: "", collection: "" }` drop privileges can drop coordination metadata and the audit log itself. Application-level regex guards cannot serve as a database-enforced security boundary.
-   **Remediation:** Architecture establishes a **Strict Physical/Logical Two-Deployment Boundary**:
-   - **Coordination & Audit Cluster (`mongodb-coord:27019`):** Dedicated replica set hosting `decision_os_coordination` (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`) and `cleanup_audit_log`. The destructive identity possesses **zero network reachability and zero authentication credentials** on this cluster.
-   - **Ephemeral Test Database Cluster (`mongodb-test:27018`):** Dedicated replica set hosting dynamic test databases (`decision_os_test_*`). The Destructive Cleanup Executor (`decision_os_destructive_executor`) is scoped strictly to this cluster. Because coordination and audit databases do not reside on `mongodb-test`, it is mathematically impossible for destructive cleanup to drop coordination or audit storage.
-2. **Restricting Role Provisioning Authority & Eliminating False Native Claims (Finding B38-24):**
-   The v1.4.0 architecture erroneously claimed that application-level AST checks on `createRole` constituted MongoDB-native RBAC enforcement, while granting `createRole`, `createUser`, and `grantRole` on `admin`. In MongoDB, roles created on `admin` can contain privileges spanning any database and cluster resources. Furthermore, destructive cleanup authority was co-located with provisioning authority.
-   **Remediation:**
-   - Explicitly disclaimed that application-level regex/AST filtering constitutes MongoDB-native enforcement.
-   - Decoupled provisioning authority from destructive cleanup: established an independent **Provisioning Service** (`decision_os_provisioner`), completely separate from the **Destructive Cleanup Executor** (`decision_os_destructive_executor`).
-   - Dynamically provisioned worker roles are created **directly on the target test database** (`db.getSiblingDB(targetTestDb).createRole(...)`). In MongoDB RBAC, roles defined on a non-admin database are natively prohibited by the database engine from granting privileges outside that database or on cluster resources.
-   - Formulated independent threat models for compromised provisioner, cleanup executor, API process, and administrative operator. Added adversarial verification test **`D38-26`**.
-3. **Establishing Permanent Worker Revocation & Hostile Worker Defense (Finding B38-25):**
-   The v1.4.0 architecture relied on `killAllSessionsByPattern` and client-side `client.close(true)`. Client-side pool closure is a cooperative client action, not an enforceable security boundary. Furthermore, `killAllSessionsByPattern` does not sever physical TCP connections, ignores prepared distributed transactions, and misses unsessioned wire operations.
-   **Remediation:**
-   - Documented the exact engine limitations of `killAllSessionsByPattern`.
-   - Explicitly handled prepared transactions: scanning `currentOp` for prepared transactions and coordinating aborts prior to teardown.
-   - Designed a fail-closed multi-layer revocation protocol that defends against hostile workers that deliberately retain TCP sockets:
-     1. Abort in-flight operations via `killOp` and logical session termination.
-     2. Server-side identity revocation via `dropUser` and `dropRole` on the target test database.
-     3. Engine-level authorization cache invalidation: subsequent commands issued over lingering TCP sockets fail authorization immediately with MongoDB Error Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`).
-     4. Prevention of fresh authentication attempts (Code 11 / Code 18).
-     5. Network container isolation policies severing transport paths.
-   - Added hostile-worker adversarial verification test **`D38-27`**.
-4. **Additional B38-17 to B38-19 Corrections:**
-   - **AES-256-GCM Envelope Key Lifecycle & Nonce Uniqueness (B38-17):** Defined 256-bit envelope key generation, KMS/Vault storage, deterministic 96-bit nonce construction (instance salt + strictly monotonic counter) eliminating birthday collisions, versioned envelope schema (`keyVersion`), dual-key rotation windows, and crash recovery.
-   - **Exact Durable Acknowledgement Ordering (B38-17):** Formulated strict ordering: Worker connects & verifies authentication $
-ightarrow$ Worker sends signed activation handshake $
-ightarrow$ Provisioner commits `ACTIVATED` to coordination storage with majority write concern (`w: "majority"`, `j: true`) $
-ightarrow$ Only after majority persistence is confirmed does provisioner issue atomic `$unset: { credentialEnvelope: 1 }` with `w: "majority"` $
-ightarrow$ HTTP 200 response returned.
-   - **Reconciliation of Saga State Count & Transition Formalization (B38-18):** Reconciled discrepancy regarding state counts. Formally defined and documented all **12 distinct states** (`CLAIM_PENDING`, `ROLE_CREATING`, `ROLE_CREATED`, `USER_CREATING`, `USER_CREATED`, `ROLE_ASSIGNED`, `CREDENTIAL_ENCRYPTED`, `CREDENTIAL_DELIVERED`, `ACTIVATED`, `ROLLING_BACK`, `ROLLED_BACK`, `ORPHAN_RECOVERY`), cataloging every transition, failure recovery, and orphan reaper proof.
-   - **Independent Audit Checkpoint Signing, Cadence, Sequence & Recovery (B38-19):** Specified independent Ed25519 signing key for audit checkpoints, 60-second periodic cadence (and event-driven on terminal states `CLEANED`, `QUARANTINED`), monotonic sequence ranges, external WORM/Cloud storage anchoring, crash recovery scanner, and fail-closed hard freeze upon verification mismatch.
-   - **Reconciliation of Broad Privilege Model with Append-Only Audit:** Reconciled broad `{ db: "", collection: "" }` drop privilege by isolating it strictly to `mongodb-test:27018`, completely segregated from `mongodb-coord:27019` where `cleanup_audit_log` resides under strict append-only RBAC.
-   - **Universal Fail-Closed Invariant:** Enforced fail-closed behavior across all proof, recovery, and verification paths.
+### Phase B.6 Provisioning Scope, Revocation Authority & Cryptographic Nonce Correction Remediation
+Independent architectural review of baseline commit `5ef95550c0709fdc99186bf42e5352f3aa846b4e` identified three critical security, authorization, and cryptographic defects:
+
+1. **Elimination of Cross-Database Provisioning Authority (Finding B38-26):**
+   - *Defect:* The v1.5.0 privilege matrix granted `decision_os_provisioner` the actions `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, and `changePassword` across `{ db: "", collection: "" }` on `rs_test`. Although roles defined on non-admin databases cannot grant privileges on other databases, granting `{ db: "", collection: "" }` role- and user-management actions allowed a compromised provisioner to administer principals across *any* non-admin database on `rs_test`. This compromised per-worker isolation if the provisioner was compromised.
+   - *Remediation:* Removed unrestricted cross-database user and role administration from the central provisioning identity. Formulated a **Database-Scoped Provisioning Delegation Model** where provisioning authority on `rs_test` is mediated strictly via per-target-database scoped administrative identities (`decision_os_db_admin_${dbName}`) whose authorization scope is strictly constrained to `{ db: targetDb, collection: "" }`. Defined initial scoped delegation via pre-allocated partition slot pools (minted at deployment initialization by offline bootstrap without runtime central `{ db: "", collection: "" }`) and dynamic expansion via an isolated ephemeral scoped credential broker. Explicitly distinguished role-definition scope, role-management authorization scope, user-management authorization scope, and role-grant authorization scope. Added adversarial verification item **`D38-29`**.
+2. **Reconciliation of Revocation Service Responsibilities (Finding B38-27):**
+   - *Defect:* The v1.5.0 revocation protocol instructed `decision_os_destructive_executor` to execute `dropUser` and `dropRole` directly on the target test database. However, the privilege matrix explicitly prohibited the destructive executor from executing `dropUser` and `dropRole` (assigning them to the provisioning identity), creating a direct architectural contradiction that would fail with MongoDB Error Code 13 (`Unauthorized`).
+   - *Remediation:* Defined an executable, internally consistent, durable 2-phase revocation protocol. Assigned `dropUser` and `dropRole` strictly to the Scoped Provisioning Service (authenticating as `decision_os_db_admin_${targetDb}`). Assigned in-flight operation cancellation (`killOp`), logical session termination (`killAllSessionsByPattern`), and prepared transaction resolution to the Destructive Cleanup Executor (`decision_os_destructive_executor`). Resolved responsibility, identity, privileges, acknowledgements, retries, and fail-closed conditions for all 8 operations. Client API responses and client-side connection closure are explicitly rejected as proof of revocation. Added adversarial verification item **`D38-30`**.
+3. **Correction of AES-256-GCM Nonce Uniqueness (Finding B38-28):**
+   - *Defect:* The v1.5.0 nonce construction (`InstanceSalt (32-bit random) || MonotonicCounter (64-bit in-memory)`) reset the counter to zero upon process restart. Under the birthday paradox, a 32-bit random salt incurs a 50% collision probability after only $2^{16} = 65,536$ process instances or replicas sharing the same key. A salt collision across restarts or concurrent replicas results in identical nonces under the same AES-256-GCM key, completely breaking GCM cryptographic confidentiality and authenticity.
+   - *Remediation:* Replaced the flawed in-memory construction with a **Durable Globally Coordinated Counter Range Block Reservation Protocol** adhering to NIST SP 800-38D Section 8.2.1 Deterministic Construction. Replicas lease non-overlapping blocks of counters ($2^{20}$ nonces) via atomic `$inc` on `rs_coord:27019` (`decision_os_coordination.nonce_allocations`) with majority write concern (`w: "majority", j: true`). Upon process restart, residual in-memory counters are discarded and a fresh disjoint block is reserved. Addressed multi-replica concurrency, crash recovery, key rotation, database backup restoration (epoch bumping / forced key rotation), counter exhaustion ceilings ($2^{48}$ invocations), and fail-closed halt when nonce allocation state is unreachable. Added adversarial verification item **`D38-28`**.
 
 ---
 
@@ -91,15 +71,19 @@ ightarrow$ HTTP 200 response returned.
 ### 2.1 Git Baseline & Provenance Verification
 - **Target Repository:** `AmiTtiwari43/Decision-OS`
 - **Active Branch:** `fix/batch4-replica-set-transactional-recovery`
-- **Current Baseline Commit:** `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (`docs: harden batch 4 v3.8 revocation and recovery protocol`)
-- **Parent Baseline Commit:** `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
+- **Current Baseline Commit:** `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (`docs: separate destructive and provisioning privilege boundaries and harden revocation protocol`)
+- **Parent Baseline Commit:** `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (`docs: harden batch 4 v3.8 revocation and recovery protocol`)
 - **Prior Lineage Commits:**
+  - `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
   - `724f1076284b186f42759677ab9e480d27531b69` (`docs: close batch 4 v3.8 privilege and redispatch gaps`)
   - `943a8e7a433ce1b98804a83c6be403b2fca52e96` (`docs: harden batch 4 v3.8 cleanup executor architecture`)
   - `161e59e85bb7183c21926f0b04f788eb43312394` (`refactor: add architecture decision record for batch 4 v3.8 cleanup executor`)
   - `bbaf9bee29ef40f80bb8b958569c7ebbb437b427` (`docs: add batch 4 v3.8 destructive call-site inventory document`)
   - `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb` (`fix(batch4): isolate destructive cleanup behind supervised executor v3.7`)
-- **Verification Note:** The repository working tree and GitHub remote branch `fix/batch4-replica-set-transactional-recovery` were independently inspected. Commit `f0fbfc1b6d04ad947f85277435d0803282cd03cd` is verified as the actual branch HEAD, descending directly from parent `949ca35a7154f4c4db308dd73badf85221a98c9f`.
+- **Verification Note:** The repository working tree and GitHub remote branch `fix/batch4-replica-set-transactional-recovery` were independently inspected. Commit `5ef95550c0709fdc99186bf42e5352f3aa846b4e` is verified as the actual branch HEAD, descending directly from parent `f0fbfc1b6d04ad947f85277435d0803282cd03cd`.
+- **Target Database Engines:**
+  - **Coordination & Audit Deployment:** MongoDB 8.0 (Replica Set `rs_coord`, port 27019).
+  - **Ephemeral Test Database Deployment:** MongoDB 8.0 (Replica Set `rs_test`, port 27018).
 - **Target Database Engines:**
   - **Coordination & Audit Deployment:** MongoDB 8.0 (Replica Set `rs_coord`, port 27019).
   - **Ephemeral Test Database Deployment:** MongoDB 8.0 (Replica Set `rs_test`, port 27018).
@@ -130,12 +114,12 @@ To eliminate in-process vulnerability, achieve verifiable privilege separation, 
 ### Option A — Dedicated OS Process (Local Daemon / Child Process)
 A separately launched Node.js daemon running on the host OS, communicating with the API/test workers via Unix Domain Sockets (UDS) or a localhost TCP port. It possesses its own process memory, lifecycle, MongoDB connection pool, and privileged credentials loaded from a protected environment file.
 
-### Option B — Dedicated Containerized Services with Physical Deployment Separation — SELECTED
+### Option B — Dedicated Containerized Services with Physical Deployment Separation & Scoped Delegation — SELECTED
 An independently packaged and deployed set of isolated services:
-1. **Provisioning Service (`apps/provisioner`):** Manages worker ownership claims, cryptographic signature verification, durable provisioning saga state, and generates scoped dynamic roles directly on the target test database. Possesses zero destructive drop capability.
-2. **Destructive Cleanup Executor (`apps/cleanup-executor`):** Dedicated microservice isolated in its own Linux namespaces (mount, pid, net, ipc) and cgroups. Connects exclusively to the Ephemeral Test Database Deployment. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", ...] }` strictly on that test cluster, with zero network routing or credentials on the coordination cluster.
+1. **Provisioning Service (`apps/provisioner`):** Manages worker ownership claims, cryptographic signature verification, durable provisioning saga state, and generates scoped dynamic roles and users via the **Database-Scoped Provisioning Delegation Model**. The central `decision_os_provisioner` identity possesses **zero unrestricted cross-database user/role administration rights** on `rs_test` (no `{ db: "", collection: "" }` roleAdmin/userAdmin). Dynamic worker roles and credentials are administered strictly via per-target-database scoped administrative principals (`decision_os_db_admin_${dbName}`) or short-lived scoped credentials. Possesses zero destructive drop capability.
+2. **Destructive Cleanup Executor (`apps/cleanup-executor`):** Dedicated microservice isolated in its own Linux namespaces (mount, pid, net, ipc) and cgroups. Connects exclusively to the Ephemeral Test Database Deployment. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", ...] }` strictly on that test cluster, with zero network routing or credentials on the coordination cluster. Possesses zero role-management or user-management privileges (`dropUser` and `dropRole` are strictly forbidden). Coordinates two-phase teardown with the Provisioning Service.
 3. **Physical / Logical Two-Deployment Topology:**
-   - `mongodb-coord:27019`: Houses coordination state and audit history.
+   - `mongodb-coord:27019`: Houses coordination state, durable nonce allocations, and audit history.
    - `mongodb-test:27018`: Houses ephemeral test databases.
 
 ### Option C — External Job / Queue Worker (Asynchronous Ledger Consumer)
@@ -143,14 +127,14 @@ An asynchronous worker process that pulls cleanup jobs from an external message 
 
 ### 3.1 Architecture Comparison Matrix
 
-| Evaluation Dimension | Option A: Dedicated OS Process | Option B: Dedicated Containerized Services with Physical Deployment Separation | Option C: External Job/Queue Worker |
+| Evaluation Dimension | Option A: Dedicated OS Process | Option B: Dedicated Containerized Services with Physical Deployment Separation & Scoped Delegation | Option C: External Job/Queue Worker |
 |---|---|---|---|
 | **1. Process & Memory Isolation** | **Moderate.** Separate OS PID and V8 heap; memory cannot be accessed via JS runtime. However, co-located processes on the same host can inspect `/proc` if running under the same UID. | **Strong Container Boundary.** Isolated Linux namespaces (PID, mount, IPC, net) and cgroups. Provisioner and Cleanup Executor run in distinct containers with zero shared memory. | **Strong.** Operates in an independent worker container; completely decoupled execution context. |
 | **2. Credential Isolation** | **Moderate.** Privileged credentials stored in an OS environment variable or root-owned file. Risk of leakage if child process inherits parent environment or runs as same user. | **Strong & Segregated.** Secrets injected directly into dedicated container secret volumes. Destructive executor container does not possess coordination credentials. Unprivileged worker containers have zero access. | **Strong.** Queue worker possesses privileged MongoDB credentials; API workers only possess queue insertion credentials. |
 | **3. Destructive Blast Radius (B38-20)** | **Dangerous.** If connected to single deployment, `{ db: "", collection: "" }` drop privilege allows dropping coordination metadata and audit logs. | **Mathematically Zero on Coordination.** Destructive executor has zero network connectivity and zero credentials to `mongodb-coord:27019`. Native MongoDB catalog topology prevents dropping coordination collections. | **Dangerous on Shared Cluster.** If queue worker has drop privileges on cluster containing coordination data, compromise allows full destruction. |
-| **4. Provisioning Privilege Safety (B38-24)** | **Poor.** Co-locates provisioning and destructive authority under single daemon. | **Enforceable & Constrained.** Provisioner has zero drop capability; dynamic roles are provisioned directly on target test database, preventing cluster-wide privilege grants natively. | **Mixed.** Queue worker would require broad admin rights if handling both provisioning and teardown. |
-| **5. Hostile Worker Revocation (B38-25)** | **Weak.** Relies on worker cooperating with socket closure. | **Multi-Layer Server-Side Defense.** Aborts running queries (`killOp`), drops user/role from database, invalidates MongoDB connection authorization cache, and terminates logical sessions. Sockets retained by hostile worker fail immediately with Code 11/13. | **Weak.** Asynchronous queue cannot immediately sever existing socket connections held by hostile worker. |
-| **6. Crash Recovery & Ambiguity** | **Moderate.** On restart, daemon reads database state; lacks standardized orchestration signals for graceful shutdown. | **Superior.** Container lifecycle hooks (`preStop`, `SIGTERM`) allow graceful draining. Unacknowledged drops enter `OUTCOME_UNKNOWN` with durable fencing; zero redispatch; 12-state durable saga recovery. | **Complex.** If worker crashes mid-drop, queue visibility timeout may cause a second worker to attempt re-dispatch before first drop completes on server. |
+| **4. Provisioning Privilege Safety (B38-24, B38-26)** | **Poor.** Co-locates provisioning and destructive authority under single daemon. | **Enforceable & Strictly Scoped.** Central provisioner stripped of `{ db: "", collection: "" }` role/user administration. Authority delegated strictly per target database (`decision_os_db_admin_${dbName}`). Compromise of one identity cannot cross into another worker's database. Zero drop capability. | **Mixed.** Queue worker would require broad admin rights if handling both provisioning and teardown. |
+| **5. Hostile Worker Revocation (B38-25, B38-27)** | **Weak.** Relies on worker cooperating with socket closure. | **Multi-Layer Server-Side Coordinated Protocol.** Durable handoff: Scoped Provisioner drops user/role, invalidating daemon authorization cache; Cleanup Executor aborts running queries (`killOp`), prepared transactions, and logical sessions. Sockets retained by hostile worker fail immediately with Code 11/13. | **Weak.** Asynchronous queue cannot immediately sever existing socket connections held by hostile worker. |
+| **6. Crash Recovery & Ambiguity** | **Moderate.** On restart, daemon reads database state; lacks standardized orchestration signals for graceful shutdown. | **Superior.** Container lifecycle hooks (`preStop`, `SIGTERM`) allow graceful draining. Unacknowledged drops enter `OUTCOME_UNKNOWN` with durable fencing; zero redispatch; 12-state durable saga recovery; crash-safe nonce block allocation. | **Complex.** If worker crashes mid-drop, queue visibility timeout may cause a second worker to attempt re-dispatch before first drop completes on server. |
 | **7. Operational Complexity** | **High in Production.** Difficult to monitor, scale, and log separately from main application in containerized environments. | **Low to Moderate.** Standard cloud-native pattern managed via Docker Compose (local/CI) and Helm/Kubernetes (staging/production). | **High.** Requires provisioning, clustering, and monitoring an external message broker (RabbitMQ/Redis) or building complex polling on MongoDB collections. |
 | **8. Testability (Vitest Teardown)** | **Fast & Synchronous.** Fast IPC allows test runners (`afterEach`) to block synchronously until drop completes with minimal latency. | **Fast & Deterministic.** HTTP REST endpoint provides synchronous, deterministic completion responses to test workers without polling. | **Poor for Tests.** Asynchronous queue requires test runners to poll for job completion or listen on change streams, adding latency and flakes to CI suites. |
 | **9. Local Development Experience** | **Simplest.** Can be started via `npm run dev:cleanup-daemon` or spawned by test runner. | **Standardized.** Spins up seamlessly in `docker-compose.yml` with dual MongoDB containers. For containerless local dev, can run via weaker development process profile. | **Heavy.** Requires spinning up Redis/RabbitMQ locally or running multiple background workers for simple unit test suites. |
@@ -174,44 +158,96 @@ To resolve the vulnerability where `{ resource: { db: "", collection: "" }, acti
      - **Ephemeral Test Database Deployment (`mongodb-test:27018`):** Dedicated strictly to dynamic test databases (`decision_os_test_*`). The Destructive Cleanup Executor connects only to this deployment.
    - *Guarantee:* Because `decision_os_coordination` and `cleanup_audit_log` **do not exist in the catalog of `mongodb-test:27018`**, and because the Destructive Cleanup Executor has **zero network routing and zero credentials on `mongodb-coord:27019`**, it is mathematically and physically impossible for destructive cleanup to drop or alter coordination or audit data, regardless of executor bugs or total executor container compromise.
 
+### 3.3 Evaluation of Provisioning Delegation Architecture Alternatives (Finding B38-26)
+To eliminate the central provisioner's cross-database user and role administration authority while ensuring dynamic databases receive initial narrowly scoped authority, three delegation models were evaluated:
+
+1. **Alternative 1: Centralized Provisioner with `{ db: "", collection: "" }` UserAdmin (REJECTED — B38-26 Defect)**
+   - *Mechanism:* Central `decision_os_provisioner` possesses `createRole`, `createUser`, `grantRole`, `dropUser`, `dropRole` across `{ db: "", collection: "" }` on `rs_test`. Roles are created directly on non-admin databases.
+   - *Flaw:* While non-admin roles cannot contain privileges on other databases, the provisioner's *authorization to administer roles and users* is unrestricted across all non-admin databases. A compromised provisioner can create backdoors, alter passwords, or revoke roles across any worker's database, completely breaking per-worker multi-tenant isolation.
+2. **Alternative 2: Pure On-Demand Role Administration via `admin` Superuser Delegation (REJECTED)**
+   - *Mechanism:* Provisioner connects with root credentials on `admin` to dynamically grant itself scoped rights per claim.
+   - *Flaw:* Merely moves unrestricted authority to a superuser credential, multiplying the blast radius of any compromise.
+3. **Alternative 3: Database-Scoped Provisioning Delegation via Leased Partition Pools & Isolated Broker (SELECTED)**
+   - *Mechanism:*
+     - Strip `decision_os_provisioner` of all `{ db: "", collection: "" }` user and role administration privileges on `rs_test`.
+     - In standard CI/testing, worker databases are leased from pre-allocated partition slot pools (`decision_os_test_slot_000` to `slot_NNN`), where per-database provisioning credentials (`decision_os_db_admin_slot_XXX`) were minted at cluster deployment initialization by an offline bootstrap container (`deploy/init-mongo-test.sh`) whose deployment privileges terminated before runtime started.
+     - For dynamic unpooled databases, authority is minted on-demand via an **Isolated Ephemeral Credential Broker** (or HashiCorp Vault dynamic secret engine) that issues single-target credentials strictly scoped to `{ db: targetDb, collection: "" }`.
+   - *Guarantee:* At runtime, **no central service possesses unrestricted `{ db: "", collection: "" }` user/role administration rights**. Compromise of the central provisioning service or one worker's scoped admin credential gives an attacker zero wire-level capability to create, read, modify, or revoke principals in another worker's database.
+
+### 3.4 Evaluation of Revocation Responsibility & Coordination Models (Finding B38-27)
+To reconcile the contradiction where the executor was instructed to execute `dropUser` and `dropRole` while its privilege matrix strictly prohibited them, three coordination models were evaluated:
+
+1. **Alternative 1: Monolithic Cleanup Executor with Native User/Role Drop Authority (REJECTED)**
+   - *Mechanism:* Grant `dropUser` and `dropRole` on `{ db: "", collection: "" }` to `decision_os_destructive_executor` so it can execute teardown independently.
+   - *Flaw:* Violates the strict separation of destructive and provisioning authority established in Phase B.5. Granting user and role administration rights to the destructive executor increases its privilege surface, creating another vector for cross-tenant principal tampering.
+2. **Alternative 2: Cooperative Client-Side Revocation (REJECTED)**
+   - *Mechanism:* Instruct the client driver to call `client.close(true)` and assume sessions and identities are revoked.
+   - *Flaw:* Hostile or compromised workers intentionally retain TCP sockets and cached credentials, bypassing client-side teardown entirely. Revocation must be enforced server-side.
+3. **Alternative 3: Coordinated 2-Phase Revocation Protocol (SELECTED)**
+   - *Mechanism:* Revocation responsibility is strictly partitioned according to authorized MongoDB identities:
+     - **Phase 1 (Identity & Role Revocation):** Managed by the Scoped Provisioning Service authenticating as `decision_os_db_admin_${targetDb}`. It dispatches `dropUser` and `dropRole` directly on the target test database, triggering daemon authorization cache invalidation.
+     - **Phase 2 (In-Flight Operation, Session & Database Teardown):** Managed by the Destructive Cleanup Executor authenticating as `decision_os_destructive_executor`. It coordinates prepared transaction resolution, executes `killOp`, terminates logical sessions via `killAllSessionsByPattern`, and dispatches `{ dropDatabase: 1 }`.
+   - *Guarantee:* Neither service exceeds its authorized MongoDB privilege matrix. Revocation is durable, idempotent, and verified server-side before database drop occurs.
+
+### 3.5 Evaluation of Cryptographic Nonce Uniqueness Strategies for AES-256-GCM (Finding B38-28)
+AES-256-GCM requires that an Initialization Vector (IV/nonce) must NEVER be repeated under the same key. A single nonce reuse completely compromises Galois/Counter Mode security:
+1. **Alternative 1: In-Memory Monotonic Counter with 32-bit Random Salt (REJECTED — B38-28 Defect)**
+   - *Mechanism:* Nonce constructed as `InstanceSalt (32-bit random) || MonotonicCounter (64-bit in-memory)`.
+   - *Flaw:* Counter resets to 0 on restart. Under the birthday paradox, a 32-bit random salt incurs a 50% collision probability after only $2^{16} = 65,536$ process instances or replicas sharing the same encryption key. Upon collision, duplicate nonces are generated, completely breaking authenticity and confidentiality.
+2. **Alternative 2: Pure 96-Bit Random Nonces (RBG-based NIST SP 800-38D Section 8.2.2) (EVALUATED & REJECTED AS PRIMARY)**
+   - *Mechanism:* Generate 96 cryptographically secure random bits per encryption.
+   - *Limitation:* NIST SP 800-38D Section 8.3 explicitly mandates:
+     > *The total number of invocations of the authenticated encryption function shall not exceed $2^{32}$ for a given key, if the length of the IV is 96 bits and the IV is generated randomly.*
+     At $2^{32}$ invocations, collision probability is approximately $2^{-33}$. While statistically low, it is a probabilistic bound rather than a deterministic mathematical guarantee. Furthermore, random generation cannot detect or prevent collisions across decoupled replicas under hypervisor freeze/resume or PRNG state cloning.
+3. **Alternative 3: Durable Globally Coordinated Block Reservation on Coordination Storage (SELECTED)**
+   - *Mechanism:* Adheres strictly to **NIST SP 800-38D Section 8.2.1 Deterministic Construction**. Replicas dynamically lease disjoint blocks of counters ($2^{20} = 1,048,576$ nonces) via atomic `$inc` on `decision_os_coordination.nonce_allocations` on `rs_coord:27019` with majority write concern (`w: "majority", j: true`). Within its leased block, a replica increments an in-memory counter atomically.
+   - *Crash & Restart Resilience:* Upon crash or restart, any unconsumed nonces in the current block are discarded. The restarted process leases a brand-new, strictly higher block. Replicas never rewind or share blocks.
+   - *Guarantee:* Collision probability between distinct encryptions under the same key version is mathematically zero ($P(\text{collision}) = 0$).
+
 ---
 
 ## 4. Selected Architecture and Rationale
 
 ### 4.1 Decision
-The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated Containerized Services with Physical Deployment Separation**, deployed with:
+The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated Containerized Services with Physical Deployment Separation & Scoped Delegation**, deployed with:
 
 1. **Physical / Logical Multi-Deployment Isolation (B38-20):**
-   - **Coordination & Audit Deployment (`mongodb-coord:27019`):** Hosts `decision_os_coordination` (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`) and `cleanup_audit_log`. Zero destructive credentials or routes exist on this cluster.
+   - **Coordination & Audit Deployment (`mongodb-coord:27019`):** Hosts `decision_os_coordination` (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`, `nonce_allocations`) and `cleanup_audit_log`. Zero destructive credentials or routes exist on this cluster.
    - **Ephemeral Test Database Deployment (`mongodb-test:27018`):** Hosts dynamic test databases (`decision_os_test_*`).
-2. **Decoupled Roles & Dedicated Services (B38-24):**
-   - **Provisioning Service (`apps/provisioner`):** Identity `decision_os_provisioner`. Manages ownership leases and durable sagas on `mongodb-coord:27019`. Provisions dynamic roles directly on the target test database on `mongodb-test:27018`. Possesses zero destructive drop capability.
-   - **Destructive Cleanup Executor (`apps/cleanup-executor`):** Identity `decision_os_destructive_executor`. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` strictly on `mongodb-test:27018`. Possesses zero role-management privileges, zero user-creation privileges, and zero access to `mongodb-coord:27019`.
-   - **Audit Service (`apps/audit-service` or dedicated audit writer):** Identity `decision_os_audit_writer`. Possesses strictly append-only privileges (`find`, `insert`, `createIndex`) on `cleanup_audit_log` on `mongodb-coord:27019`. Emits signed checkpoints to external WORM storage.
-3. **Target-Database Dynamic Role Provisioning (B38-24):**
-   - Worker roles are created directly on the target test database: `db.getSiblingDB(targetTestDb).createRole(...)`.
-   - In MongoDB RBAC, roles defined on a non-admin database are natively prohibited by the database engine from granting privileges outside that database or on cluster resources.
-4. **Permanent Multi-Layer Worker Revocation (B38-25):**
-   - Revocation protocol coordinates in-flight operation abortion (`killOp`), prepared transaction detection and coordinator abort, immediate server-side principal dropping (`dropUser`), authorization cache invalidation, and prevention of fresh authentication.
-   - Sockets retained by a hostile worker fail immediately with Code 11 or Code 13 on subsequent wire operations.
-5. **Crash-Safe Credential Recovery & Durable 12-State Saga (B38-17, B38-18):**
-   - Caller-bound encrypted envelope (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM with deterministic 96-bit nonces.
+2. **Decoupled Roles & Database-Scoped Provisioning Delegation (B38-24, B38-26):**
+   - **Provisioning Service (`apps/provisioner`):** Identity `decision_os_provisioner`. Manages ownership leases, durable sagas, and nonce allocations on `mongodb-coord:27019`. Stripped of `{ db: "", collection: "" }` user/role administration rights on `rs_test`.
+   - **Scoped Database Provisioning Principals (`decision_os_db_admin_${dbName}`):** Ephemeral administrative credentials scoped strictly to `{ db: targetTestDb, collection: "" }`. Creates worker roles and users directly on the target test database namespace. Has zero capability to administer principals on other databases. Possesses zero destructive drop capability.
+   - **Destructive Cleanup Executor (`apps/cleanup-executor`):** Identity `decision_os_destructive_executor`. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` strictly on `mongodb-test:27018`. Possesses zero role-management privileges and zero user-creation/drop privileges (`createUser`, `createRole`, `dropUser`, `dropRole` are strictly forbidden). Zero access to `mongodb-coord:27019`.
+   - **Audit Service (`apps/audit-service`):** Identity `decision_os_audit_writer`. Possesses strictly append-only privileges (`find`, `insert`, `createIndex`) on `cleanup_audit_log` on `mongodb-coord:27019`. Emits signed checkpoints to external WORM storage.
+3. **Executable Coordinated Multi-Layer Worker Revocation (B38-25, B38-27):**
+   - Durable 2-phase revocation protocol coordinated between the Cleanup Executor and Scoped Provisioning Service.
+   - Scoped Provisioner drops user and role directly on `targetTestDb` with majority write concern, invalidating the MongoDB daemon's internal authorization cache for lingering sockets.
+   - Cleanup Executor inspects `currentOp` for prepared transactions, coordinates abort if found, executes `killOp` against running worker operations, and terminates logical sessions via `killAllSessionsByPattern`.
+   - Subsequent operations issued over lingering sockets retained by a hostile worker fail immediately with Code 11 or Code 13 on subsequent wire operations. Fresh authentication attempts fail with Code 11 or Code 18.
+   - Only after server-side revocation is durably acknowledged does the Cleanup Executor dispatch `{ dropDatabase: 1 }`.
+4. **Crash-Safe Credential Recovery & Durable Nonce Allocation (B38-17, B38-28):**
+   - Caller-bound encrypted envelope (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM.
+   - NIST SP 800-38D Section 8.2.1 deterministic nonces leased atomically in blocks from `decision_os_coordination.nonce_allocations` with majority write concern. Guarantees mathematical uniqueness across multi-replica concurrency, restarts, crashes, and key rotation.
    - Strict durable acknowledgement ordering before envelope destruction.
    - Exactly 12 fully formalized saga states with deterministic transition recovery and orphan reaper verification proof.
-6. **Authoritative Oplog Evidence Protocol & Quarantine State Machine (B38-13, B38-16):**
+5. **Authoritative Oplog Evidence Protocol & Quarantine State Machine (B38-13, B38-16):**
    - Reconciling ambiguous outcomes requires cryptographically correlated drop comments and replica-set majority commitment proof $(t, ts)$ from `replSetGetStatus`.
    - Zero redispatch after `DISPATCHING`. Ambiguous drops remain permanently in `QUARANTINED` with execution locks indefinitely held.
 
 ### 4.2 Architectural Justification
 1. **Mathematical Impossibility of Coordination Destruction (B38-20):**
    By physically isolating the coordination and audit collections on a separate MongoDB deployment (`mongodb-coord:27019`) to which the destructive executor has no network connectivity or credentials, the system eliminates reliance on application-level regex validation. Even if the cleanup executor is fully compromised and attempts `db.getSiblingDB("decision_os_coordination").dropDatabase()`, the command is executed against the test instance where the database does not exist, leaving production coordination and audit records completely untouched.
-2. **Native MongoDB Enforcement Against Role Escalation (B38-24):**
-   By creating dynamic roles on the test database namespace itself (`targetTestDb`) rather than on `admin`, MongoDB's RBAC engine natively enforces that the role cannot contain privileges on any other database or cluster resource. The provisioner is denied `userAdmin` or `createRole` on `admin`, rendering it impossible for a compromised provisioner to grant root-equivalent or cluster-wide privileges.
-3. **Resilience Against Hostile Workers (B38-25):**
+2. **Elimination of Cross-Database Privilege Escalation (B38-24, B38-26):**
+   By stripping the central provisioning service of `{ db: "", collection: "" }` user/role administration and delegating provisioning authority strictly to per-database scoped identities (`decision_os_db_admin_${dbName}`), MongoDB's RBAC engine natively enforces that each provisioning principal can only create, modify, or drop roles and users on its specific database. Even if a provisioning identity is compromised or an attacker subverts the provisioner container, MongoDB RBAC natively rejects cross-database principal manipulation with Error Code 13.
+3. **Internally Consistent, Non-Contradictory Revocation Execution (B38-27):**
+   By establishing a durable coordination protocol between the Cleanup Executor and Scoped Provisioner, every revocation action is executed exclusively by an identity explicitly authorized in the MongoDB privilege matrix. The executor never attempts `dropUser` or `dropRole` (actions it is forbidden to execute), while server-side user deletion, authorization cache invalidation, and session termination are guaranteed before physical database drop begins.
+4. **Resilience Against Hostile Workers (B38-25):**
    Client-side driver connection closure (`client.close(true)`) is treated as a cooperative convenience rather than a security boundary. Permanent revocation is enforced at the MongoDB daemon layer through server-side `dropUser` and session termination. Subsequent commands issued over lingering TCP sockets fail authorization natively at the database wire protocol layer.
-4. **Guaranteed Forward Secrecy & Crash Recovery (B38-17):**
+5. **Deterministic Nonce Uniqueness Across Replicas and Restarts (B38-28):**
+   By coordinating counter allocation through atomic range leases on `rs_coord:27019`, AES-256-GCM nonces are mathematically guaranteed to never repeat under the same key version, completely eliminating birthday collision vulnerabilities across multi-replica deployments and process crashes.
+6. **Guaranteed Forward Secrecy & Crash Recovery (B38-17):**
    Storing ephemeral credentials in caller-bound AES-256-GCM encrypted envelopes guarantees that retrying workers receive deterministic credentials after executor crashes, without attempting to reverse SCRAM-SHA-256 verifiers. Enforcing exact durable majority acknowledgement before envelope deletion guarantees that credentials are never destroyed before the worker has safely activated.
-5. **Deterministic Destruction Without Dual-Drop Danger:**
+7. **Deterministic Destruction Without Dual-Drop Danger:**
    Eliminating administrative redispatch guarantees that once `{ dropDatabase: 1 }` is transmitted across the wire, no subsequent or delayed drop command can ever execute against a reused or active database namespace.
 
 ---
@@ -254,13 +290,17 @@ POST /v1/cleanup/reconcile| mTLS
 (Binds Ed25519 Public Key to Worker ID)"]
         ProvisionerAPI --> SagaManager["Durable 12-State Provisioning Saga Manager
 (Generates Ephemeral Credentials & Envelopes)"]
+        SagaManager --> NonceLeaseEngine["Durable Nonce Block Lease Engine
+(NIST SP 800-38D Section 8.2.1 Deterministic Nonce)"]
         SagaManager --> ScopedRoleEngine["Scoped Role & User Engine
-(Provisions Roles Directly on Target Test DB)
-*NO dropDatabase or Destructive Rights!*"]
-        ScopedRoleEngine --> ProvisionerPoolTest["Provisioner Test Pool
+(Database-Scoped Delegation Model)
+*NO dropDatabase or Cluster Rights!*"]
+        ScopedRoleEngine --> ProvisionerPoolTest["Scoped Provisioner Test Pool
+(Identity: decision_os_db_admin_targetDb)
+*Scoped STRICTLY to target DB; NO cross-db rights!*"]
+        NonceLeaseEngine --> ProvisionerPoolCoord["Provisioner Coord Pool
 (Identity: decision_os_provisioner)"]
-        SagaManager --> ProvisionerPoolCoord["Provisioner Coord Pool
-(Identity: decision_os_provisioner)"]
+        SagaManager --> ProvisionerPoolCoord
     end
 
     subgraph DestructiveExecutorSpace["Dedicated Destructive Cleanup Service Boundary (apps/cleanup-executor)"]
@@ -268,11 +308,15 @@ POST /v1/cleanup/reconcile| mTLS
 (Verifies Signed Request & Ownership Lease)"]
         CleanupValidator --> StateMachineEngine["Durable State Machine Engine
 (Authoritative Sole Writer of cleanup_ledger)"]
+        StateMachineEngine --> RevocationCoordinator["Coordinated Revocation Client
+(Signs & Dispatches Revocation Order)"]
+        RevocationCoordinator -->|POST /v1/provisioning/revoke-worker| ProvisionerAPI
         StateMachineEngine --> DropEngine["Destructive Drop Engine
 *ONLY Production Allowlisted Drop Site*
 *Dispatches { dropDatabase: 1, comment: ... }*"]
         DropEngine --> DestructivePoolTest["Destructive MongoDB Pool
-(Identity: decision_os_destructive_executor)"]
+(Identity: decision_os_destructive_executor)
+*Zero dropUser/dropRole/userAdmin rights!*"]
         StateMachineEngine --> AuditWriterClient["Audit Client"]
     end
 
@@ -289,22 +333,25 @@ Object Lock / append-only filesystem")]
     end
 
     subgraph CoordCluster["MongoDB Coordination & Audit Deployment (rs_coord :27019)"]
-        ProvisionerPoolCoord -->|Manage Saga & Locks| CoordDB[("decision_os_coordination
+        ProvisionerPoolCoord -->|Manage Saga, Locks & Nonces| CoordDB[("decision_os_coordination
 - ownership_locks
 - provisioning_saga
-- cleanup_ledger")]
+- cleanup_ledger
+- nonce_allocations (Atomic Range Blocks)")]
         AuditPoolCoord -->|Append-Only Writes| AuditLogColl[("cleanup_audit_log
 *Zero Update / Remove / Drop*")]
     end
 
     subgraph TestCluster["MongoDB Ephemeral Test Database Deployment (rs_test :27018)"]
-        ProvisionerPoolTest -->|Create User & Scoped Role on Target DB| TestDBAuth[("admin & test DBs
-- Roles Scoped to Target DB Only
-- Ephemeral Credentials")]
-        DestructivePoolTest -->|Drop Ephemeral Test DBs| TargetDBs[("Test Databases
+        ProvisionerPoolTest -->|Scoped Role & User Admin on Target DB ONLY| TestDBAuth[("Target Test DB Catalog
+- Scoped Admin: decision_os_db_admin_targetDb
+- Scoped Dynamic Role: worker_access_role
+- Ephemeral Worker Principal")]
+        DestructivePoolTest -->|Drop Ephemeral Test DBs ONLY| TargetDBs[("Test Databases
 - decision_os_test_runA_wA
 - decision_os_test_runB_wB")]
-        DestructivePoolTest -->|Session & Op Termination| ClusterRes[("Cluster Resource
+        DestructivePoolTest -->|Session, Op & Tx Termination| ClusterRes[("Cluster Resource
+- currentOp (prepared tx detection)
 - killOp, killAllSessionsByPattern")]
 
         PoolA["Worker A Connection Pool
@@ -337,8 +384,8 @@ decision_os_test_runB_wB")]
 
     class WorkerA,WorkerB,BenchmarkCLI,ClientProxy,PoolA,PoolB unprivileged;
     class mTLS,ProvisionerAPI,CleanupValidator,SecurityBoundary boundary;
-    class SagaManager,ScopedRoleEngine,ProvisionerPoolTest,ProvisionerPoolCoord,StateMachineEngine,DropEngine,DestructivePoolTest,AuditWriterEngine,AuditPoolCoord,CheckpointEngine privileged;
-    class CoordDB,AuditLogColl,TestDBAuth,TargetDBs,TargetDBA,TargetDBB database;
+    class SagaManager,NonceLeaseEngine,ScopedRoleEngine,ProvisionerPoolTest,ProvisionerPoolCoord,StateMachineEngine,RevocationCoordinator,DropEngine,DestructivePoolTest,AuditWriterEngine,AuditPoolCoord,CheckpointEngine privileged;
+    class CoordDB,AuditLogColl,TestDBAuth,TargetDBs,TargetDBA,TargetDBB,ClusterRes database;
     class ExternalWORM external;
 ```
 
@@ -363,15 +410,18 @@ sequenceDiagram
     WorkerA->>CoordDB: TCP SYN to Port 27019 (Attempt direct coordination tampering)
     CoordDB-->>WorkerA: Connection Refused (Network Policy / Firewall Blocked)
 
-    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA (B38-24)
+    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA WITH SCOPED DELEGATION (B38-24, B38-26, B38-28)
     WorkerA->>Client: claimTestDatabaseOwnership("decision_os_test_runA_wA", "runA", "wA")
     Client->>Client: Sign claim payload using Worker A Ed25519 Private Key
     Client->>Provisioner: POST /v1/ownership/claim (Payload + Ed25519 Signature)
     Provisioner->>Provisioner: Verify Signature, Caller ID "runA:wA", DB Naming Contract
     Provisioner->>CoordDB: Persist Saga CLAIM_PENDING in ownership_locks & provisioning_saga (w: majority)
+    Provisioner->>CoordDB: Reserve Nonce Block via findOneAndUpdate on nonce_allocations (w: majority, j: true)
+    CoordDB-->>Provisioner: Nonce Block Range Leased [blockStart, blockEnd]
+    Note over Provisioner,TestDB: Connect using Scoped DB Admin (decision_os_db_admin_runA_wA) scoped strictly to DB A:
     Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").createRole({ role: "workerRole", privileges: [CRUD on self] })
     Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").createUser({ user: "decision_os_worker_runA_wA", pwd: pwdA, roles: ["workerRole"] })
-    Provisioner->>CoordDB: Persist AES-256-GCM envelope in ownership_locks.credentialEnvelope (w: majority)
+    Provisioner->>CoordDB: Persist AES-256-GCM envelope (Deterministic Nonce from leased block) in ownership_locks (w: majority)
     Provisioner->>AuditService: Append Audit Event: USER_PROVISIONED (SHA-256 Chained)
     Provisioner-->>Client: HTTP 200 OK { user, pwdA, authSource: "decision_os_test_runA_wA" }
 
@@ -383,19 +433,28 @@ sequenceDiagram
     Provisioner->>CoordDB: Atomic $unset: { credentialEnvelope: 1 } (w: majority)
     Provisioner-->>Client: HTTP 200 OK { status: 'ACTIVATED' }
 
-    Note over WorkerA,TestDB: PHASE 4: CROSS-DATABASE ISOLATION NATIVELY ENFORCED
+    Note over WorkerA,TestDB: PHASE 4: CROSS-DATABASE ISOLATION NATIVELY ENFORCED (B38-11, B38-26)
     WorkerA->>TestDB: PoolA.db("decision_os_test_runB_wB").collection("data").find()
     TestDB-->>WorkerA: MongoServerError: not authorized on decision_os_test_runB_wB (Code 13)
 
-    Note over WorkerA,TestDB: PHASE 5: PERMANENT WORKER REVOCATION & HOSTILE WORKER DEFENSE (B38-25)
+    Note over WorkerA,TestDB: PHASE 5: RECONCILED COORDINATED WORKER REVOCATION PROTOCOL (B38-25, B38-27)
     WorkerA->>Client: cleanupTestDatabase("decision_os_test_runA_wA", "runA", "wA")
     Client->>Executor: POST /v1/cleanup/request (Signed Cleanup Order)
-    Executor->>CoordDB: Verify Ownership Lease, Mark DISPATCHING in cleanup_ledger
+    Executor->>CoordDB: Verify Ownership Lease, Mark CLAIMED in cleanup_ledger (w: majority)
+    
+    Note over Executor,Provisioner: Step 5a: Coordinated Revocation Handoff to Scoped Provisioner
+    Executor->>Provisioner: POST /v1/provisioning/revoke-worker (Signed Revocation Order targeting DB A)
+    Provisioner->>Provisioner: Authenticate order; bind to decision_os_db_admin_runA_wA
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropUser("decision_os_worker_runA_wA")
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropRole("workerRole")
+    Provisioner-->>Executor: HTTP 200 OK { userDropped: true, roleDropped: true }
+    
+    Note over Executor,TestDB: Step 5b: Session & Operation Cancellation via Destructive Executor
+    Executor->>TestDB: db.adminCommand({ currentOp: 1, "command.user": "decision_os_worker_runA_wA", "preparedTransaction": true })
+    Note over Executor,TestDB: If prepared transactions detected, coordinate coordinator abort before proceeding
     Executor->>TestDB: db.adminCommand({ killOp: 1, query: { "command.user": "decision_os_worker_runA_wA" } })
     Executor->>TestDB: db.adminCommand({ killAllSessionsByPattern: [{ users: [{ user: "decision_os_worker_runA_wA", db: "decision_os_test_runA_wA" }] }] })
-    Executor->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropUser("decision_os_worker_runA_wA")
-    Executor->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropRole("workerRole")
-    
+
     Note over WorkerA,TestDB: Hostile Worker retains open TCP sockets and sends write operations:
     WorkerA->>TestDB: PoolA.collection("data").insertOne({ hostile: true }) over lingering socket
     TestDB-->>WorkerA: MongoServerError: UserNotFound / Unauthorized (Code 11 / Code 13)
@@ -403,10 +462,13 @@ sequenceDiagram
     TestDB-->>WorkerA: MongoServerError: AuthenticationFailed / UserNotFound (Code 18 / Code 11)
 
     Note over Executor,CoordDB: PHASE 6: DESTRUCTIVE CLEANUP ON TEST DB ONLY (B38-20)
+    Executor->>CoordDB: Mark DISPATCHING in cleanup_ledger (dropExecutionLock = true, w: majority)
     Executor->>TestDB: db.runCommand({ dropDatabase: 1, comment: JSON.stringify({ requestId, runA, wA }) })
     TestDB-->>Executor: { ok: 1, dropped: "decision_os_test_runA_wA" }
-    Executor->>CoordDB: Mark CLEANED in cleanup_ledger (dropExecutionLock = false)
+    Executor->>CoordDB: Mark CLEANED in cleanup_ledger (dropExecutionLock = false, w: majority)
     Executor->>AuditService: Append Audit Event: DB_CLEANED (SHA-256 Chained)
+    AuditService->>AuditService: Generate Ed25519 Signed Checkpoint -> Emit to WORM
+    Executor-->>Client: HTTP 200 OK { status: 'CLEANED' }
     AuditService->>AuditService: Generate Ed25519 Signed Checkpoint -> Emit to WORM
     Executor-->>Client: HTTP 200 OK { status: 'CLEANED' }
 
@@ -490,77 +552,119 @@ Decision OS establishes two physically and logically independent MongoDB replica
 
 ---
 
-### 7.5 Constrained Role Provisioning Architecture & Elimination of Cluster-Wide Privileges (Finding B38-24)
-
-To prevent role-escalation and eliminate cluster-wide administrative risk, Decision OS decouples provisioning from destructive execution and applies native database scoping:
+### 7.5 Constrained Role Provisioning Architecture & Elimination of Cross-Database Authority (Finding B38-24, B38-26)
 
 #### 1. Separation of Provisioning Service from Cleanup Executor
-- **Provisioning Service (`apps/provisioner`):** A dedicated containerized service running under identity `decision_os_provisioner`. It manages ownership claims and provisions ephemeral credentials. It possesses **ZERO destructive drop privileges** (`dropDatabase` and `dropCollection` are strictly denied by MongoDB RBAC).
-- **Destructive Cleanup Executor (`apps/cleanup-executor`):** A separate containerized service running under identity `decision_os_destructive_executor`. It receives verified cleanup requests and executes database drops on `mongodb-test`. It possesses **ZERO role-creation, user-creation, or credential-generation privileges**.
+- **Provisioning Service (`apps/provisioner`):** A dedicated containerized service running under identity `decision_os_provisioner`. It manages ownership claims, saga transitions, and cryptographic envelopes on `mongodb-coord:27019`. It possesses **ZERO destructive drop privileges** (`dropDatabase` and `dropCollection` are strictly denied by MongoDB RBAC).
+- **Destructive Cleanup Executor (`apps/cleanup-executor`):** A separate containerized service running under identity `decision_os_destructive_executor`. It receives verified cleanup requests and executes database drops on `mongodb-test:27018`. It possesses **ZERO role-creation, user-creation, or credential-generation privileges** (`createRole`, `createUser`, `dropRole`, `dropUser` are strictly denied by MongoDB RBAC).
 
-#### 2. Native Scoping via Non-Admin Database Role Creation
-In MongoDB 8.0 RBAC:
-> *A custom role defined on a database other than the `admin` database can only include privileges that apply to that specific database. It cannot contain privileges on any other database or on cluster resources.*
-
-To enforce this native boundary, the Provisioning Service creates dynamic worker roles **directly on the target test database namespace**, rather than on `admin`:
-```javascript
-// Executed by decision_os_provisioner on rs_test (:27018)
-db.getSiblingDB("decision_os_test_runA_wA").createRole({
-  role: "worker_access_role",
-  privileges: [
-    {
-      resource: { db: "decision_os_test_runA_wA", collection: "" },
-      actions: [
-        "find",
-        "insert",
-        "update",
-        "remove",
-        "createCollection",
-        "createIndex",
-        "dropIndex"
-      ]
-    }
-  ],
-  roles: []
-});
-```
-
-#### 3. Native MongoDB Enforcement Guarantee
-- Even if the Provisioning Service is compromised and an attacker attempts to define a role containing cluster privileges (`{ cluster: true }`) or privileges on other databases (`{ db: "decision_os_test_runB_wB", ... }`), the MongoDB daemon natively rejects the command:
-  `MongoServerError: Cannot grant privileges on other databases for a role defined on a non-admin database`
-- Dynamic worker users are created on the target test database:
+#### 2. The Fallacy of Claiming Non-Admin Role Creation Solves Cross-Database Authority (Finding B38-26)
+In v1.5.0, the architecture argued that because dynamic worker roles are created on a non-admin database namespace (`targetTestDb`), MongoDB natively prohibits those roles from granting privileges on other databases.
+**This argument addresses only the created role's scope, NOT the provisioner's management authorization scope:**
+- The v1.5.0 privilege matrix granted `decision_os_provisioner` the actions `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, and `changePassword` on resource `{ db: "", collection: "" }` on `rs_test`.
+- In MongoDB RBAC, `{ db: "", collection: "" }` covers **every non-system database across the entire replica set**.
+- An attacker compromising `decision_os_provisioner` could not grant cluster-wide privileges in the dynamic role itself, but could execute administrative commands against **any and all worker databases**:
   ```javascript
-  db.getSiblingDB("decision_os_test_runA_wA").createUser({
-    user: "decision_os_worker_runA_wA",
-    pwd: ephemeralPassword,
-    roles: [ { role: "worker_access_role", db: "decision_os_test_runA_wA" } ]
+  // Compromised provisioner attacking Worker B's database while ostensibly servicing Worker A:
+  db.getSiblingDB("decision_os_test_runB_wB").dropUser("decision_os_worker_runB_wB");
+  db.getSiblingDB("decision_os_test_runB_wB").createUser({
+    user: "backdoor_admin",
+    pwd: "attackerPassword",
+    roles: [{ role: "worker_access_role", db: "decision_os_test_runB_wB" }]
   });
   ```
-- Because the worker user is authenticated against `authSource=decision_os_test_runA_wA`, MongoDB RBAC natively restricts its authority to that database.
+- **Architectural Tenet:** Creating roles on non-admin databases does **NOT** solve the provisioner's cross-database authority defect. Cross-database user and role administration must be eliminated from the central provisioning identity.
+
+#### 3. Formal Distinction of the Four Authorization Scopes
+To prevent ambiguity and privilege conflation, Decision OS formally distinguishes four separate scoping boundaries in MongoDB RBAC:
+
+1. **Role-Definition Scope:**
+   - *Definition:* The resource targets and actions that may be included *inside* a custom role's privilege document.
+   - *Engine Constraint:* In MongoDB, for any role defined on a non-admin database $D$, the role-definition scope is strictly restricted to database $D$. It cannot include `{ db: "", collection: "" }`, `{ cluster: true }`, or any database $D' \ne D$.
+2. **Role-Management Authorization Scope:**
+   - *Definition:* The database resource on which an identity is permitted to execute role-management commands (`createRole`, `dropRole`, `updateRole`, `grantPrivilegesToRole`, `revokePrivilegesFromRole`).
+   - *Engine Constraint:* An identity authorized on `{ db: D, collection: "" }` can only create, alter, or drop roles *defined on database $D$*. Granting `{ db: "", collection: "" }` allows managing roles across all non-system databases.
+3. **User-Management Authorization Scope:**
+   - *Definition:* The database resource on which an identity is permitted to execute user-management commands (`createUser`, `dropUser`, `updateUser`, `changePassword`).
+   - *Engine Constraint:* An identity authorized on `{ db: D, collection: "" }` can only create, alter, or delete users *stored in database $D$* (`authSource=D`). It cannot manipulate users stored in database $D'$.
+4. **Role-Grant Authorization Scope:**
+   - *Definition:* The set of roles that an identity is authorized to assign or revoke from users via `grantRolesToUser` or `revokeRolesFromUser`.
+   - *Engine Constraint:* An identity authorized on `{ db: D, collection: "" }` can only assign roles defined on database $D$.
+
+#### 4. The Database-Scoped Provisioning Delegation Model (Finding B38-26)
+To satisfy least-privilege isolation without granting central unrestricted database-wide administration:
+
+1. **Complete Removal of `{ db: "", collection: "" }` from Central Provisioner:**
+   The central identity `decision_os_provisioner` has **zero** user-management, role-management, and role-grant privileges on `rs_test`. It cannot execute `createUser`, `createRole`, `dropUser`, or `dropRole` on any database on `rs_test`.
+2. **Scoped Administrative Principals (`decision_os_db_admin_${dbName}`):**
+   Role and user administration on `rs_test` is mediated strictly through per-target-database scoped administrative identities:
+   - Resource Scope: strictly `{ db: targetTestDb, collection: "" }`.
+   - Actions: `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser`.
+   - Authorization Scope: strictly confined to that single database namespace.
+3. **Initial Authority Provisioning for Dynamic Databases Without Central Unrestricted Privileges:**
+   How dynamic databases receive their initial narrowly scoped administrative authority without granting a central runtime service unrestricted `{ db: "", collection: "" }` rights is resolved via a two-tier delegation architecture:
+   - **Tier 1 — Leased Partition Pools (Primary Test Harness & CI Path):**
+     In automated test suites and CI, worker databases are drawn from a pre-allocated pool of partition slots (`decision_os_test_slot_000` to `slot_255`).
+     During cluster infrastructure bootstrap, the one-time offline initialization container (`deploy/init-mongo-test.sh`) pre-provisions dedicated per-slot administrative roles and principals (`decision_os_db_admin_slot_001` on `decision_os_test_slot_001`). The bootstrap container's administrative credentials are then discarded.
+     At runtime, `apps/provisioner` leases an available slot in `ownership_locks` on `rs_coord:27019`, and uses exclusively the scoped credentials for that specific slot. **No runtime service possesses cluster-wide user/role administration rights.**
+   - **Tier 2 — Isolated Ephemeral Credential Broker (Dynamic On-Demand Expansion Path):**
+     When a dynamic unpooled database name (`decision_os_test_${runId}_${workerId}`) is required, authority is minted via an **Isolated Ephemeral Credential Broker** (or HashiCorp Vault MongoDB dynamic secrets engine).
+     The broker runs in a segregated enclave, verifies the signed lease claim against `rs_coord`, generates a single-target administrative principal scoped strictly to `{ db: targetTestDb, collection: "" }` with a 60-second TTL, and returns the scoped credential to the provisioner.
+     Even if the central provisioner is compromised, the attacker possesses only the single-database scoped credential currently in flight, with zero authority over other active worker databases.
+
+#### 5. Concrete Negative Authorization Cases (B38-26)
+MongoDB RBAC natively enforces the following negative authorization boundaries on `rs_test:27018`:
+
+1. **Central Provisioner Direct User/Role Creation:**
+   - `decision_os_provisioner` executes `db.getSiblingDB("decision_os_test_runA_wA").createRole(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_runA_wA to execute command { createRole: ... }` (Error Code 13).
+2. **Cross-Database Scoped Identity Attack (User Manipulation):**
+   - Compromised `decision_os_db_admin_runA_wA` executes `db.getSiblingDB("decision_os_test_runB_wB").createUser(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_runB_wB to execute command { createUser: ... }` (Error Code 13).
+3. **Cross-Database Scoped Identity Attack (Password Modification):**
+   - Compromised `decision_os_db_admin_runA_wA` executes `db.getSiblingDB("decision_os_test_runB_wB").changeUserPassword(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_runB_wB to execute command { updateUser: ... }` (Error Code 13).
+4. **Cross-Database Role Definition Attempt:**
+   - Compromised `decision_os_db_admin_runA_wA` attempts to define a role on `decision_os_test_runA_wA` containing privileges on `decision_os_test_runB_wB`:
+     ```javascript
+     db.getSiblingDB("decision_os_test_runA_wA").createRole({
+       role: "illegal_cross_role",
+       privileges: [{ resource: { db: "decision_os_test_runB_wB", collection: "" }, actions: ["find"] }],
+       roles: []
+     });
+     ```
+   - *Result:* `MongoServerError: Cannot grant privileges on other databases for a role defined on a non-admin database`.
+5. **Scoped Identity Destructive Escalation:**
+   - Compromised `decision_os_db_admin_runA_wA` attempts `db.getSiblingDB("decision_os_test_runA_wA").dropDatabase()`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_runA_wA to execute command { dropDatabase: 1 }` (Error Code 13).
 
 ---
 
 ### 7.6 Exact Privilege Matrix by Identity & Deployment
 
-The following matrix formally specifies permissions for every principal across both MongoDB deployments:
+The following matrix formally specifies permissions for every principal across both MongoDB deployments, reconciling every assigned command with native database RBAC:
 
 | Identity Principal | Target Deployment | Resource Scope | Permitted Actions | Explicitly Prohibited Actions | Enforcement Mechanism |
 |---|---|---|---|---|---|
-| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `dropDatabase`, `dropCollection`, `listCollections`, `find` | `createRole`, `createUser`, `grantRole`, `update`, `insert`, `remove` | MongoDB RBAC engine on `rs_test` (Code 13) |
+| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `dropDatabase`, `dropCollection`, `listCollections`, `find` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `update`, `insert`, `remove` | MongoDB RBAC engine on `rs_test` (Code 13) |
 | **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `inprog`, `checkCursorSanity`, `killAnySession`, `impersonate` | `grantRole`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test` |
 | **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ db: "admin", collection: "" }` | `killOp`, `killAnyCursor` | `createUser`, `createRole`, `dropUser`, `dropRole` | MongoDB RBAC engine on `rs_test` (Code 13) |
 | **`decision_os_destructive_executor`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS AND WIRE TRAFFIC** | Network policy (egress/ingress blocked) + zero credentials |
-| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` (Non-admin DBs) | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword` | `dropDatabase`, `dropCollection`, `insert`, `update`, `remove` | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "admin", collection: "" }` | `find` (read user metadata) | `createRole`, `createUser`, `grantRole` on `admin` | MongoDB RBAC engine on `rs_test` (Code 13) |
+| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | **NONE (Zero Admin Rights)** | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `dropDatabase` | MongoDB RBAC engine on `rs_test` (Code 13) |
+| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "admin", collection: "" }` | `find` (read-only system metadata) | `createRole`, `createUser`, `grantRole`, `dropUser` on `admin` | MongoDB RBAC engine on `rs_test` (Code 13) |
 | **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `listDatabases` | `killAnySession`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test` |
 | **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.ownership_locks` | `find`, `insert`, `update`, `remove`, `findAndModify`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13) |
 | **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.provisioning_saga` | `find`, `insert`, `update`, `remove`, `findAndModify`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13) |
 | **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_ledger` | `find` | `insert`, `update`, `remove`, `dropCollection` | MongoDB RBAC engine on `rs_coord` (Code 13) |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.nonce_allocations` | `find`, `insert`, `update`, `findAndModify`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13) |
 | **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | **NONE** | `find`, `insert`, `update`, `remove`, `drop` | MongoDB RBAC engine on `rs_coord` (Code 13) |
+| **`decision_os_db_admin_${dbName}`** | **`rs_test` (`:27018`)** | `{ db: targetTestDb, collection: "" }` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser` | `dropDatabase`, `dropCollection`, any command on other databases | Scoped Dynamic DB Admin Role (Code 13 on other DBs) |
+| **`decision_os_db_admin_${dbName}`** | **`rs_test` (`:27018`)** | Other databases & cluster | **NONE** | All commands on $db \ne targetTestDb$ or `{ cluster: true }` | MongoDB RBAC engine on `rs_test` (Code 13) |
+| **`decision_os_db_admin_${dbName}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
 | **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | `find`, `insert`, `createIndex` (Append-Only) | `update`, `remove`, `findAndModify`, `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13) |
 | **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13) |
 | **`decision_os_audit_writer`** | **`rs_test` (`:27018`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
-| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Assigned test DB (`decision_os_test_${runId}_${workerId}`) | `find`, `insert`, `update`, `remove`, `createCollection`, `createIndex`, `dropIndex` | `dropDatabase`, `dropCollection` | Dynamic test role defined on assigned DB (Code 13) |
+| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Assigned test DB (`decision_os_test_${runId}_${workerId}`) | `find`, `insert`, `update`, `remove`, `createCollection`, `createIndex`, `dropIndex` | `dropDatabase`, `dropCollection`, `createRole`, `createUser` | Dynamic test role defined on assigned DB (Code 13) |
 | **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Other test DBs & system DBs | **NONE** | Any read or write command | Scoped dynamic role isolation (Code 13) |
 | **`decision_os_worker_${runId}_${workerId}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Network policy + zero credentials |
 | **`decision_os_admin_operator`** | **API Interface Only** | HTTP `/v1/cleanup/reconcile` | Signed administrative reconciliation (`QUARANTINE`, `CONFIRM_CLEANED`) | Direct database wire access; redispatch of wire drop | Ed25519 signature verification on API gateway |
@@ -605,7 +709,7 @@ Let $C_{audit}$ denote `cleanup_audit_log` and $C_{coord}$ denote coordination c
 
 ---
 
-### 7.9 Permanent Worker Revocation Protocol & Hostile Worker Defense (Finding B38-25)
+### 7.9 Reconciled Permanent Worker Revocation Protocol & Hostile Worker Defense (Finding B38-25, B38-27)
 
 #### 1. Exact Behavior and Engine Limitations of `killAllSessionsByPattern`
 The v1.4.0 architecture cited `killAllSessionsByPattern` as the primary mechanism for worker session revocation. A rigorous technical assessment of MongoDB 8.0 reveals three distinct architectural limitations:
@@ -620,69 +724,64 @@ The v1.4.0 architecture cited `killAllSessionsByPattern` as the primary mechanis
 The client driver call `await client.close(true)` terminates client-side sockets. However, treating client-side pool closure as a security boundary is an architectural flaw:
 - A benign worker will cooperatively invoke `client.close(true)`.
 - A **compromised or hostile worker** will deliberately refuse to call `client.close(true)`, retaining its active TCP sockets, connection pool, and cached credentials to attempt further unauthorized operations.
-- Therefore, **revocation must be completely enforceable at the server side**, assuming the client is actively hostile.
+- Furthermore, **treating a successful API response or client-side connection closure as proof of revocation is strictly rejected**. Revocation must be proven through durable server-side mutations.
 
-#### 3. Complete Fail-Closed Multi-Layer Revocation Protocol
-When a worker's lease expires, cleanup begins, or quarantine occurs, the system executes a deterministic 6-layer revocation sequence:
+#### 3. Resolution of Revocation Responsibilities Between Services (Finding B38-27)
+In v1.5.0, Section 7.9 instructed `decision_os_destructive_executor` to execute `dropUser` and `dropRole` directly on the target test database. However, the privilege matrix (Section 7.6) explicitly prohibited the destructive executor from executing `dropUser` and `dropRole`. If the executor attempted these commands, MongoDB would reject them with `MongoServerError: not authorized` (Error Code 13).
 
-```mermaid
-flowchart TD
-    Start["Revocation Triggered (Cleanup / Lease Expiry / Quarantine)"] --> L1["Layer 1: Prepared Transaction Detection & Abort
-(Inspect currentOp for preparedTransaction: true; coordinate abort)"]
-    L1 --> L2["Layer 2: In-Flight Operation Cancellation
-(db.adminCommand({ killOp: 1, query: { 'command.user': workerUser } }))"]
-    L2 --> L3["Layer 3: Logical Session Termination
-(db.adminCommand({ killAllSessionsByPattern: [...] }))"]
-    L3 --> L4["Layer 4: Server-Side Identity & Role Revocation
-(db.getSiblingDB(testDb).dropUser(workerUser) & dropRole(workerRole))"]
-    L4 --> L5["Layer 5: Server-Side Authorization Cache Invalidation
-(MongoDB daemon re-evaluates cached credentials on next wire packet;
-Lingering sockets rejected with Code 11 / Code 13)"]
-    L5 --> L6["Layer 6: Fresh Authentication Blocked
-(SCRAM-SHA-256 handshake fails with Code 11 UserNotFound / Code 18)"]
-    L6 --> L7["Layer 7: Transport Network Fencing (Defense-in-Depth)
-(Container network policy disconnects terminated worker pod)"]
-```
+**Remediation:** Revocation responsibility is strictly partitioned according to authorized MongoDB identities:
+1. The **Destructive Cleanup Executor (`decision_os_destructive_executor`)** possesses `{ cluster: true }` and `admin` privileges to inspect prepared transactions, abort in-flight wire operations (`killOp`), and terminate logical sessions (`killAllSessionsByPattern`). It possesses `{ db: "", collection: "" }` with `dropDatabase` on `rs_test`. It possesses **ZERO user/role administration rights**.
+2. The **Scoped Provisioning Service (`decision_os_db_admin_${targetTestDb}`)** possesses exact role- and user-management privileges scoped strictly to `{ db: targetTestDb, collection: "" }`. It executes `dropUser` and `dropRole` directly on the target test database. It possesses **ZERO destructive drop privileges**.
+3. Teardown coordinates through a durable, idempotent handoff: the Cleanup Executor requests identity revocation from the Provisioning Service; only after identity deletion is confirmed with majority write concern does the executor terminate operations and sessions, transition to `DISPATCHING`, and dispatch `{ dropDatabase: 1 }`.
 
-##### Detailed Walkthrough of Revocation Layers:
-1. **Layer 1 — Prepared Transaction Resolution:**
-   The Cleanup Executor queries `db.adminCommand({ currentOp: 1, "command.user": workerUsername, "preparedTransaction": true })`. If any prepared transaction is detected, the executor coordinates with the transaction coordinator to abort it before proceeding, releasing all two-phase commit locks.
-2. **Layer 2 — In-Flight Operation Termination (`killOp`):**
-   The executor dispatches `killOp` against all running operation IDs (`opid`) associated with the worker principal on `rs_test`. MongoDB immediately signals and aborts long-running queries, table scans, or write batches.
-3. **Layer 3 — Logical Session Termination (`killAllSessionsByPattern`):**
-   The executor executes:
-   ```javascript
-   db.adminCommand({
-     killAllSessionsByPattern: [
-       { users: [ { user: workerUsername, db: targetTestDb } ] }
-     ]
-   });
+#### 4. Executable Operation Allocation Matrix for All 8 Revocation Operations
+The following matrix resolves exact responsibilities, identities, privileges, acknowledgements, retry behaviors, and fail-closed conditions for every revocation operation:
+
+| Operation Index & Name | Responsible Service | Required MongoDB Identity | Exact Privilege Scope & Resource | Target Deployment & Namespace | Required Acknowledgement | Retry & Crash Recovery Behavior | Fail-Closed Condition |
+|---|---|---|---|---|---|---|---|
+| **1. Prepared Transaction Resolution** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["inprog"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `currentOp` returns 0 matching operations with `preparedTransaction: true` | Rescan `currentOp` on restart; coordinate abort with transaction coordinator | If prepared transaction cannot be aborted within 30s, halt teardown; transition to `QUARANTINED`. Never drop database while prepared transactions remain. |
+| **2. In-Flight Operation Cancellation (`killOp`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killOp"]` on `{ db: "admin", collection: "" }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned for all active worker `opid`s | Query active ops; re-issue `killOp` until active count is 0 | If `killOp` fails repeatedly, halt; transition to `QUARANTINED`. Do not dispatch wire drop while worker ops are executing. |
+| **3. Logical Session Termination (`killAllSessionsByPattern`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killAnySession", "impersonate"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned from `killAllSessionsByPattern` | Idempotent command; re-execute on process restart or network timeout | If command fails, retry 3 times with exponential backoff (1s, 2s, 4s); if persistent failure, mark `QUARANTINED`. |
+| **4. Server-Side Identity Deletion (`dropUser`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_${targetTestDb}` | `actions: ["dropUser"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `UserNotFound` Code 11) | Idempotent command; retried on network partition; orphan reaper sweeps if stalled | Executor will NOT proceed to `DISPATCHING` without verified majority acknowledgement of `dropUser`. If unreachable, lease expires $\rightarrow$ `QUARANTINED`. |
+| **5. Server-Side Role Deletion (`dropRole`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_${targetTestDb}` | `actions: ["dropRole"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `RoleNotFound`) | Idempotent; retried on restart; orphan reaper sweeps if stalled | If unconfirmed, recorded in saga with `compensationPending: true`; background reaper completes. |
+| **6. Lingering TCP Socket Behavior** | MongoDB Daemon Engine Subsystem | N/A (Server-side daemon cache invalidation) | N/A (Internal engine cache lookup) | `rs_test:27018` (Server connection pool) | Commands over lingering sockets fail with Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`) | Engine re-evaluates user credentials on next wire packet after `dropUser` | Daemon halts command processing immediately upon missing user verifier; zero reads or writes permitted. |
+| **7. Fresh Authentication Rejection** | MongoDB Daemon Authentication Subsystem | N/A (SCRAM-SHA-256 verifier lookup) | N/A (Internal `system.users` catalog lookup) | `rs_test:27018` (`targetTestDb`) | SCRAM-SHA-256 handshake fails with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`) | Attempt rejected natively by MongoDB wire protocol | Wire connection cannot establish authenticated session. |
+| **8. Network Transport Fencing** | Container Orchestrator / CNI (Kubernetes / Docker) | Infrastructure Network Controller | Egress drop policy | Worker Container veth interface | Network policy state committed in container runtime | Re-applied by orchestrator reconciliation loop on container teardown | Transport packets dropped at Linux netfilter/iptables layer. |
+
+#### 5. Durable Coordination Protocol Between Executor and Provisioner
+To ensure the Cleanup Executor never executes operations outside its MongoDB privilege boundary:
+
+1. **Step 1 (Claim Request):** The Cleanup Executor receives `POST /v1/cleanup/request`, validates the caller signature and ownership lease, and records state `CLAIMED` in `cleanup_ledger` with `w: "majority"`.
+2. **Step 2 (Revocation Handoff):** The Executor sends a signed mutual TLS request `POST /v1/provisioning/revoke-worker` to the Provisioning Service:
+   ```json
+   {
+     "revocationId": "rev_550e8400_e29b",
+     "requestId": "550e8400-e29b-41d4-a716-446655440000",
+     "targetDatabase": "decision_os_test_runA_wA",
+     "workerUsername": "decision_os_worker_runA_wA",
+     "requestedAt": "2026-11-06T02:10:00.000Z"
+   }
    ```
-   All open cursors are closed and session records are invalidated.
-4. **Layer 4 — Server-Side Identity & Role Deletion (`dropUser`, `dropRole`):**
-   The executor executes `dropUser` and `dropRole` directly on the target test database:
-   ```javascript
-   await testDb.command({ dropUser: workerUsername });
-   await testDb.command({ dropRole: "worker_access_role" });
-   ```
-   This deletes the user principal and SCRAM-SHA-256 verifiers from the database catalog.
-5. **Layer 5 — Wire-Level Authorization Cache Invalidation on Lingering Sockets:**
-   In MongoDB, when a client authenticates over a TCP socket, the connection maintains an internal `AuthorizationSession` cache. When `dropUser` completes, MongoDB invalidates internal user cache entries.
-   **Hostile Worker Behavior:** If the hostile worker retains its existing open TCP socket and issues an `insert` or `find` command:
-   - MongoDB re-evaluates the user identity associated with the connection.
-   - Finding that the user principal no longer exists in `system.users`, MongoDB's authorization subsystem immediately halts command processing.
-   - The command fails on the wire with **`MongoServerError: UserNotFound` (Code 11)** or **`Unauthorized` (Code 13)**.
-   - The hostile worker cannot read or write data over retained sockets.
-6. **Layer 6 — Fresh Authentication Rejection:**
-   If the hostile worker attempts to establish a fresh TCP connection or re-authenticate an idle pooled socket using its cached password:
-   - The SCRAM-SHA-256 handshake queries `system.users` for the principal.
-   - Because the user was dropped in Layer 4, MongoDB rejects the handshake with **`Error Code 11 (UserNotFound)`** or **`Error Code 18 (AuthenticationFailed)`**.
-7. **Layer 7 — Transport Network Isolation (Defense-in-Depth):**
-   In Kubernetes or Docker environments, upon receiving confirmation of teardown or quarantine, the container orchestrator updates the worker's network egress policy, dropping all TCP packets destined for `mongodb-test:27018`.
+3. **Step 3 (Scoped Identity Revocation):**
+   - The Provisioning Service verifies the executor's Ed25519 signature.
+   - It acquires the scoped administrative connection for `decision_os_test_runA_wA` (`decision_os_db_admin_runA_wA`).
+   - It executes `dropUser("decision_os_worker_runA_wA")` and `dropRole("worker_access_role")` with `{ writeConcern: { w: "majority", j: true } }`.
+   - It marks `ownership_locks.state = 'REVOKED'` on `rs_coord:27019` with `w: "majority"`.
+   - It responds to the Executor with HTTP 200 `{ ok: 1, userDropped: true, roleDropped: true }`.
+4. **Step 4 (Executor Revocation & Fencing):**
+   - Upon receiving HTTP 200 confirmation, the Cleanup Executor connects as `decision_os_destructive_executor` to `rs_test:27018`.
+   - It inspects `currentOp` for prepared transactions; if found, coordinates abort.
+   - It issues `killOp` against running operations for `decision_os_worker_runA_wA`.
+   - It executes `killAllSessionsByPattern` for `decision_os_worker_runA_wA` on `decision_os_test_runA_wA`.
+5. **Step 5 (Crash & Failure Recovery During Handoff):**
+   - *If Provisioner is down or returns error:* The Executor retries with exponential backoff (1s, 2s, 4s, up to 15s). If the Provisioning Service remains unreachable when the 30-second cleanup lease expires, the Executor transitions the request to `OUTCOME_UNKNOWN` / `QUARANTINED`. **The Executor NEVER attempts to execute `dropUser` or `dropRole` itself.**
+   - *If Executor crashes after Step 3, before Step 4:* On restart, the Executor checks `cleanup_ledger`. If state is `CLAIMED`, it re-verifies `ownership_locks`. Seeing `state === 'REVOKED'`, it resumes Step 4 without re-requesting identity creation.
+6. **Step 6 (Physical Teardown):**
+   - Only after Steps 1–4 are fully acknowledged does the Executor transition `cleanup_ledger` to `DISPATCHING` (`dropExecutionLock = true`), write the audit log entry, and issue `db.runCommand({ dropDatabase: 1, comment: ... })`.
 
 ---
 
-### 7.10 AES-256-GCM Envelope Key Lifecycle, Nonce Uniqueness, Rotation & Crash Recovery (Finding B38-17)
+### 7.10 Correct AES-256-GCM Nonce Uniqueness & Envelope Lifecycle (Finding B38-17, B38-28)
 
 To ensure crash-safe ephemeral credential recovery without attempting the mathematically impossible task of extracting plaintext passwords from MongoDB SCRAM-SHA-256 verifiers, Decision OS specifies an authenticated envelope protocol:
 
@@ -690,22 +789,92 @@ To ensure crash-safe ephemeral credential recovery without attempting the mathem
 - **Master Envelope Key (`ENVELOPE_KEY`):** A 256-bit cryptographically secure symmetric key.
 - **Storage & Injection:** Managed in production via cloud KMS (AWS KMS, Google Cloud KMS, or HashiCorp Vault). Injected into the Provisioning Service container filesystem at `/var/run/secrets/provisioning-service/envelope-key` with permissions `0400` owned by `UID 10001`. Unprivileged worker containers have zero access to this secret.
 
-#### 2. Nonce Uniqueness & Collision Elimination (NIST SP 800-38D Compliance)
-AES-256-GCM requires that an Initialization Vector (IV/nonce) **must never be repeated under the same key**. A single nonce reuse completely destroys the authenticity and confidentiality guarantees of GCM.
-To guarantee absolute nonce uniqueness across restarts and multi-threaded invocations:
-- **Nonce Construction (96-Bit Deterministic Construction):**
-  $$\\text{IV} = \\text{InstanceSalt}_{32\\text{-bit}} \\parallel \\text{MonotonicCounter}_{64\\text{-bit}}$$
-  - `InstanceSalt`: A 32-bit cryptographically random salt generated once at process startup.
-  - `MonotonicCounter`: A 64-bit strictly monotonic integer counter incremented atomically in memory via `Atomics.add` for every encryption invocation.
-- **Collision Boundary:** Guarantees that even across $2^{64}$ operations per process instance, zero IV repetition is mathematically possible, fully satisfying NIST SP 800-38D recommendations.
+#### 2. Analysis of Legacy Nonce Flaw & Birthday Paradox Vulnerability (Finding B38-28)
+The v1.5.0 architecture specified nonce construction as:
+$$\\text{IV} = \\text{InstanceSalt}_{32\\text{-bit}} \\parallel \\text{MonotonicCounter}_{64\\text{-bit}}$$
+Where `InstanceSalt` was a 32-bit random value generated at startup, and `MonotonicCounter` was an in-memory 64-bit integer initialized to 0.
 
-#### 3. Versioned Envelope Schema & Authenticated Data (AAD)
+**Mathematical Proof of Vulnerability:**
+1. In-memory counters reset to 0 whenever a provisioner container restarts, crashes, or is rescheduled.
+2. The random salt space is $2^{32} \\approx 4.29 \\times 10^9$ possible values.
+3. By the birthday problem, the probability of a salt collision across $k$ process instances or replicas sharing the same key is:
+   $$P(\\text{collision}) \\approx 1 - \\exp\\left(-\\frac{k(k-1)}{2 \\times 2^{32}}\\right)$$
+   For $k = 2^{16} = 65,536$ process instances, $P(\\text{collision}) \\approx 1 - e^{-0.5} \\approx 39.3\\%$.
+   For $k = 77,163$ instances, $P(\\text{collision}) \\ge 50\\%$.
+4. In active CI environments with container restarts and multiple provisioner replicas, salt collisions are guaranteed to occur over time.
+5. When a salt collision occurs between two instances $A$ and $B$, both instances initialize their in-memory counters to 0. Consequently, both instances emit identical nonces:
+   $$\\text{IV}_{A, 0} = \\text{Salt} \\parallel 0 = \\text{IV}_{B, 0}$$
+   Under AES-GCM, encrypting two distinct plaintext messages under the same key and identical nonce exposes the XOR difference of the plaintexts and permits recovery of the GCM authentication hash key $H$, destroying all confidentiality and authenticity.
+6. Therefore, the v1.5.0 construction does **NOT** guarantee nonce uniqueness across process lifetimes.
+
+#### 3. Durable Globally Coordinated Block Allocation Protocol (NIST SP 800-38D Section 8.2.1)
+To achieve mathematical certainty of nonce uniqueness across multiple replicas, crashes, and restarts, Decision OS replaces volatile random salts with a **Durable Globally Coordinated Counter Range Block Reservation Protocol** adhering to NIST SP 800-38D Section 8.2.1 Deterministic Construction:
+
+##### 1. 96-Bit Nonce Structure
+$$\\text{IV} = \\text{KeyVersionPrefix}_{16\\text{-bit}} \\parallel \\text{AllocatedRangeBlock}_{32\\text{-bit}} \\parallel \\text{MonotonicCounter}_{48\\text{-bit}} = 96\\text{ bits}$$
+- **`KeyVersionPrefix` (16 bits):** Encodes the active envelope key version (e.g. `0x0001` for `v1`, `0x0002` for `v2`). Guarantees IV domain separation across key rotations.
+- **`AllocatedRangeBlock` (32 bits):** A globally coordinated, strictly monotonic block index leased from `decision_os_coordination.nonce_allocations`.
+- **`MonotonicCounter` (48 bits):** An in-memory atomic counter incremented atomically via `Atomics.add` for each encryption within the leased block range $[0, 2^{20} - 1]$.
+
+##### 2. Coordination Storage Schema (`decision_os_coordination.nonce_allocations`)
+Block reservations are durably recorded in `rs_coord:27019`:
+```json
+{
+  "_id": "nonce_seq_v1",
+  "keyVersion": "v1",
+  "nextBlockStart": 1048576,
+  "blockSize": 1048576,
+  "allocatedAt": "2026-11-06T02:00:00.000Z",
+  "maxInvocationCeiling": 281474976710656
+}
+```
+
+##### 3. Nine Core Invariants of the Nonce Allocation Protocol (Addressing Finding B38-28):
+1. **Multiple Concurrent Provisioner Replicas:**
+   Each provisioner replica leases a contiguous, non-overlapping range of counter values ($\\text{BLOCK\\_SIZE} = 2^{20} = 1,048,576$ nonces) by executing an atomic `findOneAndUpdate` on `rs_coord:27019`:
+   ```javascript
+   const allocation = await db.collection("nonce_allocations").findOneAndUpdate(
+     { _id: `nonce_seq_${keyVersion}` },
+     { $inc: { nextBlockStart: BLOCK_SIZE }, $set: { allocatedAt: new Date() } },
+     { returnDocument: "after", upsert: true, writeConcern: { w: "majority", j: true } }
+   );
+   ```
+   MongoDB replica set consensus (`w: "majority", j: true`) guarantees that block reservations are strictly serialized and linearizable. Two replicas never receive overlapping blocks.
+2. **Process Restarts and Crashes:**
+   Upon restart or crash, any unconsumed nonces in the replica's in-memory counter block are permanently discarded. The restarted process NEVER resumes or rewinds a previous counter block. It MUST allocate a brand-new, strictly higher block from `rs_coord:27019`. Unused counter values ("counter holes") are completely permissible under NIST SP 800-38D; counter repetition is strictly prevented.
+3. **Counter Rollback Prevention:**
+   Because block allocation requires majority journaled write concern (`w: "majority", j: true`), a replica set election or failover cannot regress the allocated block counter.
+4. **Durable Counter Allocation and Atomicity:**
+   The atomic CAS on `nonce_allocations` ensures that every leased range is durably committed to a majority of storage nodes before any encryption using that range can occur.
+5. **Key Rotation and Key-Version Separation:**
+   Each envelope key version maintains its own sequence document: `nonce_seq_${keyVersion}`. Rotating to `v2` initializes a new counter sequence. The 16-bit `KeyVersionPrefix` in the IV provides physical bit-level domain separation.
+6. **Restored Database Backups:**
+   If `rs_coord` is restored from an earlier backup, counter values in `nonce_allocations` could theoretically regress.
+   **Disaster Recovery Mandate:** Any restoration of `rs_coord` from backup mandates an **Epoch Bump** in KMS / Vault and a **mandatory rotation of `ENVELOPE_KEY`** to `keyVersion + 1`. Encryption with an old key version after a database restore is strictly forbidden.
+7. **Counter Exhaustion and Maximum Per-Key Invocation Limits:**
+   NIST SP 800-38D limits deterministic nonces to $2^{64}$ invocations per key. Decision OS establishes an even stricter invocation ceiling of $2^{48} \\approx 2.81 \\times 10^{14}$ nonces per key version. When `nextBlockStart >= 2^{48} - BLOCK_SIZE`, the allocation engine halts further block leases, emits a high-priority alert `CRITICAL_ENVELOPE_KEY_EXHAUSTION`, and requires immediate rotation to the next key version.
+8. **Recovery When Nonce Allocation State is Unavailable:**
+   If `rs_coord:27019` is unreachable or partitioned, and a provisioner's current block is exhausted, the provisioner **strictly fails closed**. It refuses to encrypt credentials, rejecting incoming claim requests with HTTP 503 `SERVICE_UNAVAILABLE_NONCE_UNAVAILABLE`. It is strictly forbidden to fall back to uncoordinated local counters or random IVs.
+9. **Prevention of Encryption While Uniqueness Cannot Be Established:**
+   During container startup, the provisioner's readiness probe checks connectivity to `rs_coord:27019` and verifies successful reservation of its initial block. If block reservation fails, the readiness probe fails, preventing the orchestrator from routing traffic to the container.
+
+##### 4. Mathematical Collision Proof
+Let $R_a$ and $R_b$ be two distinct leased blocks: $R_a \\ne R_b$. For any counters $c_a, c_b \\in [0, \\text{BLOCK\\_SIZE} - 1]$:
+$$\\text{AllocatedRangeBlock}(R_a) \\ne \\text{AllocatedRangeBlock}(R_b) \\implies \\text{IV}(R_a, c_a) \\ne \\text{IV}(R_b, c_b)$$
+For encryptions within the same block $R_a$, strict atomic in-memory incrementation ensures:
+$$c_1 \\ne c_2 \\implies \\text{IV}(R_a, c_1) \\ne \\text{IV}(R_a, c_2)$$
+For encryptions under different key versions $v_1 \\ne v_2$:
+$$\\text{KeyVersionPrefix}(v_1) \\ne \\text{KeyVersionPrefix}(v_2) \\implies \\text{IV}(v_1, \\dots) \\ne \\text{IV}(v_2, \\dots)$$
+Therefore:
+$$P(\\text{IV}_i = \\text{IV}_j) = 0 \\quad \\forall i \\ne j \\quad \\blacksquare$$
+
+#### 4. Versioned Envelope Schema & Authenticated Data (AAD)
 The encrypted credential envelope stored in `ownership_locks.credentialEnvelope` adheres to the following strict schema:
 ```json
 {
   "keyVersion": "v1",
   "format": "AES-256-GCM",
-  "iv": "3f8b7a2cd1e4f9a0b2c3d4e5",
+  "iv": "00010000000100000000002a",
   "tag": "e91c4d7af6b2a0c4d8e1f5b9a7c3d2e1",
   "ciphertext": "Y3J5cHRvQ2lwaGVydGV4dERhdGE=",
   "encryptedAt": "2026-11-06T01:00:00.000Z"
@@ -715,14 +884,14 @@ The encrypted credential envelope stored in `ownership_locks.credentialEnvelope`
   $$\\text{AAD} = \\text{UTF8}(\\text{requestId} + \\text{"|"} + \\text{databaseName} + \\text{"|"} + \\text{runId} + \\text{"|"} + \\text{workerId} + \\text{"|"} + \\text{callerPublicKeyFingerprint} + \\text{"|"} + \\text{keyVersion})$$
   Any tampering with the lease document or attempt to replay the ciphertext in another context causes GCM authentication tag verification to fail immediately.
 
-#### 4. Key Rotation Protocol
+#### 5. Key Rotation Protocol
 1. A new key version (`v2`) is injected into the secret volume alongside `v1`.
 2. The Provisioning Service supports dual-key decryption:
    - New claims are encrypted using the active key (`v2`).
    - Existing envelopes presenting `keyVersion: "v1"` are decrypted using `v1`.
 3. Because envelopes are ephemeral and destroyed upon activation (or reaped within 60 seconds), old key versions can be retired within 5 minutes of rotation with zero migration overhead.
 
-#### 5. Crash Recovery Protocol
+#### 6. Crash Recovery Protocol
 If the Provisioning Service crashes after generating credentials and persisting the envelope, but before HTTP response delivery:
 1. The retrying worker client issues `POST /v1/ownership/claim` with the same `requestId`.
 2. The restarted Provisioning Service verifies the Ed25519 request signature.
@@ -731,7 +900,7 @@ If the Provisioning Service crashes after generating credentials and persisting 
 5. If authentication succeeds, the original ephemeral password is recovered and redelivered over mTLS without touching MongoDB.
 6. If decryption fails (corrupted data or modified AAD), the provisioner executes fail-closed rollback: dropping the user/role, deleting the lock, and requiring a fresh claim.
 
-#### 6. Exact Durable Acknowledgement Ordering Before Envelope Destruction
+#### 7. Exact Durable Acknowledgement Ordering Before Envelope Destruction
 To prevent race conditions where credentials are destroyed before the worker has established its connection, envelope destruction follows strict durable ordering:
 
 ```mermaid
@@ -880,23 +1049,23 @@ stateDiagram-v2
 | Index | Saga State | Operation / Action | Preconditions | Durable Mutation Recorded on `rs_coord` | Compensating Action on Failure |
 |---|---|---|---|---|---|
 | **1** | **`CLAIM_PENDING`** | Validate request signature, nonce, canonical DB naming. | Database unclaimed or lease expired; valid Ed25519 signature. | Insert `_id: sagaId, requestId, runId, workerId, databaseName, state: 'CLAIM_PENDING'`. | Abort with HTTP 400/409; zero DB changes. |
-| **2** | **`ROLE_CREATING`** | Acquire lease lock in `ownership_locks`. | Atomic insert on `ownership_locks` with unique index on `databaseName`. | `$set: { state: 'ROLE_CREATING', leaseExpiresAt: now + 60s }`. | Release lease lock in `ownership_locks`. |
-| **3** | **`ROLE_CREATED`** | Dispatch `db.createRole` directly on target test database on `rs_test`. | `rs_test` reachable; role does not exist on target DB. | `$set: { state: 'ROLE_CREATED', dynamicRoleName }`. | Transition to `ROLLING_BACK` $\\rightarrow$ release lease lock. |
-| **4** | **`USER_CREATING`** | Generate 32-byte secret $P$. Dispatch `db.createUser` on target test DB with base unprivileged role. | Role created; user does not exist. | `$set: { state: 'USER_CREATING', mongoUsername }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropRole`. |
-| **5** | **`USER_CREATED`** | User principal exists in target DB with base role only (zero test DB access). | User creation returned `{ ok: 1 }`. | `$set: { state: 'USER_CREATED' }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole`. |
-| **6** | **`ROLE_ASSIGNED`** | Dispatch `db.grantRolesToUser(user, [dynamicRole])` on target test DB. | User and role exist. | `$set: { state: 'ROLE_ASSIGNED' }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole`. |
-| **7** | **`CREDENTIAL_ENCRYPTED`** | Encrypt $P$ under `ENVELOPE_KEY` with deterministic nonce and AAD; persist to `ownership_locks`. | AES-256-GCM encryption succeeds; AAD bound. | `$set: { state: 'CREDENTIAL_ENCRYPTED', credentialEnvelope }` with `w: majority`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole`. |
+| **2** | **`ROLE_CREATING`** | Acquire lease lock in `ownership_locks`; bind scoped identity `decision_os_db_admin_${dbName}`. | Atomic insert on `ownership_locks` with unique index on `databaseName`. | `$set: { state: 'ROLE_CREATING', leaseExpiresAt: now + 60s }`. | Release lease lock in `ownership_locks`. |
+| **3** | **`ROLE_CREATED`** | Dispatch `db.createRole` directly on target test database on `rs_test` via scoped admin identity. | `rs_test` reachable; role does not exist on target DB. | `$set: { state: 'ROLE_CREATED', dynamicRoleName }`. | Transition to `ROLLING_BACK` $\\rightarrow$ release lease lock. |
+| **4** | **`USER_CREATING`** | Generate 32-byte secret $P$. Dispatch `db.createUser` on target test DB with base unprivileged role via scoped admin. | Role created; user does not exist. | `$set: { state: 'USER_CREATING', mongoUsername }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropRole` via scoped admin. |
+| **5** | **`USER_CREATED`** | User principal exists in target DB with base role only (zero test DB access). | User creation returned `{ ok: 1 }`. | `$set: { state: 'USER_CREATED' }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole` via scoped admin. |
+| **6** | **`ROLE_ASSIGNED`** | Dispatch `db.grantRolesToUser(user, [dynamicRole])` on target test DB via scoped admin. | User and role exist. | `$set: { state: 'ROLE_ASSIGNED' }`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole` via scoped admin. |
+| **7** | **`CREDENTIAL_ENCRYPTED`** | Allocate deterministic nonce from leased block in `nonce_allocations`; encrypt $P$ under `ENVELOPE_KEY` with AAD; persist to `ownership_locks`. | AES-256-GCM encryption succeeds; AAD bound; block lease active. | `$set: { state: 'CREDENTIAL_ENCRYPTED', credentialEnvelope }` with `w: majority`. | Transition to `ROLLING_BACK` $\\rightarrow$ `dropUser`, `dropRole` via scoped admin. |
 | **8** | **`CREDENTIAL_DELIVERED`** | Deliver HTTP 200 OK with credentials over mTLS. | Envelope persisted durably. | `$set: { state: 'CREDENTIAL_DELIVERED' }`. | Worker retry redelivers via envelope; lease TTL reaps if abandoned. |
 | **9** | **`ACTIVATED`** | Worker verifies DB connectivity and calls `/v1/ownership/activate`. Atomically zeroize envelope. | Signature valid; physical connection probe `{ ping: 1 }` confirmed. | Majority commit `$set: { state: 'ACTIVATED' }`, followed by atomic `$unset: { credentialEnvelope: 1 }`. | None (Active test phase underway). |
-| **10** | **`ROLLING_BACK`** | Execute compensating `dropUser`, `dropRole`, delete `ownership_locks`. | Error caught or unactivated lease expired. | `$set: { state: 'ROLLING_BACK', rollbackReason }`. | If compensation fails, mark `compensationPending: true` $\\rightarrow$ `ORPHAN_RECOVERY`. |
+| **10** | **`ROLLING_BACK`** | Execute compensating `dropUser`, `dropRole` via scoped admin identity, delete `ownership_locks`. | Error caught or unactivated lease expired. | `$set: { state: 'ROLLING_BACK', rollbackReason }`. | If compensation fails, mark `compensationPending: true` $\\rightarrow$ `ORPHAN_RECOVERY`. |
 | **11** | **`ROLLED_BACK`** | Compensations verified complete on both `rs_test` and `rs_coord`. | User, role, and lease confirmed deleted. | `$set: { state: 'ROLLED_BACK', completedAt: now }`. | Terminal clean state. |
-| **12** | **`ORPHAN_RECOVERY`** | Background reaper sweeps stalled rollbacks. | Saga in `ROLLING_BACK` or lease expired with `compensationPending: true`. | `$set: { state: 'ORPHAN_RECOVERY', reaperClaimedAt: now }`. | Retries compensation with exponential backoff until verified deleted. |
+| **12** | **`ORPHAN_RECOVERY`** | Background reaper sweeps stalled rollbacks using scoped administrative credentials. | Saga in `ROLLING_BACK` or lease expired with `compensationPending: true`. | `$set: { state: 'ORPHAN_RECOVERY', reaperClaimedAt: now }`. | Retries compensation with exponential backoff until verified deleted. |
 
 #### 4. Recovery After Provisioning Service Crash at Every Transition
 1. **Crash during `ROLE_CREATING`:** Role does not exist on `rs_test`. Restarted provisioner detects `ROLE_CREATING` with expired lease. Compensation releases lock in `ownership_locks` and marks saga `ROLLED_BACK`.
 2. **Crash between `ROLE_CREATED` and `USER_CREATING`:** Role exists on target DB, user does not. Retrying worker resumes saga (creates user), or if lease expires, compensation issues `dropRole` and marks `ROLLED_BACK`.
 3. **Crash between `USER_CREATED` and `ROLE_ASSIGNED`:** User exists with base role only (zero test DB access). Retrying worker resumes role assignment, or compensation issues `dropUser` followed by `dropRole`.
-4. **Crash between `ROLE_ASSIGNED` and `CREDENTIAL_ENCRYPTED`:** User and role exist, but password envelope was not saved. Plaintext password is lost in volatile memory. **Recovery Action:** Provisioner issues `updateUser({ user, pwd: newPassword })`, generates a new envelope with deterministic nonce, persists it, and proceeds.
+4. **Crash between `ROLE_ASSIGNED` and `CREDENTIAL_ENCRYPTED`:** User and role exist, but password envelope was not saved. Plaintext password is lost in volatile memory. **Recovery Action:** Provisioner uses scoped identity `decision_os_db_admin_${dbName}` to issue `updateUser({ user, pwd: newPassword })`, allocates a fresh deterministic nonce from its leased block in `nonce_allocations`, generates a new envelope, persists it with `w: majority`, and proceeds.
 5. **Crash after `CREDENTIAL_ENCRYPTED`, before HTTP delivery:** User, role, and envelope exist. Retried claim with matching `requestId` decrypts envelope with `ENVELOPE_KEY`, validates AAD, and delivers credentials without modifying database state.
 6. **Crash after `CREDENTIAL_DELIVERED`, before `ACTIVATED`:** Worker has credentials. If worker connects, it sends activation handshake; provisioner records `ACTIVATED` and zeroizes envelope. If worker crashed and never activates, the 60-second lease expires; lease reaper moves saga to `ROLLING_BACK` and cleans up.
 7. **Crash during `ACTIVATED` envelope zeroization:** Worker is active. If `$unset` failed, next heartbeat retries `$unset: { credentialEnvelope: 1 }`.
@@ -963,9 +1132,9 @@ stateDiagram-v2
 | **(None)** | `POST /v1/cleanup/request` | `REQUESTED` | Cleanup Executor (Sole Writer) | Signature valid, nonce unused, target DB whitelisted, caller owns lease in `ownership_locks`. | Insert `_id: requestId`, `runId`, `workerId`, `dbName`, `payloadHash`, `createdAt`, `state: 'REQUESTED'`. |
 | **`REQUESTED`** | Validation Failure | `REJECTED` | Cleanup Executor | Signature invalid, target DB blacklisted, or nonce seen. | `$set: { state: 'REJECTED', rejectedReason, completedAt: now }`. |
 | **`REQUESTED`** | Acquire Execution Lease | `CLAIMED` | Cleanup Executor | Ledger state is `REQUESTED`. Caller verified as active owner in `ownership_locks`. | `$set: { state: 'CLAIMED', claimedBy: executorId, claimGen: gen + 1, leaseExpiresAt: now + 30s }`. |
-| **`CLAIMED`** | Pre-Wire Verification | `DISPATCHING` | Cleanup Executor | Lease active, `ownership_locks` confirms no generation bump, collections present. | `$set: { state: 'DISPATCHING', wireDispatchedAt: now, dropExecutionLock: true }`. |
+| **`CLAIMED`** | Pre-Wire Verification & Coordinated Revocation | `DISPATCHING` | Cleanup Executor | Lease active, `ownership_locks` confirms no generation bump, Scoped Provisioner confirmed `dropUser`/`dropRole` with majority write concern, Executor terminated ops/sessions, collections present. | `$set: { state: 'DISPATCHING', wireDispatchedAt: now, dropExecutionLock: true }`. |
 | **`CLAIMED`** | Revocation Detected | `RECONCILIATION_REQUIRED` | Cleanup Executor | Ownership superseded by another worker or generation bumped. | `$set: { state: 'RECONCILIATION_REQUIRED', reason: 'AUTHORITY_SUPERSEDED' }`. |
-| **`DISPATCHING`** | Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire to the original dispatching connection. | `$set: { state: 'CLEANED', cleanedAt: now, dropExecutionLock: false }`. Revokes dynamic test role, drops user, terminates connections. |
+| **`DISPATCHING`** | Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire to the original dispatching connection. | `$set: { state: 'CLEANED', cleanedAt: now, dropExecutionLock: false }`. (User and role previously deleted by Scoped Provisioner in Revocation Phase 1; in-flight ops/sessions terminated by Executor in Phase 2). |
 | **`DISPATCHING`** | Wire Timeout / Socket Drop / Crash | `OUTCOME_UNKNOWN` | Cleanup Executor / Supervisor | Socket disconnect, driver timeout, or executor restart during wire dispatch. | `$set: { state: 'OUTCOME_UNKNOWN', error: 'SOCKET_TIMEOUT_OR_CRASH', dropExecutionLock: true }`. |
 | **`OUTCOME_UNKNOWN`** | Catalog Absence Observed | `OUTCOME_UNKNOWN` | Cleanup Executor | Catalog query shows 0 collections. **Does NOT transition to CLEANED!** | `$set: { targetAbsentObserved: true, observedQuiescenceAt: now }`. |
 | **`OUTCOME_UNKNOWN`** | Signed SRE Reconciliation Order (`action: "QUARANTINE"`) | `QUARANTINED` | Admin Operator (Signed) | SRE reviews incident, verifies evidence, signs quarantine order. **NO redispatch drop is issued!** | `$set: { state: 'QUARANTINED', quarantinedAt: now, quarantinedBy: opId, ticketId, dropExecutionLock: true }`. |
@@ -1138,13 +1307,13 @@ Under this fail-closed architecture, ambiguous requests remain in `QUARANTINED` 
 
 | Call-Site ID | File & Line in Baseline | Current Baseline Code | Remediation & Replacement Mechanism | Verification Method |
 |---|---|---|---|---|
-| **CS-01** | `apps/api/src/db/guard.ts:251` | `const rawNativeDrop = db.dropDatabase.bind(db);` | **Delete monkey-patch.** Worker connections natively lack `dropDatabase` permission in MongoDB RBAC. Remove `rawNativeDrop` binding entirely. | Verification Test `D38-01`, Static Scan `D38-29` |
-| **CS-02** | `apps/api/src/db/guard.ts:258` | `return rawNativeDrop();` in `activeSupervisedDropContext` | **Delete bypass.** Eliminate `activeSupervisedDropContext` entirely. In-process context can no longer unlock native drop. | Verification Test `D38-02`, Static Scan `D38-29` |
-| **CS-03** | `apps/api/src/db/guard.ts:307` | `return rawNativeDrop();` in `isVerifiedCleanupLocked` | **Delete bypass.** Eliminate local metadata inspection bypass. No client-side bypass permits raw drop execution. | Verification Test `D38-03`, Static Scan `D38-29` |
+| **CS-01** | `apps/api/src/db/guard.ts:251` | `const rawNativeDrop = db.dropDatabase.bind(db);` | **Delete monkey-patch.** Worker connections natively lack `dropDatabase` permission in MongoDB RBAC. Remove `rawNativeDrop` binding entirely. | Verification Test `D38-01`, Static AST Scan `D38-11` |
+| **CS-02** | `apps/api/src/db/guard.ts:258` | `return rawNativeDrop();` in `activeSupervisedDropContext` | **Delete bypass.** Eliminate `activeSupervisedDropContext` entirely. In-process context can no longer unlock native drop. | Verification Test `D38-02`, Static AST Scan `D38-11` |
+| **CS-03** | `apps/api/src/db/guard.ts:307` | `return rawNativeDrop();` in `isVerifiedCleanupLocked` | **Delete bypass.** Eliminate local metadata inspection bypass. No client-side bypass permits raw drop execution. | Verification Test `D38-03`, Static AST Scan `D38-11` |
 | **CS-04** | `apps/api/src/db/guard.ts:318` | `connection.dropDatabase = async () => cleanupTestDatabase(...)` | **Replace monkey-patch with client proxy.** `cleanupTestDatabase()` delegates to `CleanupExecutorClient.requestCleanup()`, transmitting an Ed25519-signed request to `apps/cleanup-executor`. | Verification Test `D38-04`, Integration Test `npm run test:api` |
-| **CS-05** | `apps/api/src/db/guard.ts:1376` | `await db.dropDatabase();` in `SupervisedCleanupExecutor` | **Move execution to external service.** Delete `SupervisedCleanupExecutor` from `guard.ts`. Move physical drop execution to `apps/cleanup-executor/src/executor.ts`. | Verification Test `D38-05`, Static Scan `D38-29` |
-| **CS-06** | `apps/api/src/db/guard.ts:1487` | `await client.db(dbName).dropDatabase();` in `reconcileTestDatabaseCleanup` | **Route reconciliation through external executor.** Replace direct drop with `CleanupExecutorClient.submitReconciliation()` using admin key. Redispatch dropped. | Verification Test `D38-06`, Integration Test `D38-24` |
-| **CS-07** | `scripts/benchmark.ts:170` | `await mongoose.connection.db.dropDatabase();` | **Safe benchmark isolation.** Generate unique test database `decision_os_benchmark_<runId>_test`, register ownership via `POST /v1/ownership/claim`, receive dedicated benchmark credentials, and invoke `CleanupExecutorClient.requestCleanup()`. | Benchmark CLI run, Static Scan `D38-29` |
+| **CS-05** | `apps/api/src/db/guard.ts:1376` | `await db.dropDatabase();` in `SupervisedCleanupExecutor` | **Move execution to external service.** Delete `SupervisedCleanupExecutor` from `guard.ts`. Move physical drop execution to `apps/cleanup-executor/src/executor.ts`. | Verification Test `D38-05`, Static AST Scan `D38-11` |
+| **CS-06** | `apps/api/src/db/guard.ts:1487` | `await client.db(dbName).dropDatabase();` in `reconcileTestDatabaseCleanup` | **Route reconciliation through external executor.** Replace direct drop with `CleanupExecutorClient.submitReconciliation()` using admin key. Redispatch dropped. | Verification Test `D38-09`, Integration Test `D38-18` |
+| **CS-07** | `scripts/benchmark.ts:170` | `await mongoose.connection.db.dropDatabase();` | **Safe benchmark isolation.** Generate unique test database `decision_os_benchmark_<runId>_test`, register ownership via `POST /v1/ownership/claim`, receive dedicated benchmark credentials, and invoke `CleanupExecutorClient.requestCleanup()`. | Benchmark CLI run, Static AST Scan `D38-11` |
 | **CS-08** | `apps/api/tests/batch4_r6_isolation.test.ts:56` | `await connA.dropDatabase();` in Test 3 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(connA, runA, 'A')`. Teardown failure fails test run visibly. | Integration Test `npm run test:api` |
 | **CS-09** | `apps/api/tests/batch4_r6_isolation.test.ts:57` | `await connB.dropDatabase();` in Test 3 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(connB, runB, 'B')`. Teardown failure fails test run visibly. | Integration Test `npm run test:api` |
 | **CS-10** | `apps/api/tests/batch4_r6_isolation.test.ts:106` | `await conn.dropDatabase();` in Test 5 | **Route via cleanup client.** Replace with `await cleanupTestDatabase(conn, runA, '0')`. Fails closed if ownership mismatched. | Integration Test `npm run test:api` |
@@ -1264,15 +1433,15 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
 - **Remediation (Phase B.4):** Reworked Section 10.4 using exact MongoDB 8.0 documented fields: `optimes.lastCommittedOpTime.ts` and `optimes.lastCommittedOpTime.t` from `replSetGetStatus` on the active primary. Explicitly acknowledged that the `local` database ignores read concern. Formulated strict lexicographical OpTime comparison $(t, ts)$. Formally treated comment preservation as an unverified hypothesis under test (`D38-21`). Removed automatic `CONFIRM_CLEANED` unless live comment preservation is proven; unproven drops remain permanently `QUARANTINED`.
 - **Status:** REMEDIATED (PHASE B.4) — APPROVED.
 
-### B38-17: Define Crash-Safe Ephemeral Credential Recovery (Refined Phase B.5)
+### B38-17: Define Crash-Safe Ephemeral Credential Recovery (Refined Phase B.5 & Corrected Phase B.6)
 - **Defect:** Idempotent claim redelivery was claimed, but generated passwords were held only in volatile executor memory, while MongoDB stores credentials as irreversible SCRAM-SHA-256 verifiers.
-- **Remediation (Phase B.4 / B.5):** Formulated a crash-safe credential recovery protocol utilizing a **Caller-Bound Encrypted Credential Envelope** (`ownership_locks.credentialEnvelope`).
-  - **Refinements in Phase B.5:**
+- **Remediation (Phase B.4 / B.5 / B.6):** Formulated a crash-safe credential recovery protocol utilizing a **Caller-Bound Encrypted Credential Envelope** (`ownership_locks.credentialEnvelope`).
+  - **Refinements in Phase B.5 & B.6:**
     1. Defined 256-bit envelope key lifecycle, KMS/Vault storage, and injection into the Provisioning Service.
-    2. Implemented NIST SP 800-38D compliant 96-bit deterministic nonces (`InstanceSalt || MonotonicCounter`), mathematically eliminating IV collisions.
+    2. Corrected in Phase B.6 via NIST SP 800-38D Section 8.2.1 deterministic block reservation protocol on `rs_coord:27019` (Finding B38-28), eliminating birthday collision vulnerabilities.
     3. Established key rotation protocol with `keyVersion` tagging and dual-key decryption support.
     4. Enforced exact durable acknowledgement ordering: worker verifies connectivity via `{ ping: 1 }` $\\rightarrow$ worker sends signed activation handshake $\\rightarrow$ provisioner commits `ACTIVATED` with majority write concern $\\rightarrow$ provisioner executes atomic `$unset: { credentialEnvelope: 1 }` with majority write concern $\\rightarrow$ HTTP 200 confirmation delivered.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.6) — PENDING INDEPENDENT REVIEW.
 
 ### B38-18: Replace False Provisioning Atomicity Claims (Refined Phase B.5)
 - **Defect:** The architecture described separate `createRole` and `createUser` commands while claiming overall lifecycle atomicity. In MongoDB, administrative commands cannot run within multi-document ACID transactions.
@@ -1282,7 +1451,7 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
     2. Documented deterministic recovery rules for crashes occurring at every single transition.
     3. Specified exponential backoff retry for failed rollback compensations.
     4. Formalized strict 4-point verification proof before the orphan reaper deletes any user or role.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.5) — APPROVED.
 
 ### B38-19: Make the Audit Ledger Genuinely Tamper-Evident (Refined Phase B.5)
 - **Defect:** The executor possessed `update`, `remove`, and `findAndModify` privileges across all coordination collections, including `cleanup_audit_log`, making claims of "immutable" audit logging unfounded.
@@ -1294,14 +1463,14 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
     3. Specified strict checkpoint cadence (60s periodic + terminal milestones `CLEANED` / `QUARANTINED`).
     4. Established monotonic sequence linking and crash recovery verification against external WORM storage.
     5. Configured fail-closed executor hard freeze upon any hash chain verification mismatch.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.5) — APPROVED.
 
 ### B38-20: Separate Destructive Authority from Coordination and Audit Data (Finding B38-20)
 - **Defect:** The cleanup executor possessed `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` on the same deployment as `decision_os_coordination` and `cleanup_audit_log`. Because MongoDB RBAC evaluates permissions additively without negative filters, an identity with `{ db: "", collection: "" }` drop privileges can drop coordination metadata and the audit log itself. Application-level regex guards cannot serve as a database-enforced security boundary.
 - **Remediation (Phase B.5):** Architecture establishes a **Strict Physical/Logical Two-Deployment Boundary**:
   - **Coordination & Audit Cluster (`mongodb-coord:27019`):** Dedicated replica set hosting `decision_os_coordination` (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`) and `cleanup_audit_log`. The destructive identity possesses zero network reachability and zero authentication credentials on this cluster.
   - **Ephemeral Test Database Cluster (`mongodb-test:27018`):** Dedicated replica set hosting dynamic test databases (`decision_os_test_*`). The Destructive Cleanup Executor (`decision_os_destructive_executor`) is scoped strictly to this cluster. Because coordination and audit databases do not reside on `mongodb-test`, it is mathematically impossible for destructive cleanup to drop coordination or audit storage.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.5) — APPROVED.
 
 ### B38-24: Restrict Role Provisioning Authority & Eliminate False Native Claims (Finding B38-24)
 - **Defect:** The v1.4.0 architecture claimed that application-level AST checks in `provisioner.ts` constituted MongoDB-native RBAC enforcement, while granting `createRole`, `createUser`, and `grantRole` on `admin`. In MongoDB, roles created on `admin` can contain privileges spanning any database and cluster resources. Furthermore, destructive cleanup authority was co-located with provisioning authority.
@@ -1310,7 +1479,7 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
   - Decoupled provisioning authority from destructive cleanup: established an independent **Provisioning Service** (`decision_os_provisioner`), completely separate from the **Destructive Cleanup Executor** (`decision_os_destructive_executor`).
   - Dynamically provisioned worker roles are created **directly on the target test database** (`db.getSiblingDB(targetTestDb).createRole(...)`). In MongoDB RBAC, roles defined on a non-admin database are natively prohibited by the database engine from granting privileges outside that database or on cluster resources.
   - Formulated independent threat models for compromised provisioner, cleanup executor, API process, and administrative operator. Added adversarial verification test **`D38-26`**.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.5) — APPROVED.
 
 ### B38-25: Establish Permanent Worker Revocation & Hostile Worker Defense (Finding B38-25)
 - **Defect:** The v1.4.0 architecture relied on `killAllSessionsByPattern` and client-side `client.close(true)`. Client-side pool closure is a cooperative client action, not an enforceable security boundary. Furthermore, `killAllSessionsByPattern` does not sever physical TCP connections, ignores prepared distributed transactions, and misses unsessioned wire operations.
@@ -1324,7 +1493,39 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
     4. Prevention of fresh authentication attempts (Code 11 / Code 18).
     5. Network container isolation policies severing transport paths.
   - Added hostile-worker adversarial verification test **`D38-27`**.
-- **Status:** REMEDIATED (PHASE B.5) — PENDING INDEPENDENT REVIEW.
+- **Status:** REMEDIATED (PHASE B.5) — APPROVED.
+
+### B38-26: Eliminate Cross-Database Provisioning Authority (Phase B.6)
+- **Defect:** Section 7.6 granted `decision_os_provisioner` the actions `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, and `changePassword` across `{ db: "", collection: "" }` on `rs_test`. Although roles defined on non-admin databases cannot grant privileges on other databases, this grant authorized the central provisioner to manage principals across any and all non-admin databases. A compromised provisioner could manipulate principals in another worker's database, breaking per-worker multi-tenant isolation.
+- **Remediation (Phase B.6):**
+  1. Removed unrestricted cross-database user and role administration from `decision_os_provisioner`. The central identity has zero user/role management rights on `rs_test`.
+  2. Established the **Database-Scoped Provisioning Delegation Model**: dynamic roles and ephemeral worker users are provisioned exclusively through per-target-database scoped administrative identities (`decision_os_db_admin_${dbName}`) whose authorization scope is strictly constrained to `{ db: targetTestDb, collection: "" }`.
+  3. Defined initial authority provisioning without central unrestricted privileges via pre-allocated partition slot pools (minted during cluster bootstrap by an offline container whose credentials terminated prior to runtime) and on-demand expansion via an isolated ephemeral scoped credential broker.
+  4. Explicitly distinguished the four authorization scopes: role-definition scope, role-management authorization scope, user-management authorization scope, and role-grant authorization scope.
+  5. Added adversarial verification test **`D38-29`**.
+- **Status:** REMEDIATED (PHASE B.6) — PENDING INDEPENDENT REVIEW.
+
+### B38-27: Reconcile Revocation Service Responsibilities (Phase B.6)
+- **Defect:** Section 7.9 instructed `decision_os_destructive_executor` to execute `dropUser` and `dropRole` directly on the target test database. However, the privilege matrix (Section 7.6) explicitly prohibited the destructive executor from executing `dropUser` and `dropRole` (assigning them to the provisioner), creating an irreconcilable architectural contradiction that would fail with MongoDB Error Code 13 (`Unauthorized`).
+- **Remediation (Phase B.6):**
+  1. Defined an executable, internally consistent, durable 2-phase revocation protocol.
+  2. Partitioned responsibilities strictly according to authorized MongoDB identities: `dropUser` and `dropRole` are executed strictly by the Scoped Provisioning Service (authenticating as `decision_os_db_admin_${targetTestDb}`), while in-flight operation abort (`killOp`), logical session termination (`killAllSessionsByPattern`), and prepared transaction resolution are executed by the Destructive Cleanup Executor (`decision_os_destructive_executor`).
+  3. Specified an executable operation allocation matrix resolving responsible service, required MongoDB identity, exact privilege, target deployment/database, required acknowledgement, retry/crash recovery, and fail-closed conditions for all 8 operations.
+  4. Reconciled coordination through signed mutual TLS order `POST /v1/provisioning/revoke-worker` with majority write concern acknowledgement before wire drop dispatch.
+  5. Formally rejected client API responses and client-side connection closure as proof of revocation.
+  6. Added adversarial verification test **`D38-30`**.
+- **Status:** REMEDIATED (PHASE B.6) — PENDING INDEPENDENT REVIEW.
+
+### B38-28: Correct AES-256-GCM Nonce Uniqueness (Phase B.6)
+- **Defect:** Section 7.10 constructed nonces as `InstanceSalt (32-bit random) || MonotonicCounter (64-bit in-memory)`. The counter resets to 0 on restart. Under the birthday paradox, a 32-bit random salt incurs a 50% collision probability after only $2^{16} = 65,536$ process instances or replicas sharing the same key. A salt collision across restarts or concurrent replicas results in identical nonces under the same AES-256-GCM key, completely breaking GCM cryptographic confidentiality and authenticity.
+- **Remediation (Phase B.6):**
+  1. Replaced the flawed in-memory construction with a **Durable Globally Coordinated Counter Range Block Reservation Protocol** adhering to NIST SP 800-38D Section 8.2.1 Deterministic Construction.
+  2. Nonce layout: $\text{IV} = \text{KeyVersionPrefix}_{16\text{-bit}} \parallel \text{AllocatedRangeBlock}_{32\text{-bit}} \parallel \text{MonotonicCounter}_{48\text{-bit}}$.
+  3. Replicas lease non-overlapping blocks of counters ($2^{20}$ nonces) via atomic `$inc` on `decision_os_coordination.nonce_allocations` on `rs_coord:27019` with majority write concern (`w: "majority", j: true`).
+  4. Addressed all 9 required operational invariants: concurrent replicas, crash/restart discarding, counter rollback prevention, linearizable atomic allocation, key-version separation in AAD and IV, database backup disaster recovery (epoch bump + mandatory key rotation), counter exhaustion ceilings ($2^{48}$ invocations), fail-closed halt when allocation state is unreachable, and container startup readiness gating.
+  5. Provided formal mathematical proof that $P(\text{collision}) = 0$.
+  6. Added adversarial verification test **`D38-28`**.
+- **Status:** REMEDIATED (PHASE B.6) — PENDING INDEPENDENT REVIEW.
 
 ---
 
@@ -1360,16 +1561,19 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
   - Network egress policies block TCP connections from `cleanup-executor` to `mongodb-coord:27019`. The executor possesses zero credentials on `rs_coord`.
   - MongoDB RBAC on `rs_test` denies `createRole` and `createUser` to the executor (Code 13), preventing role escalation.
 
-#### 3. Compromised Provisioning Service (B38-24)
+#### 3. Compromised Provisioning Service (B38-24, B38-26)
 - **Attacker Profile:** An attacker compromises the `apps/provisioner` container.
-- **Adversarial Capabilities:** Holds `decision_os_provisioner` credentials on `mongodb-test:27018` and `mongodb-coord:27019`.
+- **Adversarial Capabilities:** Holds `decision_os_provisioner` credentials on `mongodb-coord:27019` and has access to in-flight scoped database administrative credentials (`decision_os_db_admin_${targetDb}`) on `mongodb-test:27018`.
 - **Hostile Actions Attempted:**
-  1. *Cluster-Wide Role Creation:* Attacker attempts to create a custom role on `admin` granting `{ resource: { anyResource: true }, actions: ["anyAction"] }` or `root`.
-  2. *Destructive Dropping:* Attacker attempts to drop test databases or coordination databases.
-  3. *Audit Log Erasure:* Attacker attempts to update or delete historical records in `cleanup_audit_log`.
+  1. *Cross-Database Principal Tampering (B38-26):* Attacker attempts to use `decision_os_provisioner` or a captured scoped credential for DB A (`decision_os_db_admin_runA_wA`) to create users, reset passwords, or drop roles on Worker B's database (`decision_os_test_runB_wB`).
+  2. *Cluster-Wide Role Creation:* Attacker attempts to create a custom role on `admin` granting `{ resource: { anyResource: true }, actions: ["anyAction"] }` or `root`.
+  3. *Destructive Dropping:* Attacker attempts to drop test databases or coordination databases.
+  4. *Audit Log Erasure:* Attacker attempts to update or delete historical records in `cleanup_audit_log`.
 - **Enforcement & Containment:**
-  - MongoDB RBAC restricts role creation to the target test database namespace (`targetTestDb`). MongoDB natively rejects creating roles on `admin` or roles granting privileges on other databases or cluster resources.
-  - The provisioner possesses zero `dropDatabase` or `dropCollection` privileges on both `rs_test` and `rs_coord`. Any drop attempt fails with Code 13.
+  - `decision_os_provisioner` possesses **zero** `{ db: "", collection: "" }` role- or user-management privileges on `rs_test`. Direct admin attempts fail with Error Code 13.
+  - The scoped administrative credential `decision_os_db_admin_runA_wA` is restricted by MongoDB RBAC strictly to `decision_os_test_runA_wA`. Any command targeting `decision_os_test_runB_wB` fails with MongoDB Error Code 13.
+  - MongoDB RBAC restricts role definitions on non-admin databases from granting privileges outside that specific database. Attempts to define cross-database privileges are rejected natively by the MongoDB daemon.
+  - The provisioner possesses zero `dropDatabase` or `dropCollection` privileges on both `rs_test` and `rs_coord` (Code 13).
   - The provisioner has zero write privileges on `cleanup_audit_log` (Code 13).
 
 #### 4. Compromised API Process
@@ -1382,7 +1586,7 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 
 ---
 
-### 15.2 Explicit Adversarial Analysis Matrix (Scenarios 1–16)
+### 15.2 Explicit Adversarial Analysis Matrix (Scenarios 1–19)
 
 | Scenario ID | Attack Vector / Adversarial Event | Permitted Action | Prohibited Action | Concrete Enforcement Mechanism |
 |---|---|---|---|---|
@@ -1402,6 +1606,9 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 | **Scenario 14 (B38-24)** | **Compromised Provisioner attempts to create a cluster-wide superuser role.** Attacker calls `createRole` with cluster-wide privileges. | Permitted: Creating roles scoped strictly to target test database. | **PROHIBITED:** Creating roles on `admin` or granting privileges on other databases or cluster resources. | **MongoDB Native RBAC Scoping:** Roles defined on non-admin database natively reject cross-database or cluster privileges. Provisioner lacks `userAdmin` on `admin`. |
 | **Scenario 15 (B38-25)** | **Hostile Worker retains open TCP sockets and sends write operations post-revocation.** Hostile worker bypasses `client.close(true)` and writes over open socket. | Permitted: None. | **PROHIBITED:** Executing any query or write operation after revocation. | **Authorization Cache Invalidation:** `dropUser` on server invalidates cached connection credentials. MongoDB engine re-evaluates user on next wire command $\\rightarrow$ rejected with Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`). |
 | **Scenario 16 (B38-25)** | **Hostile Worker attempts fresh authentication using cached credentials.** Worker initiates new SCRAM handshake using old password. | Permitted: None. | **PROHIBITED:** Establishing new authenticated connections. | **MongoDB Authentication Engine:** User principal deleted from database catalog; handshake rejected with Code 11 or Code 18 (`AuthenticationFailed`). |
+| **Scenario 17 (B38-26)** | **Compromised Provisioning Identity attempts cross-database user/role administration.** Attacker uses `decision_os_db_admin_runA_wA` to invoke `createUser` or `changeUserPassword` on `decision_os_test_runB_wB`. | Permitted: Administering users on `decision_os_test_runA_wA`. | **PROHIBITED:** Creating, modifying, or deleting users or roles in any other worker's database. | **Database-Scoped Provisioning Delegation Model:** Identity authorization scope is strictly constrained to `{ db: "decision_os_test_runA_wA", collection: "" }`. MongoDB RBAC natively rejects commands against DB B with Code 13. |
+| **Scenario 18 (B38-27)** | **Hostile Worker retains open TCP socket during service-partitioned revocation handoff.** Worker attempts write operations while handoff from Scoped Provisioner to Cleanup Executor is executing. | Permitted: None once `REVOKED` is committed. | **PROHIBITED:** Completing writes after identity deletion is confirmed with majority write concern. | **Server-Side Authorization Cache Invalidation:** Scoped Provisioner executes `dropUser` with `w: "majority", j: true`. Next wire packet on lingering socket halts at MongoDB authorization cache lookup $\\rightarrow$ fails with Code 11/13. |
+| **Scenario 19 (B38-28)** | **Multi-Replica Concurrent Nonce Allocation & Process Crash Collision Attempt.** Multiple provisioner replicas lease nonces under same key version concurrently; process restarts mid-lease. | Permitted: Encrypting under unique, monotonically disjoint block counters. | **PROHIBITED:** Re-using any nonce under the same key version across replicas or crashes. | **Durable Block Reservation Protocol:** `rs_coord:27019.nonce_allocations` serializes block leases atomically via `$inc` with `w: "majority", j: true`. Restarted instances discard unconsumed blocks and lease fresh higher blocks ($P(\text{collision}) = 0$). |
 
 ---
 
@@ -1459,12 +1666,14 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 4. **Interleaving 4: User creation succeeds, role assignment fails:** User exists with base unprivileged role only (zero test DB access). Saga transitions to `ROLLING_BACK`; provisioner drops the user and role.
 5. **Interleaving 5: Credential delivery fails (Worker timeout / crash):** Password exists in AES-256-GCM envelope in `ownership_locks`. Worker retries with matching `requestId`; provisioner decrypts envelope and redelivers. If worker never retries, 60s lease expires; orphan reaper rolls back.
 6. **Interleaving 6: Worker crashes before cleanup:** Worker fails to send heartbeat pings. Lease expires after 60 seconds. Background reaper detects expired lease, revokes role, drops user, terminates sessions, and marks database for cleanup.
-7. **Interleaving 7: Cleanup succeeds, role revocation fails:** Physical drop succeeds; `cleanup_ledger` records `CLEANED`. Subsequent `dropRole` encounters transient network error. Executor flags `danglingRoleCleanupPending: true`. Background reaper retries until confirmed deleted.
-8. **Interleaving 8: Quarantined worker attempts reconnection using cached credentials:** When quarantined, executor executes server-side `dropUser` and `killAllSessionsByPattern`. Subsequent operations fail with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`).
+7. **Interleaving 7: Revocation handoff fails during coordinated teardown (B38-27):** Executor issues `POST /v1/provisioning/revoke-worker`. Provisioner encounters transient network partition or primary failover. Executor does NOT proceed to `DISPATCHING`. It retries revocation with exponential backoff. If unacknowledged when lease expires, request moves fail-closed to `QUARANTINED` without dispatching wire drop.
+8. **Interleaving 8: Quarantined worker attempts reconnection using cached credentials:** When quarantined, Scoped Provisioner executes server-side `dropUser` and Executor executes `killAllSessionsByPattern`. Subsequent operations fail with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`).
 9. **Interleaving 9: Role revoked while worker has active connection:** Revocation protocol drops user and invalidates session. The MongoDB engine authorization cache on lingering open sockets invalidates the session; subsequent wire commands fail with Code 11 or Code 13.
 10. **Interleaving 10: Hostile worker refuses to close connection pool (B38-25):** The worker retains physical TCP sockets and sends write operations. MongoDB engine re-evaluates user authorization on the wire packet, discovers the user principal is dropped, and rejects the command with Code 11 or Code 13.
 11. **Interleaving 11: Prepared transaction detected during revocation (B38-25):** If a worker session contains a prepared distributed transaction, `killAllSessionsByPattern` skips it. Revocation protocol inspects `currentOp`, detects `preparedTransaction: true`, coordinates with transaction coordinator to abort the transaction, and releases locks prior to dropping user.
-12. **Interleaving 12: Provisioner crashes during rollback compensation:** Orphan reaper detects `ROLLING_BACK` with `compensationPending: true`. Applies exponential backoff to re-execute `dropUser` and `dropRole` until MongoDB returns `{ ok: 1 }` or `NotFound`.
+12. **Interleaving 12: Provisioner crashes during rollback compensation:** Orphan reaper detects `ROLLING_BACK` with `compensationPending: true`. Applies exponential backoff to re-execute `dropUser` and `dropRole` via scoped identity until MongoDB returns `{ ok: 1 }` or `NotFound`.
+13. **Interleaving 13: Crash between user deletion and physical database drop (B38-27):** Scoped Provisioner confirms `dropUser` and `dropRole` with majority write concern (`ownership_locks.state = 'REVOKED'`). Cleanup Executor crashes before wire dispatch. On restart, Executor inspects ledger (`CLAIMED`), sees `ownership_locks` already `REVOKED`, skips re-requesting identity drop, executes session/op termination, moves to `DISPATCHING`, and safely dispatches `dropDatabase`.
+14. **Interleaving 14: Provisioner replica crashes mid-block during high concurrency (B38-28):** Replica A leases counter block $[B_1, B_1 + 2^{20} - 1]$, encrypts 42 envelopes, and abruptly crashes. The remaining unconsumed counters in that block are discarded. On restart, Replica A allocates a brand-new higher block $[B_2, B_2 + 2^{20} - 1]$ via atomic `$inc` on `rs_coord:27019.nonce_allocations`. Zero counter values are ever rewound or repeated under the same key version.
 
 ---
 
@@ -1522,7 +1731,7 @@ All log events emitted across the architecture follow standard structured JSON:
 
 #### 1. Separation of Audit Privileges from Coordination CRUD
 MongoDB RBAC privileges are strictly decoupled:
-- **Coordination State Collections (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`):**
+- **Coordination State Collections (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`, `nonce_allocations`):**
   CRUD privileges: `actions: [ "find", "insert", "update", "remove", "findAndModify", "createIndex" ]`
 - **Audit Log Collection (`decision_os_coordination.cleanup_audit_log`):**
   Strictly restricted to append-only operations: `actions: [ "find", "insert", "createIndex" ]`
@@ -1553,6 +1762,13 @@ $$\\text{EntryHash}_k = \\text{SHA256}(\\text{PrevHash}_{k-1} + \\text{"|"} + \\
   }
 }
 ```
+
+##### Audit Event Taxonomy
+The audit ledger records critical security-sensitive lifecycle milestones:
+- `STATE_TRANSITION`: Emitted upon every state advancement in `cleanup_ledger` or `provisioning_saga`.
+- `NONCE_BLOCK_ALLOCATED`: Emitted by the Provisioning Service upon reserving a new counter block `[counterStart, counterEnd]` for a given `keyVersion` and `replicaId` from `decision_os_coordination.nonce_allocations`.
+- `REVOCATION_HANDOFF_INITIATED`: Emitted by the Destructive Cleanup Executor when handing off `dropUser` and `dropRole` requests to the Scoped Provisioning Service.
+- `REVOCATION_HANDOFF_CONFIRMED`: Emitted by the Scoped Provisioning Service once `dropUser` and `dropRole` are committed with majority concern on `rs_test`, permitting the Cleanup Executor to proceed to in-flight operation abortion and physical database removal.
 
 #### 4. Independently Protected Chain-Head Checkpoint Storage
 To prevent full-chain rewriting, the architecture anchors the chain head externally:
@@ -1597,8 +1813,9 @@ The ledger is accurately documented as:
 > **Cryptographically Tamper-Evident with MongoDB RBAC-Enforced Append-Only Write Boundary and Externally Anchored WORM Checkpoints.**
 
 ### 18.3 Metrics & Alerting
-- Prometheus metrics: `cleanup_requests_total`, `cleanup_duration_seconds`, `cleanup_ambiguous_outcomes_total`, `cleanup_quarantined_total`, `cleanup_dangling_roles_reaped_total`, `audit_checkpoints_created_total`.
+- Prometheus metrics: `cleanup_requests_total`, `cleanup_duration_seconds`, `cleanup_ambiguous_outcomes_total`, `cleanup_quarantined_total`, `cleanup_dangling_roles_reaped_total`, `audit_checkpoints_created_total`, `nonce_block_allocations_total`, `nonce_counter_exhaustion_ratio`, `revocation_handoff_duration_seconds`.
 - Alert: Any transition to `OUTCOME_UNKNOWN`, `RECONCILIATION_REQUIRED`, or `QUARANTINED` fires high-priority SRE alert.
+- Alert: Nonce allocation failures, coordination database unavailability on `rs_coord`, or remaining counter space dropping below threshold fires high-priority Provisioner alert.
 
 ---
 
@@ -1621,7 +1838,7 @@ Remediate Call Sites (CS-01 to CS-17)"]
     PhaseC5 --> PhaseC6["Phase C6:
 Static Guard Script & CI Negative Security Tests"]
     PhaseC6 --> PhaseC7["Phase C7:
-Full Verification & Regression Testing (D38-01 to D38-27)"]
+Full Verification & Regression Testing (D38-01 to D38-30)"]
 ```
 
 ---
@@ -1659,6 +1876,9 @@ All verification items are **PLANNED** for implementation and execution during P
 | **`D38-25`** | **Adversarial Proof of Coordination & Audit Storage Isolation (Finding B38-20)** | Connect as `decision_os_destructive_executor` from `apps/cleanup-executor`. Attempt direct network connection to `mongodb-coord:27019` $\\rightarrow$ TCP connection refused / egress dropped by network policy. Connect to `mongodb-test:27018` and attempt `db.runCommand({ dropDatabase: 1 })` targeting `decision_os_coordination` or `cleanup_audit_log` $\\rightarrow$ returns `{ ok: 1, dropped: 0 }` (no-op; databases absent from test catalog). Assert that `decision_os_coordination` and `cleanup_audit_log` on `rs_coord` remain completely untouched, proving that destructive cleanup cannot modify or destroy coordination and audit storage. | Phase C1 | PLANNED |
 | **`D38-26`** | **Role-Escalation & Provisioner Boundary Adversarial Verification (Finding B38-24)** | Connect as `decision_os_provisioner`. Attempt to create a custom cluster-wide role on `admin` with privileges on `{ resource: { anyResource: true }, actions: ["anyAction"] }` $\\rightarrow$ natively rejected by MongoDB RBAC with Error Code 13. Attempt to grant `root`, `clusterAdmin`, or `userAdminAnyDatabase` $\\rightarrow$ natively rejected with Error Code 13. Attempt to create a role on `decision_os_test_runA_wA` granting privileges on `decision_os_test_runB_wB` $\\rightarrow$ natively rejected by MongoDB engine with scoping constraint error. Attempt `dropDatabase` or `dropCollection` on any test database $\\rightarrow$ natively rejected with Error Code 13. | Phase C1 | PLANNED |
 | **`D38-27`** | **Hostile-Worker Revocation & Socket-Retention Adversarial Test (Finding B38-25)** | Worker authenticates and establishes active connection pool with multiple open TCP sockets. Trigger revocation (`dropUser`, `dropRole`, `killAllSessionsByPattern`). Hostile worker deliberately keeps TCP sockets open and refuses `client.close(true)`. Hostile worker immediately issues `insert` and `find` commands over lingering sockets $\\rightarrow$ rejected by MongoDB daemon with Error Code 11 (`UserNotFound`) or Error Code 13 (`Unauthorized`) due to server-side authorization cache invalidation. Hostile worker attempts fresh authentication using cached password $\\rightarrow$ rejected with Error Code 11 or Error Code 18 (`AuthenticationFailed`). Assert 100% fail-closed boundary enforcement. | Phase C1 / C3 | PLANNED |
+| **`D38-28`** | **Multi-Replica AES-GCM Nonce Uniqueness, Crash & Rollback Adversarial Test (Finding B38-28)** | Concurrently execute 3 Provisioning Service replicas allocating $100{,}000$ nonces across 100 worker claim cycles. Assert zero duplicate or overlapping nonces across processes. Inject abrupt `SIGKILL` mid-block across replicas; restart replicas; verify that in-memory counters are cleanly discarded and new disjoint blocks are reserved, guaranteeing zero nonce reuse under the active key version. Simulate uncommitted primary rollback on `rs_coord`; verify `w: "majority", j: true` guarantees no counter reuse. Trigger key rotation; verify new key version counter starts at 0 without collisions. Assert fail-closed halt with HTTP 503 if `rs_coord` becomes unreachable. | Phase C2 | PLANNED |
+| **`D38-29`** | **Cross-Database Provisioning Privilege Isolation Test (Finding B38-26)** | Authenticate as `decision_os_db_admin_targetDbA` or central Provisioning Service. Attempt to create, modify, grant, or revoke roles or users on `decision_os_test_runB_wB` $\\rightarrow$ natively rejected by MongoDB RBAC with Error Code 13 (`Unauthorized`). Verify central provisioner possesses zero `{ db: "", collection: "" }` user/role administration rights on `rs_test`. Assert partition pool boundary enforcement across all 5 negative authorization cases (NC-1 through NC-5). Verify compromise of Worker A's scoped admin cannot create or modify users in Worker B's database. | Phase C1 | PLANNED |
+| **`D38-30`** | **Revocation Authority & Multi-Service Coordination Adversarial Test (Finding B38-27)** | Authenticate as `decision_os_destructive_executor`; attempt direct `dropUser` or `dropRole` $\\rightarrow$ natively rejected with Error Code 13. Execute 2-phase revocation protocol: Executor initiates signed handoff to Scoped Provisioner; Provisioner drops user and role on `rs_test` with `w: "majority"`. Simulate crash, timeout, or partition between handoff steps; verify idempotent retry and fail-closed state. Executor resolves prepared transactions, issues `killOp`, terminates logical sessions (`killAllSessionsByPattern`), and executes `dropDatabase`. Hostile worker retains open TCP sockets; assert subsequent operations fail with Error Code 11/13. Reject client API response and connection closure as proof. | Phase C1 / C3 | PLANNED |
 
 ---
 
@@ -1674,6 +1894,12 @@ All verification items are **PLANNED** for implementation and execution during P
 3. **Administrative Key Storage in Production:**
    - *Question:* Should administrative reconciliation keys be integrated with AWS KMS / HashiCorp Vault transit secrets engine, or managed via offline SRE key pairs?
    - *Recommendation:* HashiCorp Vault transit engine with multi-party audit logging for production deployments.
+4. **Nonce Counter Block Reservation Size Tuning:**
+   - *Question:* Is a $2^{20}$ ($1{,}048{,}576$) counter block optimal for test environments with frequent container restarts, or should the block size be dynamically configurable (e.g. $2^{16} = 65{,}536$)?
+   - *Recommendation:* $2^{16}$ for local test runs with high restart frequency to minimize counter headroom consumption; $2^{20}$ for production/staging replicas.
+5. **Scoped Database Admin Credential Storage Lifecycle:**
+   - *Question:* Should scoped admin credentials for dynamically created databases be cached in an ephemeral in-memory vault within the Provisioning Service with automatic expiration upon database teardown, or should credentials be generated and destroyed on-demand via the bootstrap broker?
+   - *Recommendation:* Ephemeral in-memory storage bounded strictly by the ownership lease duration, automatically scrubbed upon receipt of revocation handoff.
 
 ### 21.2 Explicit List of Unresolved Architectural Assumptions and Risks
 1. **DDL Command Comment Preservation in `local.oplog.rs` (Assumption under test in D38-21):**
@@ -1686,13 +1912,17 @@ All verification items are **PLANNED** for implementation and execution during P
    Because MongoDB RBAC does not support database wildcards or negative exclusions, the destructive executor must possess `{ db: "", collection: "" }` with `dropDatabase` to tear down dynamic test databases. This broad grant is safe **strictly because test databases reside on an isolated MongoDB deployment (`mongodb-test:27018`) separate from coordination and audit storage (`mongodb-coord:27019`)**. If these deployments were collapsed onto a single instance, application regex guards would be the only barrier against coordination destruction.
 5. **Accumulation of Quarantined Database Namespaces:**
    Because the fail-closed policy permanently retains execution locks for ambiguous drops with zero redispatch, frequent network partitions or replica set failovers could accumulate abandoned test databases. Automated tests avoid collision by using UUIDs, but physical storage cleanup requires scheduled offline maintenance.
+6. **Nonce Allocation Collection Restoration and Epoch Bumping:**
+   In disaster-recovery scenarios where `rs_coord` is restored from an asynchronous snapshot or cold backup, counter state could roll back. The protocol mandates an explicit `epoch` increment or mandatory encryption key rotation (`KEY_VERSION` increment) upon restoring any database backup before the Provisioning Service is permitted to resume encryption.
+7. **Pre-Allocated Partition Slot Exhaustion:**
+   If concurrent worker demand exceeds the pre-allocated partition pool size ($N = 100$) in large CI matrices, dynamic database creation must fall back to the isolated bootstrap broker. The provisioning service monitors pool saturation and alerts when active test worker count exceeds 80% of pre-allocated slots, triggering asynchronous pool expansion.
 
 ---
 
 ## Gate B Completion Sign-Off Checklist
 
-- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at verified branch HEAD `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (parent `949ca35a7154f4c4db308dd73badf85221a98c9f`)
-- [x] Document version upgraded to 1.5.0 (Phase B.5 Privilege Boundary Separation & Revocation Hardening)
+- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at baseline commit `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (parent `f0fbfc1b6d04ad947f85277435d0803282cd03cd`)
+- [x] Document version upgraded to 1.6.0 (Phase B.6 Provisioning Scope, Revocation Authority & Cryptographic Nonce Correction)
 - [x] Phase A destructive inventory (`CS-01` to `CS-17`) thoroughly inspected and addressed
 - [x] B38-01 resolved: MongoDB RBAC wildcards removed; Dedicated Isolated Test Deployment established
 - [x] B38-02 remediated (Phase B.2): Worker role additive privilege defect corrected; exact per-database scoped roles eliminate coordination write access
@@ -1710,12 +1940,15 @@ All verification items are **PLANNED** for implementation and execution during P
 - [x] B38-14 remediated (Phase B.3): Role lifecycle and concurrency interleavings analyzed; active connection invalidation established
 - [x] B38-15 remediated (Phase B.4): Real MongoDB session invalidation (`killAllSessionsByPattern`, `killSessions`) on `{ cluster: true }` replaces unsupported commands; distinguishes logical sessions, operations, cursors, TCP sockets, and driver pools; addresses prepared transaction limitations
 - [x] B38-16 remediated (Phase B.4): Technically supportable MongoDB 8.0 replica-set oplog evidence protocol using `optimes.lastCommittedOpTime.ts/.t`; explicitly documents that `local` ignores read concerns; requires live proof of comment preservation before any automated confirmation
-- [x] B38-17 remediated (Phase B.4 / B.5): Crash-safe ephemeral credential recovery via caller-bound encrypted envelopes (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM with deterministic 96-bit nonces, versioned keys, dual-key rotation, and strict durable majority acknowledgement ordering before envelope destruction (Pending Independent Review)
-- [x] B38-18 remediated (Phase B.4 / B.5): False provisioning atomicity claims replaced with a durable idempotent saga model spanning exactly 12 formalized states with crash/restart recovery at every transition, failed-compensation retry, and strict orphan reaper verification proof (Pending Independent Review)
-- [x] B38-19 remediated (Phase B.4 / B.5): Audit ledger made genuinely tamper-evident by separating audit privileges from coordination CRUD; enforcing append-only via MongoDB RBAC (`find`, `insert`, `createIndex` only); independently protected external Ed25519-signed checkpoints; 60s cadence; detection of deletion, truncation, reordering, substitution, and rewriting (Pending Independent Review)
-- [ ] **B38-20 remediated (Phase B.5):** Destructive authority separated from coordination and audit storage via physical/logical two-deployment boundary (`rs_coord:27019` vs `rs_test:27018`); mathematical proof of impossibility of destructive cleanup dropping coordination or audit data (Pending Independent Review)
-- [ ] **B38-24 remediated (Phase B.5):** Role provisioning authority decoupled from destructive cleanup into dedicated Provisioning Service; removed false claims that application AST checks constitute native RBAC; dynamic roles scoped natively by creating directly on target test database namespace; independent threat models for compromised actors (Pending Independent Review)
-- [ ] **B38-25 remediated (Phase B.5):** Permanent worker revocation established; documented engine limitations of `killAllSessionsByPattern`; addressed prepared distributed transactions; rejected client `client.close(true)` as security boundary; formulated multi-layer server-side revocation defending against hostile workers retaining sockets (Pending Independent Review)
-- [x] Expanded verification plan (`D38-01` through `D38-27`, including `D38-25`, `D38-26`, `D38-27`) categorized and explicitly marked as PLANNED
+- [x] B38-17 remediated (Phase B.4 / B.5): Crash-safe ephemeral credential recovery via caller-bound encrypted envelopes (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM with deterministic 96-bit nonces, versioned keys, dual-key rotation, and strict durable majority acknowledgement ordering before envelope destruction
+- [x] B38-18 remediated (Phase B.4 / B.5): False provisioning atomicity claims replaced with a durable idempotent saga model spanning exactly 12 formalized states with crash/restart recovery at every transition, failed-compensation retry, and strict orphan reaper verification proof
+- [x] B38-19 remediated (Phase B.4 / B.5): Audit ledger made genuinely tamper-evident by separating audit privileges from coordination CRUD; enforcing append-only via MongoDB RBAC (`find`, `insert`, `createIndex` only); independently protected external Ed25519-signed checkpoints; 60s cadence; detection of deletion, truncation, reordering, substitution, and rewriting
+- [x] **B38-20 remediated (Phase B.5):** Destructive authority separated from coordination and audit storage via physical/logical two-deployment boundary (`rs_coord:27019` vs `rs_test:27018`); mathematical proof of impossibility of destructive cleanup dropping coordination or audit data
+- [x] **B38-24 remediated (Phase B.5):** Role provisioning authority decoupled from destructive cleanup into dedicated Provisioning Service; removed false claims that application AST checks constitute native RBAC; dynamic roles scoped natively by creating directly on target test database namespace; independent threat models for compromised actors
+- [x] **B38-25 remediated (Phase B.5):** Permanent worker revocation established; documented engine limitations of `killAllSessionsByPattern`; addressed prepared distributed transactions; rejected client `client.close(true)` as security boundary; formulated multi-layer server-side revocation defending against hostile workers retaining sockets
+- [ ] **B38-26 remediated (Phase B.6):** Cross-database provisioning authority eliminated; Database-Scoped Provisioning Delegation Model formulated; dynamic DB bootstrap mediated via pre-allocated partition pools and isolated brokers; role-definition vs management/user/grant authorization scopes distinguished; negative authorization cases NC-1–NC-5 defined (Pending Independent Review)
+- [ ] **B38-27 remediated (Phase B.6):** Revocation service responsibilities reconciled; 2-phase durable coordination protocol established between Cleanup Executor and Scoped Provisioner; all 8 operations fully allocated; client API responses and connection closure rejected as proof (Pending Independent Review)
+- [ ] **B38-28 remediated (Phase B.6):** Cryptographic AES-256-GCM nonce uniqueness mathematically guaranteed ($P(\text{collision}) = 0$) via NIST SP 800-38D §8.2.1 deterministic counter block reservation on `rs_coord:27019.nonce_allocations`; crash/restart discard, rollback protection, key-version separation, backup restore epoch bumping, and fail-closed availability halt defined (Pending Independent Review)
+- [x] Expanded verification plan (`D38-01` through `D38-30`, including `D38-28`, `D38-29`, `D38-30`) categorized and explicitly marked as PLANNED
 - [x] Zero application, test, configuration, or infrastructure files modified; architecture design revision only
-- [x] **STOP gate observed:** Phase B.5 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
+- [x] **STOP gate observed:** Phase B.6 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
