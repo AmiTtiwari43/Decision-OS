@@ -1,15 +1,15 @@
 # DECISION OS — BATCH 4 V3.8 ARCHITECTURE DECISION
 ## Independent Cleanup Executor, Real MongoDB Privilege Separation & Concurrency Safety
 
-**Document Version:** 1.3.0 (Phase B.3 Identity Isolation & Privilege Provisioning Remediation)
+**Document Version:** 1.4.0 (Phase B.4 Session Invalidation, Evidence Integrity & Provisioning Recovery)
 **Repository:** `AmiTtiwari43/Decision-OS`
 **Branch:** `fix/batch4-replica-set-transactional-recovery`
-**Current Baseline Commit:** `724f1076284b186f42759677ab9e480d27531b69` (`docs: close batch 4 v3.8 privilege and redispatch gaps`)
-**Prior Lineage Commits:** `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
-**Document Revision Commit:** Pending Commit to `fix/batch4-replica-set-transactional-recovery` (Phase B.3 Deliverable)
+**Current Baseline Commit:** `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
+**Prior Lineage Commits:** `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
+**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `949ca35a7154f4c4db308dd73badf85221a98c9f` (Phase B.4 Deliverable)
 **Phase A Artifact:** `BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`
 **Date:** 2026-11-06
-**Status:** ARCHITECTURE DESIGN (Phase B.3 Deliverable — Pending Independent Review & Formal Gate B Approval)
+**Status:** ARCHITECTURE DESIGN (Phase B.4 Deliverable — Pending Independent Review & Formal Gate B Approval)
 
 ---
 
@@ -30,24 +30,30 @@ Independent architectural review of baseline commit `943a8e7a433ce1b98804a83c6be
 2. **Administrative Redispatch Contradicts Fail-Closed Policy (Finding 2 — B38-06, B38-07):** Allowing `forceRedispatch` on ambiguous drop outcomes compromised fail-closed safety. Remediation removed all redispatch paths once `DISPATCHING` is entered, introducing the terminal state `QUARANTINED`.
 
 ### Phase B.3 Identity Isolation & Privilege Provisioning Remediation
-Following the Phase B.2 baseline (`724f1076284b186f42759677ab9e480d27531b69`), rigorous multi-tenant and privilege-boundary inquest identified four remaining security defects that must be resolved prior to Gate B approval:
+Following the Phase B.2 baseline (`724f1076284b186f42759677ab9e480d27531b69`), multi-tenant and privilege-boundary inquest identified four security defects:
+1. **Shared MongoDB Worker User Defeats Per-Worker Isolation (Finding B38-11):** Provisioning dynamic roles onto a shared user leaked permissions across concurrent workers. Remediated via unique per-worker MongoDB principals (`decision_os_worker_${runId}_${workerId}`) with ephemeral credentials.
+2. **Unsafe MongoDB Role-Management Privileges (Finding B38-12):** Direct CRUD on `admin.system.*` and `userAdmin` on `admin` eliminated in favor of supported commands scoped to test namespaces with SHA-256 audit logging.
+3. **Authoritative Oplog Evidence Is Underspecified (Finding B38-13):** Premature `CONFIRM_CLEANED` without correlation comments or majority commitment addressed via structured correlation tokens and fail-closed quarantine.
+4. **Role Lifecycle and Provisioning Concurrency (Finding B38-14):** Analyzed concurrent claims and connection reuse across teardown, requiring post-revocation session and connection termination.
 
-1. **Shared MongoDB Worker User Defeats Per-Worker Isolation (Finding B38-11):**
-   Section 3.3 dynamically provisioned test database roles by granting them to a single shared MongoDB user: `grantRolesToUser("decision_os_app_worker", ...)`.
-   **Mathematical Defect:** In MongoDB RBAC, all connections authenticating as `decision_os_app_worker` receive the cumulative mathematical union of every role assigned to that principal. MongoDB does not evaluate application-level Ed25519 caller signatures during database wire operations. Consequently, Worker A inherits access to Worker B's database!
-   **Remediation:** Redesign to **Unique Per-Worker MongoDB Authentication Principals** (`decision_os_worker_${runId}_${workerId}`), provisioned with distinct ephemeral credentials (32-byte cryptographically secure random secret) delivered in-memory over mTLS. Each dynamic test database role is granted strictly to that worker's distinct MongoDB principal. Unauthorized cross-database CRUD operations natively fail with MongoDB Error Code 13 (`Unauthorized`).
-2. **Unsafe MongoDB Role-Management Privileges (Finding B38-12):**
-   Section 3.2 authorized direct CRUD operations on `admin.system.roles` and `admin.system.users` or granted built-in `userAdmin` on `admin` to the cleanup executor.
-   **Security Defect:** Direct modification of MongoDB internal user and role collections is unsupported and architecturally unsafe. Granting built-in `userAdmin` on `admin` provides cluster-level superuser capabilities, enabling arbitrary role and privilege assignment.
-   **Remediation:** Complete elimination of direct access to `admin.system.roles` and `admin.system.users`, and removal of `userAdmin` on `admin`. Provisioning is restricted to supported MongoDB role/user management commands (`createRole`, `dropRole`, `grantRolesToUser`, `revokeRolesFromUser`, `createUser`, `dropUser`) scoped to dynamic test database roles and ephemeral worker users, with application-level policy guards preventing assignment of cluster/system privileges. Mandatory structured JSON audit logging with SHA-256 tamper-evident hash chaining tracks every role and user mutation.
-3. **Authoritative Oplog Evidence Is Underspecified (Finding B38-13):**
-   Section 4.2 / 9.3 permitted transitioning ambiguous requests from `OUTCOME_UNKNOWN` to `CLEANED` via administrative `CONFIRM_CLEANED` upon uncorroborated "oplog proof", without defining correlation, replica-set elections, majority commitment, or rollover.
-   **Integrity Defect:** Without command correlation and replica-set majority verification, an oplog drop record could belong to an earlier run, or might have been executed on an old primary and subsequently rolled back during an election.
-   **Remediation:** Formulation of the **MongoDB 8.0 Replica Set Oplog Drop Evidence Protocol**. Destructive drops must attach an immutable structured `comment` containing `{ requestId, runId, payloadHash, wireDispatchedAt }`. Reconciliation requires matching this correlation token, verifying timestamp windows, and establishing that the oplog record has achieved cluster-wide majority commitment (`majorityCommitPoint`). If oplog rollover occurred, elections introduced ambiguity, or evidence is missing/incomplete, automatic or administrative `CONFIRM_CLEANED` is strictly forbidden; the request remains permanently in `QUARANTINED` with execution locks retained.
-4. **Role Lifecycle and Provisioning Concurrency (Finding B38-14):**
-   The architecture lacked analysis of concurrent claims, partial provisioning failures, credential delivery timeouts, worker crashes, and active connection reuse across role revocation and quarantine.
-   **Concurrency Defect:** MongoDB client connections cache user authorization data. Revoking roles or dropping users does not automatically terminate already-open TCP client sockets, allowing a rogue or quarantined worker to continue issuing commands on active connections.
-   **Remediation:** Comprehensive analysis of 10 concurrent execution interleavings establishing strict atomicity, retry idempotency, fail-closed rollbacks, and orphan lease reapers. Active connection invalidation is enforced by explicitly executing `db.adminCommand({ killAllUserConnections: [workerUsername] })` / `killSessions` upon role revocation, user dropping, and quarantine transition.
+### Phase B.4 Session Invalidation, Evidence Integrity & Provisioning Recovery Remediation
+Independent architectural review of baseline commit `949ca35a7154f4c4db308dd73badf85221a98c9f` identified five critical technical and authorization defects:
+
+1. **Incorrect MongoDB Session Invalidation (Finding B38-15):**
+   The architecture relied on `killAllUserConnections`, which does not exist in MongoDB. Furthermore, claiming that session termination physically closes TCP sockets is factually incorrect.
+   **Remediation:** Replaced non-existent commands with supported MongoDB administrative commands: `killAllSessionsByPattern` and `killSessions`. Scoped `killAnySession` and required `impersonate` privilege strictly to the `{ cluster: true }` resource. Clearly distinguished logical session termination, operation cancellation (`killOp`), cursor closure, TCP socket retention, client driver-pool invalidation, and prevention of fresh authentication via `dropUser`. Formulated a fail-closed revocation protocol and documented limitations regarding prepared distributed transactions.
+2. **Technically Unsupportable Oplog Evidence Protocol (Finding B38-16):**
+   Section 10.4 referenced non-existent response paths (`optimesAndLocations.majorityCommitPoint`) and erroneously claimed that querying `local.oplog.rs` with `readConcern: "majority"` ensures majority read protection.
+   **Remediation:** Reworked Section 10.4 using exact MongoDB 8.0 replica-set behavior: extracting `optimes.lastCommittedOpTime.ts` and `optimes.lastCommittedOpTime.t` from `replSetGetStatus` on the active primary. Explicitly acknowledged that the `local` database does not support read concern and silently ignores it. Formulated lexicographical OpTime comparison $(t, ts)$. Formally treated command-comment preservation in `local.oplog.rs` as unverified until demonstrated on live replica set `rs0`. Removed automatic `CONFIRM_CLEANED`; ambiguous drops remain permanently `QUARANTINED` unless live evidence is conclusively proven.
+3. **Crash-Unsafe Ephemeral Credential Recovery (Finding B38-17):**
+   The v1.3.0 architecture claimed idempotent credential redelivery upon worker retry, but held generated passwords only in volatile process memory while passwords in MongoDB are stored as one-way SCRAM verifiers. If the executor crashed after user creation but before response delivery, retries could not redeliver the plaintext password.
+   **Remediation:** Designed a crash-safe credential recovery protocol utilizing a **Caller-Bound Encrypted Credential Envelope** stored durably in `ownership_locks.credentialEnvelope` (AES-256-GCM encrypted under an executor envelope key with AAD binding to request ID, database name, and caller public key fingerprint). Provided fallback to controlled password rotation via `updateUser` before activation. Enforced forward secrecy by zeroizing the envelope upon successful worker activation.
+4. **False Provisioning Atomicity Claims (Finding B38-18):**
+   The architecture described separate `createRole` and `createUser` commands while claiming overall lifecycle atomicity. MongoDB administrative commands cannot participate in multi-document transactions.
+   **Remediation:** Replaced false atomicity claims with a **Durable Idempotent Provisioning Saga** defining explicit durable states (`CLAIM_PENDING`, `ROLE_CREATED`, `USER_CREATED`, `ROLE_ASSIGNED`, `CREDENTIAL_ENCRYPTED`, `CREDENTIAL_DELIVERED`, `ACTIVATED`, `ROLLING_BACK`, `ROLLED_BACK`, `ORPHAN_RECOVERY`). Defined crash/restart recovery at every transition, durable compensation for failed rollbacks, guarantees that partially provisioned identities possess zero unintended privileges, and strict 4-point verification proof before the orphan reaper deletes any user or role.
+5. **Genuinely Tamper-Evident Audit Ledger (Finding B38-19):**
+   The executor previously held `update`, `remove`, and `findAndModify` permissions across all coordination collections, including `cleanup_audit_log`, defeating claims of immutability.
+   **Remediation:** Separated audit log permissions from coordination CRUD. Scoped the executor's privileges on `decision_os_coordination.cleanup_audit_log` strictly to append-only actions: `find`, `insert`, `createIndex` (zero update or remove). Established independently protected chain-head checkpoint storage. Defined cryptographic detection mechanisms for deletion, truncation, reordering, payload substitution, and full-chain rewriting, with fail-closed executor freezing and alerting upon verification failure. Discontinued inaccurate "immutable" claims in favor of verified append-only and tamper-evident semantics.
 
 ---
 
@@ -56,13 +62,14 @@ Following the Phase B.2 baseline (`724f1076284b186f42759677ab9e480d27531b69`), r
 ### 2.1 Git Baseline & Provenance Verification
 - **Target Repository:** `AmiTtiwari43/Decision-OS`
 - **Active Branch:** `fix/batch4-replica-set-transactional-recovery`
-- **Current Baseline Commit:** `724f1076284b186f42759677ab9e480d27531b69` (`docs: close batch 4 v3.8 privilege and redispatch gaps`)
+- **Current Baseline Commit:** `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
 - **Prior Lineage Commits:**
+  - `724f1076284b186f42759677ab9e480d27531b69` (`docs: close batch 4 v3.8 privilege and redispatch gaps`)
   - `943a8e7a433ce1b98804a83c6be403b2fca52e96` (`docs: harden batch 4 v3.8 cleanup executor architecture`)
   - `161e59e85bb7183c21926f0b04f788eb43312394` (`refactor: add architecture decision record for batch 4 v3.8 cleanup executor`)
   - `bbaf9bee29ef40f80bb8b958569c7ebbb437b427` (`docs: add batch 4 v3.8 destructive call-site inventory document`)
   - `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb` (`fix(batch4): isolate destructive cleanup behind supervised executor v3.7`)
-- **Document Revision Commit:** Pending Commit to `fix/batch4-replica-set-transactional-recovery` (Phase B.3 Deliverable)
+- **Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `949ca35a7154f4c4db308dd73badf85221a98c9f` (Phase B.4 Deliverable)
 - **Target Database Engine:** MongoDB 8.0 (Replica Set `rs0`, as specified in `docker-compose.yml:3`).
 
 ### 2.2 Inspected Source Files & Line Ranges
@@ -169,12 +176,12 @@ POST /v1/cleanup/reconcile| mTLS
     subgraph ExecutorSpace["Dedicated Cleanup Executor Boundary (Privileged Container)"]
         mTLS --> RequestValidator["Request Validator & Authn Engine
 (Binds Ed25519 Public Key to Worker ID)"]
-        RequestValidator --> RoleProvisioner["Role & User Provisioning Manager
-(Non-Superuser: createUser, createRole,
+        RequestValidator --> RoleProvisioner["Role & User Provisioning Saga Manager
+(Non-Superuser: createUser, createRole, grantRole,
 Scoped ONLY to Test DB Namespaces)"]
         RequestValidator --> StateEngine["Durable State Machine Engine
-(SOLE WRITER of cleanup_ledger
-Manages QUARANTINED State)"]
+(Authoritative Sole Writer of cleanup_ledger,
+provisioning_saga, and QUARANTINED State)"]
         RoleProvisioner --> StateEngine
         StateEngine --> ExecutionBoundary["Destructive Execution Boundary
 (apps/cleanup-executor/src/executor.ts)
@@ -188,12 +195,16 @@ Manages QUARANTINED State)"]
         PrivPool -->|1. Scoped User & Role Management| AdminDB[("admin Database
 - Non-Superuser Role Admin
 - Ephemeral User Lifecycles")]
-        PrivPool -->|2. Authoritative State & Audit Writes| CoordDB[("Coordination Database
+        PrivPool -->|2. Cluster Session Invalidation| ClusterRes[("Cluster Resource { cluster: true }
+- killAllSessionsByPattern
+- killAnySession & impersonate")]
+        PrivPool -->|3. Coordination State & Append-Only Audit| CoordDB[("Coordination Database
 (decision_os_coordination)
 - ownership_locks
 - cleanup_ledger
-- cleanup_audit_log")]
-        PrivPool -->|3. Correlated { dropDatabase: 1, comment }| TargetDBs[("Test Databases
+- provisioning_saga
+- cleanup_audit_log (Append-Only)")]
+        PrivPool -->|4. Correlated { dropDatabase: 1, comment }| TargetDBs[("Test Databases
 - decision_os_test_runA_wA
 - decision_os_test_runB_wB")]
 
@@ -249,22 +260,27 @@ sequenceDiagram
     WorkerA->>CoordDB: db.collection('ownership_locks').insertOne({...})
     CoordDB-->>WorkerA: MongoServerError: not authorized on collection ownership_locks (Code 13)
 
-    Note over WorkerA,DBA: PHASE 2: DISCRETE IDENTITY & EPHEMERAL CREDENTIAL PROVISIONING
+    Note over WorkerA,DBA: PHASE 2: DISCRETE IDENTITY & EPHEMERAL CREDENTIAL SAGA PROVISIONING
     WorkerA->>Client: claimTestDatabaseOwnership("decision_os_test_runA_wA", "runA", "wA")
     Client->>Client: Sign claim payload using Worker A Ed25519 Private Key
     Client->>Executor: POST /v1/ownership/claim (Payload + Ed25519 Signature)
     Executor->>Executor: Verify Signature, Caller ID "runA:wA", DB Naming Contract
-    Executor->>CoordDB: Atomic acquire lease in ownership_locks
+    Executor->>CoordDB: Record Saga CLAIM_PENDING in ownership_locks
     Executor->>AdminDB: db.createRole({ role: "decision_os_role_runA_wA", privileges: [CRUD on DBA] })
     Executor->>AdminDB: Generate 32-byte secret; db.createUser({ user: "decision_os_worker_runA_wA", pwd: pwdA, roles: [...] })
-    Executor->>CoordDB: Record audit log: USER_CREATED, ROLE_PROVISIONED
+    Executor->>CoordDB: Persist caller-bound encrypted credential envelope in ownership_locks.credentialEnvelope
+    Executor->>CoordDB: Append audit log: USER_CREATED, ROLE_PROVISIONED (Append-Only)
     Executor-->>Client: HTTP 200 OK { user: "decision_os_worker_runA_wA", pwd: pwdA, db: "decision_os_test_runA_wA" }
-    Client-->>WorkerA: Initialize dedicated connection pool PoolA
+    Client->>WorkerA: Initialize dedicated connection pool PoolA
+    WorkerA->>Executor: POST /v1/ownership/activate (Signed activation handshake)
+    Executor->>CoordDB: Zeroize envelope ($unset: { credentialEnvelope: 1 }), mark ACTIVATED
 
     Note over WorkerB,DBB: PHASE 3: WORKER B PROVISIONED INDEPENDENTLY
     WorkerB->>Executor: POST /v1/ownership/claim ("decision_os_test_runB_wB", "runB", "wB")
     Executor->>AdminDB: db.createRole("decision_os_role_runB_wB"), db.createUser("decision_os_worker_runB_wB", pwdB)
+    Executor->>CoordDB: Store encrypted envelope for Worker B
     Executor-->>WorkerB: Deliver Credentials for PoolB
+    WorkerB->>Executor: POST /v1/ownership/activate (Zeroize Worker B envelope)
 
     Note over WorkerA,DBB: PHASE 4: CROSS-WORKER ADVERSARIAL ISOLATION (B38-11)
     WorkerA->>DBB: PoolA.db("decision_os_test_runB_wB").collection("data").insertOne({ hacked: true })
@@ -272,16 +288,17 @@ sequenceDiagram
     WorkerB->>DBA: PoolB.db("decision_os_test_runA_wA").collection("data").find()
     DBA-->>WorkerB: MongoServerError: not authorized on decision_os_test_runA_wA (Code 13)
 
-    Note over WorkerA,DBA: PHASE 5: AUTHORIZED DESTRUCTIVE CLEANUP & CONNECTION INVALIDATION
+    Note over WorkerA,DBA: PHASE 5: AUTHORIZED DESTRUCTIVE CLEANUP & CONNECTION INVALIDATION (B38-15)
     WorkerA->>Client: cleanupTestDatabase("decision_os_test_runA_wA", "runA", "wA")
     Client->>Executor: POST /v1/cleanup/request (Signed with Worker A Ed25519 Key)
     Executor->>Executor: Verify Signature, Nonce, Active Lease, Mark DISPATCHING
     Executor->>DBA: db.runCommand({ dropDatabase: 1, comment: JSON.stringify({ requestId, runA, wA }) })
     DBA-->>Executor: { ok: 1, dropped: "decision_os_test_runA_wA" }
     Executor->>CoordDB: Mark CLEANED in cleanup_ledger
-    Executor->>AdminDB: db.adminCommand({ killAllUserConnections: ["decision_os_worker_runA_wA"] })
+    Executor->>AdminDB: db.adminCommand({ killAllSessionsByPattern: [{ users: [{ user: "decision_os_worker_runA_wA", db: "admin" }] }] })
     Executor->>AdminDB: db.dropUser("decision_os_worker_runA_wA"), db.dropRole("decision_os_role_runA_wA")
     Executor-->>Client: HTTP 200 OK { status: 'CLEANED' }
+    Client->>WorkerA: Force worker connection pool invalidation (PoolA.close())
 ```
 
 ---
@@ -319,35 +336,56 @@ Section 3.2 authorized either direct modification of internal MongoDB collection
 1. **Direct System Collection Manipulation:** Direct insert, update, or delete operations on `admin.system.roles` and `admin.system.users` bypass MongoDB's internal authorization consistency checks, risk internal metadata corruption, and are rejected or restricted by modern MongoDB storage engines.
 2. **Superuser Escalation via `userAdmin` on `admin`:** The built-in `userAdmin` role on the `admin` database can create any role with arbitrary privileges and grant any role (including `root`) to itself or any user. Granting `userAdmin` on `admin` violates least privilege and effectively awards the cleanup executor cluster superuser control.
 
-### 7.4 Granular Non-Superuser Role & User Provisioning Architecture (Finding B38-12)
+### 7.4 Granular Non-Superuser Role & User Provisioning Architecture (Finding B38-12, B38-15, B38-19)
 Decision OS eliminates direct access to system collections and strips built-in `userAdmin`. Role and user management is performed exclusively through supported MongoDB administrative commands scoped strictly to test namespaces:
 
 1. **Supported MongoDB Commands Used:**
    - `createRole` / `dropRole`
    - `grantRolesToUser` / `revokeRolesFromUser`
-   - `createUser` / `dropUser`
-   - `killAllUserConnections` / `killSessions`
+   - `createUser` / `dropUser` / `updateUser`
+   - `killAllSessionsByPattern` / `killSessions`
 2. **Exact Privileges of `decision_os_cleanup_executor_role`:**
    ```javascript
    db.getSiblingDB("admin").createRole({
      role: "decision_os_cleanup_executor_role",
      privileges: [
        // 1. Destructive drop capabilities strictly for test databases
+       // NOTE: Broad { db: "", collection: "" } is mandated because MongoDB RBAC does not support database wildcards.
+       // This makes the Dedicated Isolated Test Deployment a mandatory hard security boundary!
        {
          resource: { db: "", collection: "" },
          actions: [ "dropDatabase", "dropCollection", "listCollections", "find" ]
        },
-       // 2. Authoritative management of coordination collections
+       // 2. Authoritative management of coordination state collections
        {
-         resource: { db: "decision_os_coordination", collection: "" },
+         resource: { db: "decision_os_coordination", collection: "ownership_locks" },
          actions: [ "find", "insert", "update", "remove", "findAndModify", "createIndex" ]
        },
-       // 3. Cluster monitoring and connection termination
+       {
+         resource: { db: "decision_os_coordination", collection: "cleanup_ledger" },
+         actions: [ "find", "insert", "update", "remove", "findAndModify", "createIndex" ]
+       },
+       {
+         resource: { db: "decision_os_coordination", collection: "provisioning_saga" },
+         actions: [ "find", "insert", "update", "remove", "findAndModify", "createIndex" ]
+       },
+       // 3. Append-only tamper-evident audit ledger (NO update, remove, or findAndModify!)
+       {
+         resource: { db: "decision_os_coordination", collection: "cleanup_audit_log" },
+         actions: [ "find", "insert", "createIndex" ]
+       },
+       // 4. Cluster monitoring and session termination strictly on { cluster: true }
        {
          resource: { cluster: true },
-         actions: [ "listDatabases", "inprog", "checkCursorSanity" ]
+         actions: [
+           "listDatabases",
+           "inprog",
+           "checkCursorSanity",
+           "killAnySession",
+           "impersonate"
+         ]
        },
-       // 4. Granular role and user management on admin (NO system collection CRUD)
+       // 5. Granular role and user management on admin (NO system collection CRUD)
        {
          resource: { db: "admin", collection: "" },
          actions: [
@@ -357,8 +395,8 @@ Decision OS eliminates direct access to system collections and strips built-in `
            "revokeRole",
            "createUser",
            "dropUser",
-           "killAnyCursor",
-           "killAnySession"
+           "changePassword",
+           "killAnyCursor"
          ]
        }
      ],
@@ -371,14 +409,69 @@ Decision OS eliminates direct access to system collections and strips built-in `
    - Grant privileges strictly matching `{ resource: { db: targetTestDb, collection: "" }, actions: [ "find", "insert", "update", "remove", "createCollection", "createIndex", "dropIndex" ] }`.
    - Create users whose usernames match `^decision_os_worker_[a-zA-Z0-9_-]+$` or `^decision_os_benchmark_[a-zA-Z0-9_-]+$`.
    - Refuse any request attempting to grant cluster actions, system database privileges (`admin`, `config`, `local`), or built-in roles (`root`, `clusterAdmin`).
-4. **Cryptographic Audit Logging:**
-   Every invocation of `createUser`, `createRole`, `grantRolesToUser`, `revokeRolesFromUser`, `dropRole`, and `dropUser` generates a structured JSON audit event appended to `decision_os_coordination.cleanup_audit_log` with SHA-256 hash chaining:
+4. **Tamper-Evident Audit Logging (Append-Only Boundary):**
+   Every invocation of `createUser`, `createRole`, `grantRolesToUser`, `revokeRolesFromUser`, `dropRole`, `dropUser`, and `killAllSessionsByPattern` generates a structured JSON audit event appended to `decision_os_coordination.cleanup_audit_log` with SHA-256 hash chaining:
    $$\text{AuditHash} = \text{SHA256}(\text{PrevHash} + \text{Action} + \text{TargetUser} + \text{TargetRole} + \text{CallerId} + \text{Timestamp})$$
+   Because MongoDB RBAC restricts the executor to `find`, `insert`, and `createIndex` on `cleanup_audit_log`, ordinary executor code paths and compromised workers are natively prevented from updating, modifying, or truncating historical audit entries.
 5. **Failure Recovery for Role Provisioning:**
-   - **Role created, user creation fails:** The executor catches the exception, immediately drops the created role via `dropRole`, releases the ownership lock, and returns HTTP 500. No orphaned role or user remains.
-   - **Role revocation fails during teardown:** If `dropRole` or `dropUser` encounters a network glitch during teardown, the state is recorded as `CLEANED` (or `QUARANTINED`), but marked with `danglingRoleCleanupPending: true`. A background orphan reaper sweeps `ownership_locks` every 30 seconds and purges lingering roles/users.
+   - Multi-command provisioning failure and rollback are managed via the **Durable Provisioning Saga** (formalized in Section 9.1).
+   - If user creation or credential encryption fails, compensating transactions (`dropRole`, release lock) are executed. If compensation encounters a network timeout, state is persisted as `ROLLBACK_PENDING`, and the background orphan reaper retries compensation until verified complete.
 
-### 7.5 Per-Worker Discrete MongoDB Principal & Ephemeral Credential Model (Finding B38-11)
+### 7.5 Complete Executor Privilege Scope Review & Hard Boundary Analysis
+
+A rigorous security review of the complete executor privilege specification identified the precise structural boundaries between database-engine RBAC and application controls:
+
+#### 1. Identification of Privileges Scoped to `{ db: "", collection: "" }`
+The executor role contains **exactly one** privilege block scoped to `{ db: "", collection: "" }`:
+```javascript
+{
+  resource: { db: "", collection: "" },
+  actions: [ "dropDatabase", "dropCollection", "listCollections", "find" ]
+}
+```
+In MongoDB RBAC, `{ db: "", collection: "" }` applies to **all non-system databases across the entire MongoDB instance**.
+
+#### 2. Why the Dedicated Isolated Test Deployment is a Mandatory Hard Security Boundary
+MongoDB RBAC does not support database name wildcard expressions (such as `decision_os_test_*`). If an administrator attempts to create a role with `{ db: "decision_os_test_*", collection: "" }`, MongoDB treats `"decision_os_test_*"` as a literal database name.
+Consequently, to allow the Cleanup Executor to drop dynamically named test databases (`decision_os_test_${runId}_${workerId}`), the executor must possess `{ db: "", collection: "" }` with `dropDatabase`.
+
+**CRITICAL ARCHITECTURAL CONSEQUENCE:**
+Because `{ db: "", collection: "" }` is cluster-wide on the target `mongod` instance:
+- MongoDB's native engine **cannot differentiate between test databases and production databases residing on the same instance**.
+- If the cleanup executor were connected to a shared database cluster containing production or staging data, a single bug in application-level regex validation or an identity spoofing flaw could issue `dropDatabase` against a production namespace, and MongoDB RBAC would authorize it!
+- **Conclusion:** The **Dedicated Isolated Test MongoDB Deployment (`mongodb-test:27018`) is a MANDATORY HARD SECURITY BOUNDARY**. Test databases and production databases must never share a MongoDB daemon, storage engine, or network namespace.
+
+#### 3. Separation of MongoDB-Native Authorization from Application-Level Policy Guards
+To ensure transparent security assurance, guarantees are partitioned into what MongoDB RBAC enforces versus what application guards enforce:
+
+| Enforcement Layer | Security Capability | Concrete Mechanism | Bypass Risk / Failure Mode |
+|---|---|---|---|
+| **MongoDB-Native RBAC** | Unprivileged workers cannot drop databases | `decision_os_worker_base_role` and dynamic roles lack `dropDatabase` and `dropCollection`. | None at application level. Native wire reject (Code 13). |
+| **MongoDB-Native RBAC** | Unprivileged workers cannot tamper with coordination metadata | Worker roles have `find` only on coordination collections; zero insert/update/delete. | None. Direct wire writes rejected (Code 13). |
+| **MongoDB-Native RBAC** | Cross-worker test database isolation | Dynamic roles granted exclusively to unique per-worker principals. | None. Worker A accessing DB B rejected (Code 13). |
+| **MongoDB-Native RBAC** | Append-only audit log protection | Executor possesses `find, insert, createIndex` on `cleanup_audit_log`; zero update/remove. | None. Even compromised executor cannot delete/update audit entries. |
+| **MongoDB-Native RBAC** | Session invalidation capability | `killAnySession` and `impersonate` scoped to `{ cluster: true }`. | None. Allowed only for privileged executor. |
+| **Application-Level Guard** | Test database naming enforcement | `assertValidTestDatabase(name)` regex check in `apps/cleanup-executor/src/executor.ts`. | Protects against dropping non-test DBs on the test instance. |
+| **Application-Level Guard** | Dynamic role privilege scoping | `provisioner.ts` restricts `createRole` to CRUD on designated test DB; blocks cluster/admin grants. | Prevents executor bugs from creating superuser roles on test instance. |
+| **Application-Level Guard** | Ephemeral user username validation | `provisioner.ts` validates usernames conform to `decision_os_worker_*`. | Prevents creating arbitrary administrative accounts. |
+
+#### 4. Privileges Permitting Role Management Outside Test Namespace
+The executor role possesses `createRole`, `dropRole`, `grantRole`, `revokeRole`, `createUser`, `dropUser`, and `changePassword` on `{ db: "admin", collection: "" }`. In MongoDB RBAC, having `createRole` on `admin` permits creating custom roles that grant privileges on any database.
+- **MongoDB-Engine Boundary:** The executor role does not possess built-in roles (`root`, `userAdminAnyDatabase`), preventing it from granting existing superuser roles.
+- **Application Policy Boundary:** The provisioner engine explicitly validates the role definition AST before dispatching `createRole`:
+  - Target role name must match `^decision_os_role_[a-zA-Z0-9_-]+$`.
+  - Target resource must match `{ resource: { db: targetTestDb, collection: "" } }` where `targetTestDb` passes canonical test naming.
+  - Any request attempting to grant cluster actions or system DB actions throws an immediate validation exception (`DISALLOWED_PRIVILEGE_REQUEST`).
+
+#### 5. Prevention of Accidental Connection to Staging or Production
+To physically prevent the Cleanup Executor from accidentally pointing to staging or production environments, five independent fail-closed assertions are evaluated at process startup:
+1. **Hardcoded URI Host Allowlist:** `apps/cleanup-executor` startup routine validates that `MONGO_URI` resolves to an allowlisted test database hostname (`mongodb-test`, `127.0.0.1:27018`, `localhost:27018`). Connection attempts to production DNS names (`*.prod.internal`, `*.staging.internal`) halt immediately with `FATAL_PRODUCTION_HOST_REJECTED`.
+2. **Cluster Topology Metadata Inspection:** On connection establishment, the executor executes `db.adminCommand({ getCmdLineOpts: 1 })` and inspects cluster tags. If any replica set member or configuration contains tags indicating `environment: production` or `environment: staging`, the executor exits with status code 101.
+3. **Environment Variable Interlocks:** Startup checks assert `NODE_ENV === 'test'` and `DECISION_OS_ALLOW_TEST_CLEANUP === 'true'`. If `NODE_ENV === 'production'`, startup is aborted.
+4. **Physical Absence of Production Databases:** Startup routine executes `db.adminCommand({ listDatabases: 1 })`. If any production database name (e.g. `decision_os`, `decision_os_production`, `decision_os_analytics`) is present, startup immediately terminates.
+5. **Network Container Egress Policy:** In Kubernetes and Docker Compose, the Cleanup Executor container is assigned to the `test-isolated-net` network with zero egress routing to staging or production subnets.
+
+### 7.6 Per-Worker Discrete MongoDB Principal & Ephemeral Credential Model (Finding B38-11, B38-15, B38-17)
 
 #### 1. Unique Principal Naming Standard
 Every test worker and benchmark runner receives a dedicated MongoDB username:
@@ -478,11 +571,130 @@ When Worker `run_alpha:w0` requests ownership, the executor:
 - Worker A cannot read credentials from MongoDB: MongoDB RBAC strictly denies `decision_os_worker_base_role` any read or find privileges on `admin.system.users` or `admin.system.roles`. Any attempt results in Error Code 13.
 - In containerized CI/production environments, Linux cgroups and namespaces prevent inspecting `/proc` or memory of adjacent worker containers.
 
-#### 6. Active Connection Termination on Revocation
-Revoking a role or dropping a user does not immediately sever existing client TCP connections in MongoDB. To ensure immediate fail-closed termination:
-- Whenever a dynamic role is revoked, or a user is dropped (on cleanup completion, lease expiry, or quarantine), the executor executes:
-  `db.adminCommand({ killAllUserConnections: ["decision_os_worker_run_alpha_w0"] })`
-- Any active client sockets held by that worker are abruptly closed by the MongoDB daemon. Subsequent queries on those connections throw socket closed or `NotAuthorized` (Code 13).
+#### 6. MongoDB Session Invalidation & Connection Revocation Protocol (Finding B38-15)
+The v1.3.0 architecture erroneously relied on `killAllUserConnections`, which is not an established MongoDB command, and claimed that killing sessions physically severs TCP sockets. The real MongoDB 8.0 connection and session lifecycle requires distinct technical layers:
+
+##### a. Distinction Between Logical Sessions, Operations, Cursors, and TCP Sockets
+To establish an authoritative security model, the architecture distinguishes six independent layers of state:
+1. **Logical Session Termination (`killAllSessionsByPattern`):** Terminates server-side logical session state records (`lsid`) tracked in the `config.system.sessions` collection.
+2. **In-Progress Operation Cancellation (`killOp`):** As part of session termination, MongoDB actively signals and aborts in-progress operations attached to the killed logical session.
+3. **Cursor Closure:** All open client cursors associated with the terminated sessions are immediately pinned and reaped on the server.
+4. **TCP Connection Sockets (Driver Connection Pool):** **Session termination DOES NOT physically close TCP network sockets.** The client driver maintains open TCP connections in its connection pool. MongoDB leaves the physical sockets connected at the transport layer.
+5. **Client Driver-Pool Invalidation:** Complete physical socket closure requires the client process (or Vitest worker thread) to explicitly shut down or reset its driver connection pool via `await client.close(true)`.
+6. **Fresh Authentication Prevention:** Dropping the user principal via `db.dropUser()` ensures that even if open sockets remain or reconnection attempts occur, subsequent authentication handshakes fail with MongoDB Error Code 11 (`UserNotFound`) or Error Code 18 (`AuthenticationFailed`).
+
+##### b. Supported Command Syntax & Privilege Placement
+In MongoDB 8.0, session invalidation by user pattern requires the `killAllSessionsByPattern` administrative command executed on the `admin` database:
+```javascript
+db.adminCommand({
+  killAllSessionsByPattern: [
+    {
+      users: [
+        { user: "decision_os_worker_run_alpha_w0", db: "admin" }
+      ]
+    }
+  ]
+});
+```
+- **Privilege Scoping:** To terminate sessions belonging to another user, MongoDB RBAC strictly requires the **`killAnySession`** and **`impersonate`** actions scoped to the **`{ cluster: true }`** resource. Placing these privileges on `{ db: "admin", collection: "" }` is invalid and causes MongoDB to reject the command with Error Code 13.
+
+##### c. Fail-Closed Session Revocation Protocol
+Whenever dynamic credentials are revoked (on teardown completion, lease expiry, or quarantine transition), the Cleanup Executor executes a deterministic 5-step revocation sequence:
+1. **Step 1 — Kill Server Sessions & In-Flight Operations:** Dispatch `killAllSessionsByPattern` targeting the specific worker principal on authentication database `admin`. This cancels in-progress queries and closes open cursors.
+2. **Step 2 — Immediate Role Revocation:** Dispatch `revokeRolesFromUser` to strip dynamic test database permissions from the worker identity.
+3. **Step 3 — Drop User Identity:** Dispatch `dropUser` to delete the worker identity from `admin.system.users`. Any subsequent authentication attempt immediately fails with `UserNotFound` (Code 11).
+4. **Step 4 — Client-Side Connection Pool Invalidation:** The `CleanupExecutorClient` in the worker process listens for teardown completion and immediately issues `await client.close({ force: true })`, terminating local TCP client sockets and clearing connection pools.
+5. **Step 5 — Wire-Level Fail-Closed Boundary:** If a rogue worker thread or corrupted client process attempts to issue commands over lingering cached TCP sockets without re-authenticating, MongoDB's wire protocol verifies the session and authorization cache. Because the user has been dropped and the session killed:
+   - Queries with a killed session ID fail with `NoSuchSession` (Code 261).
+   - Queries attempting execution fail with `Unauthorized` (Code 13) or `UserNotFound` (Code 11).
+   - Any driver reconnect attempt fails with `AuthenticationFailed` (Code 18).
+
+##### d. Limitations Involving Prepared Transactions
+MongoDB documentation explicitly establishes that **`killAllSessionsByPattern` will ignore and fail to kill sessions that have transactions in a `prepared` state** (part of two-phase commit consensus).
+- **Test Worker Restriction:** Unprivileged worker identities are restricted to standard single-shard test databases and lack privileges to prepare distributed transactions.
+- **Fail-Closed Handling:** If the executor inspects `currentOp` and detects a prepared transaction associated with an orphaned or expired worker, the executor will NOT attempt blind drop. It records an alert, explicitly coordinates with transaction coordinator controls to abort the transaction, and transitions the database to `QUARANTINED`.
+
+---
+
+#### 7. Crash-Safe Ephemeral Credential Recovery Architecture (Finding B38-17)
+
+The v1.3.0 architecture claimed idempotent credential redelivery upon retry, but stored generated passwords only in volatile process memory. This produced a critical failure sequence:
+
+##### a. Analysis of the Target Crash Sequence
+1. Worker calls `POST /v1/ownership/claim` with `requestId: "550e8400..."`, `databaseName: "decision_os_test_runA_w0"`.
+2. Executor validates signature and creates dynamic role `decision_os_role_runA_w0` in MongoDB.
+3. Executor generates ephemeral password $P$ (32 cryptographically secure random bytes).
+4. Executor executes `createUser` in MongoDB with password $P$ and dynamic role. MongoDB hashes and salts $P$ into SCRAM-SHA-256 verifier records in `admin.system.users`.
+5. **CRASH:** The executor container abruptly crashes (OOM, hypervisor preemption, network partition) before transmitting the HTTP 200 response to the worker.
+6. The executor container restarts and recovers coordination state.
+7. Worker client times out and retries `POST /v1/ownership/claim` with the same `requestId` and matching payload hash.
+
+##### b. The Cryptographic Reality of MongoDB SCRAM Verifiers
+In MongoDB, `admin.system.users` stores SCRAM-SHA-256 credentials:
+$$\text{StoredKey} = \text{HMacSHA256}(\text{ClientKey}, \text{AuthMessage}), \quad \text{ServerKey} = \text{HMacSHA256}(\text{SaltedPassword}, \text{"Server Key"})$$
+The plaintext password $P$ **cannot be derived, recovered, or reverse-engineered from MongoDB's stored SCRAM verifier**. Claiming that a restarted executor can retrieve the original password from MongoDB is mathematically impossible.
+
+##### c. Evaluation of Recovery Alternatives
+Three architectural recovery strategies were evaluated:
+1. **Option 1: Caller-Bound Encrypted Credential Envelope with Protected Durable Storage (SELECTED):**
+   When the executor generates password $P$, it immediately encrypts $P$ into an authenticated ciphertext envelope using AES-256-GCM. The envelope is durably persisted inside the `ownership_locks` document (`credentialEnvelope`). Upon executor crash and worker retry, the restarted executor verifies caller identity, decrypts the envelope, and safely redelivers the exact credentials.
+2. **Option 2: Password Rotation and Controlled Re-Issuance:**
+   If the envelope is unavailable or corrupted, upon retried claim before activation, the executor issues `db.updateUser({ user: username, pwd: newPassword })`, generating a fresh password. However, if the worker *had* received the original response before a network timeout, rotating the password breaks active connections. Thus, rotation is reserved as a fallback for explicit re-issuance requests.
+3. **Option 3: Fail-Closed Abandonment and Rollback:**
+   If the retried request presents mismatched signatures, invalid generations, or expired leases, the claim is rejected with HTTP 409/403. The partial provisioning is rolled back, the user and role are dropped, and the caller must initiate a fresh claim.
+
+##### d. Detailed Specification of the Selected Envelope Recovery Design
+1. **Encryption & Key Ownership:**
+   - Ephemeral passwords are encrypted using **AES-256-GCM** with a 96-bit random IV and 128-bit authentication tag.
+   - The master envelope encryption key (`ENVELOPE_KEY`) is a 256-bit symmetric key mounted exclusively into the Cleanup Executor container via secret volume (`/var/run/secrets/cleanup-executor/envelope-key`). Worker containers have zero access to this key.
+2. **Caller Cryptographic Binding (AAD):**
+   - The GCM Additional Authenticated Data (AAD) binds the ciphertext to the exact request and caller context:
+     $$\text{AAD} = \text{UTF8}(\text{requestId} + \text{"\|"} + \text{databaseName} + \text{"\|"} + \text{runId} + \text{"\|"} + \text{workerId} + \text{"\|"} + \text{callerPublicKeyFingerprint})$$
+   - Any tampering with the lease document or attempt to use the envelope for another database/caller causes GCM authentication failure.
+3. **Durable Storage in Coordination Schema:**
+   The `ownership_locks` document stores the envelope during provisioning:
+   ```json
+   {
+     "databaseName": "decision_os_test_runA_w0",
+     "runId": "runA",
+     "workerId": "w0",
+     "callerPublicKeyFingerprint": "ea4a6c63e29c...",
+     "mongoUsername": "decision_os_worker_runA_w0",
+     "credentialEnvelope": {
+       "format": "AES-256-GCM",
+       "iv": "dGVzdEl2MTIzNDU2",
+       "tag": "dGVzdFRhZzEyMzQ1Ng==",
+       "ciphertext": "Y3J5cHRvQ2lwaGVydGV4dERhdGE=",
+       "encryptedAt": "2026-11-06T01:00:00.000Z"
+     },
+     "leaseExpiresAt": "2026-11-06T01:01:00.000Z",
+     "generation": 1,
+     "status": "PROVISIONED_PENDING_ACTIVATION"
+   }
+   ```
+4. **Idempotency & Restart Recovery Protocol:**
+   - When a worker retries `POST /v1/ownership/claim` with the same `requestId`:
+     1. Executor verifies Ed25519 signature against registered `callerPublicKeyFingerprint`.
+     2. Executor reads `ownership_locks` for `databaseName`.
+     3. Executor verifies `status === 'PROVISIONED_PENDING_ACTIVATION'` and `generation === 1`.
+     4. Executor decrypts `credentialEnvelope` using `ENVELOPE_KEY` and validates AAD.
+     5. Executor returns HTTP 200 OK with the decrypted password.
+5. **Forward Secrecy & Credential Destruction:**
+   - Plaintext passwords and encrypted envelopes must not persist indefinitely in coordination storage.
+   - As soon as the worker successfully connects and performs its first action (or calls `POST /v1/ownership/activate` or sends its first lease heartbeat), the executor permanently destroys the envelope:
+     ```javascript
+     await db.collection("ownership_locks").updateOne(
+       { databaseName, generation },
+       {
+         $unset: { credentialEnvelope: 1 },
+         $set: { status: "ACTIVATED", activatedAt: new Date() }
+       }
+     );
+     ```
+   - Once activated, the envelope is deleted. If the worker crashes later, it must request controlled password rotation via signed administrative re-issuance.
+6. **Partial-Failure & Expiry Handling:**
+   - If the worker crashes and never retries, the 60-second lease expires (`leaseExpiresAt < now`).
+   - The background lease reaper detects the expired unactivated lease, drops the user `decision_os_worker_runA_w0`, drops the dynamic role, and deletes the `ownership_locks` document, securely destroying the envelope and cleaning all residual state.
 
 ---
 
@@ -577,12 +789,98 @@ $$\text{Canonical Regex: } \wedge(?:\text{decision\_os\_test}|\text{decision\_os
 
 ## 9. Durable Request Lifecycle & Ownership Management
 
-### 9.1 Authoritative Ownership Management (B38-02, B38-11)
-Ordinary workers are physically denied write permissions on `decision_os_coordination.ownership_locks`. Ownership registration is strictly executor-mediated:
-1. **Registration Endpoint (`POST /v1/ownership/claim`):** Worker submits signed claim containing `databaseName`, `runId`, `workerId`.
-2. **Atomic Verification:** Executor checks `ownership_locks`. If unclaimed or owned by same run with expired lease, executor writes `OWNED` with a 60-second lease, records public key fingerprint, creates unique worker user `decision_os_worker_${runId}_${workerId}`, and provisions dynamic role.
-3. **Heartbeat / Release:** Worker maintains lease via `POST /v1/ownership/heartbeat` and releases via `POST /v1/ownership/release`.
-4. **Expired Ownership:** Expired leases move to `ORPHANED` or `EXPIRED`. **An expired lease never authorizes a destructive operation automatically.**
+### 9.1 Durable Idempotent Provisioning Saga Architecture (Finding B38-18)
+
+The v1.3.0 architecture claimed that creating dynamic roles, creating worker users, assigning privileges, and generating credentials constituted an "atomic" operation. This was a false claim.
+
+#### 1. Distinguishing MongoDB Command Atomicity from Multi-Command Workflows
+In MongoDB 8.0:
+- Single-document writes and standalone administrative DDL commands (`createRole`, `createUser`, `grantRolesToUser`, `dropRole`, `dropUser`) are internally atomic at the command level.
+- **MongoDB administrative commands CANNOT participate in multi-document transactions.** It is impossible to wrap `createRole` and `createUser` in a MongoDB multi-document ACID transaction.
+- Provisioning dynamic roles and worker credentials across MongoDB administrative catalogs, coordination storage, and HTTP network transports is fundamentally a **multi-command distributed workflow**.
+- To guarantee transactional recovery without false atomicity claims, Decision OS formalizes role and user provisioning as a **Durable Idempotent Saga** managed by the Cleanup Executor.
+
+#### 2. Durable Saga State Model
+The provisioning workflow is persisted in `decision_os_coordination.provisioning_saga` (with correlation pointers in `ownership_locks`):
+
+```mermaid
+stateDiagram-v2
+    [*] --> CLAIM_PENDING: POST /v1/ownership/claim (Validate signature & namespace)
+    CLAIM_PENDING --> ROLE_CREATING: Acquire lease in ownership_locks
+    ROLE_CREATING --> ROLE_CREATED: db.createRole (Dynamic test DB role)
+    ROLE_CREATED --> USER_CREATING: Generate ephemeral secret
+    USER_CREATING --> USER_CREATED: db.createUser (With base unprivileged role)
+    USER_CREATED --> ROLE_ASSIGNED: db.grantRolesToUser (Attach dynamic role)
+    ROLE_ASSIGNED --> CREDENTIAL_ENCRYPTED: Encrypt & store envelope in ownership_locks
+    CREDENTIAL_ENCRYPTED --> CREDENTIAL_DELIVERED: Transmit HTTP 200 with credentials
+    CREDENTIAL_DELIVERED --> ACTIVATED: POST /v1/ownership/activate (Zeroize envelope)
+
+    ROLE_CREATING --> ROLLING_BACK: Role creation fails
+    ROLE_CREATED --> ROLLING_BACK: User creation fails
+    USER_CREATED --> ROLLING_BACK: Role assignment fails
+    CREDENTIAL_ENCRYPTED --> ROLLING_BACK: Lease expires before activation / Worker crash
+    ROLLING_BACK --> ROLLED_BACK: Compensating dropUser, dropRole, lease delete
+    ROLLING_BACK --> ORPHAN_RECOVERY: Compensation fails (Network/Primary timeout)
+    ORPHAN_RECOVERY --> ROLLED_BACK: Orphan reaper proves saga identity & cleans up
+
+    ACTIVATED --> [*]: Active Test Execution Underway
+    ROLLED_BACK --> [*]: Clean Terminal Rollback
+```
+
+#### 3. Durable Saga State Definitions & Mutations
+
+| Saga State | Operation / Action | Preconditions | Durable Mutation Recorded | Compensating Action on Failure |
+|---|---|---|---|---|
+| **`CLAIM_PENDING`** | Validate request signature, nonce, canonical DB naming. | Database unclaimed or lease expired; valid Ed25519 signature. | Insert `_id: sagaId, requestId, runId, workerId, databaseName, state: 'CLAIM_PENDING'`. | Abort with HTTP 400/409; zero DB changes. |
+| **`ROLE_CREATING`** | Acquire lease lock in `ownership_locks`. | Atomic insert on `ownership_locks` with unique index on `databaseName`. | `$set: { state: 'ROLE_CREATING', leaseExpiresAt: now + 60s }`. | Release lease lock. |
+| **`ROLE_CREATED`** | Dispatch `db.createRole({ role: dynamicRole, privileges: [CRUD on targetTestDb] })`. | `admin` DB reachable; role does not exist. | `$set: { state: 'ROLE_CREATED', dynamicRoleName }`. | Transition to `ROLLING_BACK` $\rightarrow$ release lease lock. |
+| **`USER_CREATING`** | Generate 32-byte secret $P$. Dispatch `db.createUser({ user, pwd: P, roles: [baseRole] })`. | Role created; user does not exist. | `$set: { state: 'USER_CREATING', mongoUsername }`. | Transition to `ROLLING_BACK` $\rightarrow$ `dropRole`. |
+| **`USER_CREATED`** | User principal exists in `admin.system.users` with base role only. | User creation returned `{ ok: 1 }`. | `$set: { state: 'USER_CREATED' }`. | Transition to `ROLLING_BACK` $\rightarrow$ `dropUser`, `dropRole`. |
+| **`ROLE_ASSIGNED`** | Dispatch `db.grantRolesToUser(user, [dynamicRole])`. | User and role exist. | `$set: { state: 'ROLE_ASSIGNED' }`. | Transition to `ROLLING_BACK` $\rightarrow$ `dropUser`, `dropRole`. |
+| **`CREDENTIAL_ENCRYPTED`** | Encrypt $P$ under `ENVELOPE_KEY` with AAD; write to `ownership_locks.credentialEnvelope`. | AES-256-GCM encryption succeeds; AAD bound. | `$set: { state: 'CREDENTIAL_ENCRYPTED', credentialEnvelope }`. | Transition to `ROLLING_BACK` $\rightarrow$ `dropUser`, `dropRole`. |
+| **`CREDENTIAL_DELIVERED`** | Deliver HTTP 200 OK with credentials over mTLS. | Envelope persisted durably. | `$set: { state: 'CREDENTIAL_DELIVERED' }`. | Worker retry redelivers via envelope; lease TTL reaps if abandoned. |
+| **`ACTIVATED`** | Worker calls `/v1/ownership/activate` or sends first heartbeat ping. | Signature valid; generation matches. | `$unset: { credentialEnvelope: 1 }, $set: { state: 'ACTIVATED' }`. | None (Active test phase). |
+| **`ROLLING_BACK`** | Execute compensating `dropUser`, `dropRole`, delete `ownership_locks`. | Error caught or unactivated lease expired. | `$set: { state: 'ROLLING_BACK', rollbackReason }`. | If compensation fails, mark `compensationPending: true` $\rightarrow$ `ORPHAN_RECOVERY`. |
+| **`ROLLED_BACK`** | Compensations verified complete. | User, role, and lease confirmed deleted. | `$set: { state: 'ROLLED_BACK', completedAt: now }`. | Terminal clean state. |
+| **`ORPHAN_RECOVERY`** | Background reaper sweeps stalled rollbacks. | Saga in `ROLLING_BACK` or lease expired with `compensationPending: true`. | `$set: { state: 'ORPHAN_RECOVERY', reaperClaimedAt: now }`. | Retries compensation with exponential backoff until verified deleted. |
+
+#### 4. Recovery After Executor Crash at Every Transition
+The executor evaluates the saga state table upon recovery or worker retry:
+1. **Crash during `ROLE_CREATING`:** Role does not exist in MongoDB. Restarted executor finds `ROLE_CREATING` with expired lease. Compensation releases lock in `ownership_locks` and marks saga `ROLLED_BACK`.
+2. **Crash between `ROLE_CREATED` and `USER_CREATING`:** Role exists in MongoDB, user does not. Restarted executor detects `ROLE_CREATED`. Retrying worker resumes saga (proceeds to create user), or if expired, compensation issues `dropRole` and marks `ROLLED_BACK`.
+3. **Crash between `USER_CREATED` and `ROLE_ASSIGNED`:** User exists with ONLY base role (zero write permissions, zero test DB permissions). Restarted executor detects `USER_CREATED`. Retrying worker finishes role assignment, or compensation issues `dropUser` followed by `dropRole`.
+4. **Crash between `ROLE_ASSIGNED` and `CREDENTIAL_ENCRYPTED`:** User and role exist, but password envelope was not saved. Plaintext password is lost in volatile memory. Restarted executor detects missing envelope. **Recovery Action:** Executor issues `updateUser({ user, pwd: newPassword })`, generates a new envelope, persists it, and delivers to caller.
+5. **Crash after `CREDENTIAL_ENCRYPTED`, before HTTP delivery:** User, role, and encrypted envelope exist. Restarted executor receives retried claim with matching `requestId`. Executor decrypts envelope using `ENVELOPE_KEY`, validates AAD, and delivers credentials without modifying MongoDB.
+6. **Crash after `CREDENTIAL_DELIVERED`, before `ACTIVATED`:** Worker has credentials. If worker connects, it sends activation handshake; executor zeroizes envelope and transitions to `ACTIVATED`. If worker crashed and never connects, the 60-second lease expires; lease reaper moves saga to `ROLLING_BACK` and cleans up.
+7. **Crash during `ROLLING_BACK`:** Partial compensation executed (e.g. user dropped, role remains). On restart, orphan reaper detects `state: 'ROLLING_BACK'` and `compensationPending: true`. Reaper re-executes `dropUser` (no-op if already gone) and `dropRole`, verifying both are deleted before marking `ROLLED_BACK`.
+
+#### 5. Failed Compensation Handling in Rollback
+If a compensating command (`dropRole` or `dropUser`) fails due to transient network partition, driver timeout, or primary stepdown:
+- The executor catches the error, records `compensationPending: true` with the failed target resource name in the saga document, and logs a high-severity warning.
+- The background orphan reaper scans `provisioning_saga` every 30 seconds for records where `compensationPending === true`.
+- The reaper applies an exponential backoff schedule (5s, 10s, 20s, up to 60s) to re-issue `dropRole` and `dropUser`.
+- The saga cannot transition to `ROLLED_BACK` until MongoDB confirms with `{ ok: 1 }` (or `RoleNotFound` / `UserNotFound`) that the target resources no longer exist.
+
+#### 6. Prevention of Duplicate Users, Roles, or Credentials
+- **Deterministic Naming:** All dynamic entity names are derived strictly from canonical request identifiers:
+  $$\text{dynamicRole} = \text{"decision\_os\_role\_"} + \text{runId} + \text{"\_"} + \text{workerId}$$
+  $$\text{mongoUsername} = \text{"decision\_os\_worker\_"} + \text{runId} + \text{"\_"} + \text{workerId}$$
+- **MongoDB Unique Constraints:** MongoDB natively rejects `createRole` or `createUser` if the role or username already exists in `admin`.
+- **Saga Idempotency Checks:** Before dispatching `createRole`, the executor queries `db.getRole(dynamicRole)`. If it already exists and belongs to the same saga generation, it reuses the role rather than failing.
+
+#### 7. Guarantee That Partially Provisioned Identities Possess Zero Unintended Privileges
+To eliminate race conditions where a worker authenticates before provisioning finishes:
+- **Least-Privilege Sequential Construction:** When `createUser` is called, the user is created with **`roles: ["decision_os_worker_base_role"]` ONLY**.
+- `decision_os_worker_base_role` contains **zero write actions across all databases** and **zero read actions on test databases**.
+- Even if a worker process attempts to authenticate immediately after user creation, it has zero ability to read or write test data.
+- The dynamic role granting CRUD on the specific test database is attached in the subsequent `grantRolesToUser` step. If that step fails, the user is immediately dropped before elevated permissions are granted.
+
+#### 8. Proof Required for Orphan Reaper Deletion
+To prevent an orphan reaper from erroneously deleting an active role or user belonging to a concurrent test run, the reaper must verify a **strict 4-point proof** before issuing any `dropRole` or `dropUser`:
+1. **Saga State Proof:** The saga document in `decision_os_coordination.provisioning_saga` must be in state `ROLLING_BACK` or `CLAIM_PENDING` with an expired lease (`leaseExpiresAt < now`).
+2. **Lease Alignment Proof:** The `ownership_locks` document for `databaseName` must either be absent or contain a lease generation strictly less than or equal to the saga generation. If a newer generation has claimed the database, the reaper aborts.
+3. **Role Privilege Verification Proof:** The reaper queries `db.getSiblingDB("admin").getRole(roleName, { showPrivileges: true })`. The reaper programmatically asserts that the role grants privileges **exclusively** on `{ resource: { db: targetTestDb, collection: "" } }` and contains zero grants on system or coordination databases. If any privilege extends beyond `targetTestDb`, the reaper refuses to delete it and raises an immediate security alarm (`UNPROVEN_ORPHAN_ABORT`).
+4. **User Principal Verification Proof:** The reaper queries `db.getSiblingDB("admin").getUser(userName)`. The reaper asserts that the user is authenticated on `admin`, and that its assigned roles match **only** `decision_os_worker_base_role` and the specific dynamic role.
 
 ### 9.2 Authoritative Request Ledger Management (B38-03)
 Ordinary workers are denied `insert`, `update`, and `remove` on `decision_os_coordination.cleanup_ledger`. The executor is the **authoritative sole writer**:
@@ -666,12 +964,13 @@ A single point-in-time observation of `listDatabases()` or `currentOp()` **is no
 | **9. Database absent, prior completion unproven** | Database absent from catalog; crash was during dispatch. | `OUTCOME_UNKNOWN` | **CRITICAL CONSTRAINT:** Catalog absence is not proof. Record `targetAbsentObserved: true`. Move to `QUARANTINED`. | Signed SRE quarantine order. | **ABSOLUTELY FORBIDDEN.** |
 | **10. Executor restarts with ambiguous requests** | Undetermined cluster state. | `DISPATCHING` / `OUTCOME_UNKNOWN` | Startup scanner loads all `DISPATCHING` records and flags them `OUTCOME_UNKNOWN`. Retains locks. | Startup audit log entry; SRE alert fired. | **ABSOLUTELY FORBIDDEN.** |
 
-### 10.4 Authoritative MongoDB 8.0 Replica Set Oplog Drop Evidence Protocol (Finding B38-13)
+### 10.4 Authoritative MongoDB 8.0 Replica Set Oplog Drop Evidence Protocol (Finding B38-13, B38-16)
 
-Section 4.2 allowed `CONFIRM_CLEANED` when oplog records prove completion. To prevent false confirmations, the exact MongoDB 8.0 replica-set evidence protocol is formalized:
+Section 4.2 allowed `CONFIRM_CLEANED` when oplog records prove completion. The v1.3.0 formulation contained technical errors: it referenced non-existent fields (`optimesAndLocations.majorityCommitPoint`), assumed that `readConcern: "majority"` applies to the `local` database, and assumed that DDL command comments are preserved in `local.oplog.rs`.
+The evidence protocol is reworked using exact, empirically verifiable MongoDB 8.0 replica-set behavior:
 
 #### 1. Expected Oplog Record Structure in MongoDB 8.0
-In a replica set (`rs0`), database drop operations write command entries to `local.oplog.rs`:
+In a replica set (`rs0`), database drop operations generate a command record in `local.oplog.rs`:
 ```javascript
 {
   "op": "c",                         // Command operation
@@ -689,8 +988,8 @@ In a replica set (`rs0`), database drop operations write command entries to `loc
 }
 ```
 
-#### 2. Cryptographic Command Correlation via `comment`
-When the Cleanup Executor dispatches `{ dropDatabase: 1 }`, it embeds an immutable structured correlation payload inside the command `comment` field:
+#### 2. Cryptographic Command Correlation via `comment` (Hypothesis Under Test)
+When the Cleanup Executor dispatches `{ dropDatabase: 1 }`, it embeds a structured correlation payload inside the command `comment` field:
 ```typescript
 const correlationMetadata = {
   requestId: request.requestId,
@@ -705,61 +1004,88 @@ await testDb.command({
   comment: JSON.stringify(correlationMetadata)
 });
 ```
-MongoDB 4.4+ and 8.0 officially preserve the `comment` field within the recorded oplog command object `o.comment`.
 
-#### 3. Primary Term Changes and Replica-Set Elections
-If the primary node steps down or suffers an election during or immediately after command dispatch:
-- A command executed on an isolated or stepped-down primary that has **not reached a majority of replica set nodes is subject to rollback** when a new primary is elected.
-- Reading `local.oplog.rs` from a single local secondary or stepped-down node **is invalid**.
-- The evidence protocol mandates that oplog queries must be executed against the active replica set primary using `readConcern: "majority"` or verified against the cluster's `majorityCommitPoint`.
+> [!WARNING]
+> **Unverified DDL Comment Preservation Risk (Finding B38-16):**
+> MongoDB documentation describing comments in server logs, profiler output, and `currentOp` is **NOT sufficient proof** that DDL commands (such as `dropDatabase`) preserve the `comment` field in `local.oplog.rs`. In some storage engine versions, DDL command transformations strip or omit application comments.
+> Therefore, **comment preservation in `local.oplog.rs` is formally classified as an UNVERIFIED ARCHITECTURAL HYPOTHESIS** until empirically proven on the actual target MongoDB 8.0 replica set deployment via verification test **`D38-21`**.
+> If live testing demonstrates that MongoDB 8.0 strips `comment` from `dropDatabase` oplog records, automatic reconciliation via oplog correlation is technically impossible. In that event, `CONFIRM_CLEANED` is disabled entirely, and all ambiguous drops remain permanently `QUARANTINED`.
 
-#### 4. Establishing Majority Commitment
-Authoritative proof requires that the target oplog entry is strictly committed to a majority:
-1. Query the active primary for `replSetGetStatus`.
-2. Extract `optimesAndLocations.majorityCommitPoint.ts` (or `lastCommittedOpTime.ts`).
-3. Assert:
-   $$\text{OplogEntry.ts} \le \text{majorityCommitPoint.ts}$$
-4. If the entry exists in the primary's oplog but $\text{ts} > \text{majorityCommitPoint.ts}$, the drop is uncommitted and subject to rollback. **`CONFIRM_CLEANED` is rejected.**
+#### 3. Critical Reality: `local` Database Ignores Read Concern
+MongoDB documentation explicitly dictates:
+> *The `local` database does not support read concern. Queries against the `local` database silently ignore configured read concerns.*
 
-#### 5. Oplog Retention and Rollover Handling
-The `local.oplog.rs` collection is a capped collection with fixed disk allocation. Under high write throughput:
-- Oplog entries roll over and older records are evicted.
-- Before searching for drop evidence, the executor reads the earliest timestamp in `local.oplog.rs`:
-  ```javascript
-  const oldestRecord = await localDb.collection("oplog.rs").find().sort({ $natural: 1 }).limit(1).next();
-  const oldestTs = oldestRecord.ts;
-  ```
-- **Rollover Rule:** If $\text{oldestTs} > \text{wireDispatchedAt}$, an oplog rollover has occurred. The evidence has been irretrievably lost.
-- When an oplog rollover is detected, **`CONFIRM_CLEANED` can never be authorized**. The request must remain permanently in `QUARANTINED`.
+**Architectural Consequence:**
+- Querying `local.oplog.rs` with `readConcern: { level: "majority" }` **does NOT provide majority-read protection**. The MongoDB engine silently executes a local uncommitted read.
+- Reading an entry from `local.oplog.rs` on a primary node does NOT guarantee that the entry has been replicated to a majority of nodes or that it will survive a replica set election.
+- Therefore, majority durability **cannot be achieved via query read concern**. Durability must be established programmatically by comparing the oplog entry's OpTime against the cluster's majority commit point returned by administrative status commands.
 
-#### 6. Disambiguating Duplicate or Reused Namespaces
-If test runs reuse a database name across runs, multiple `dropDatabase` records may exist in the oplog for that namespace. The protocol strictly filters by:
-1. `o.dropDatabase === 1`
-2. `ns === `${targetDatabaseName}.$cmd``
-3. `JSON.parse(o.comment).requestId === originalRequestId`
-4. `JSON.parse(o.comment).payloadHash === originalPayloadHash`
-5. `wall >= wireDispatchedAt - 1000ms` and `wall <= reconcileRequestedAt`
+#### 4. Primary Verification and Election Term Consistency
+To prevent reading stale or rolled-back oplog records:
+1. The executor must query `db.adminCommand({ hello: 1 })` on the target connection.
+2. The node must confirm `isWritablePrimary === true`.
+3. The current election term `topologyVersion` and `electionId` are recorded.
+4. If a primary election or stepdown occurred during query execution, the read is aborted.
 
-#### 7. Insufficient Evidence Catalog
+#### 5. Establishing Majority Commitment via `replSetGetStatus`
+In MongoDB 8.0, the replica set's majority commit point is exposed in the `optimes` block of `replSetGetStatus`:
+```javascript
+const status = await adminDb.command({ replSetGetStatus: 1 });
+const lastCommitted = status.optimes.lastCommittedOpTime;
+// lastCommitted contains:
+//   ts: Timestamp (seconds, increment)
+//   t:  NumberLong (election term)
+```
+*(Note: Unsupported or non-standard paths such as `optimesAndLocations.majorityCommitPoint` are eliminated.)*
+
+##### Lexicographical OpTime Comparison Logic:
+In MongoDB replication, an OpTime is an ordered 2-tuple $(t, ts)$ where $t$ is the election term (`Long`) and $ts$ is the BSON Timestamp (`Timestamp`).
+An oplog entry $E = (t_E, ts_E)$ is majority committed if and only if it lexicographically precedes or equals the cluster's `lastCommittedOpTime` $C = (t_C, ts_C)$:
+$$\text{IsMajorityCommitted}(E, C) \iff (t_E < t_C) \lor (t_E == t_C \land ts_E \le ts_C)$$
+
+- If $t_E > t_C$, the entry was generated in a term that has not reached majority consensus $\rightarrow$ **REJECT**.
+- If $t_E == t_C$ and $ts_E > ts_C$, the entry is uncommitted in the current term and subject to rollback $\rightarrow$ **REJECT**.
+- Only when $\text{IsMajorityCommitted}(E, C)$ evaluates to `true` has the drop achieved cluster-wide persistence.
+
+#### 6. Oplog Retention and Rollover Detection
+The `local.oplog.rs` collection is a capped collection with fixed disk allocation. Under high write throughput, older entries are evicted.
+To prevent false negatives or confusing historical runs:
+1. Before searching for drop evidence, the executor queries the oldest available record in `local.oplog.rs`:
+   ```javascript
+   const oldestRecord = await localDb.collection("oplog.rs").find().sort({ $natural: 1 }).limit(1).next();
+   const oldestTs = oldestRecord ? oldestRecord.ts : null;
+   ```
+2. **Rollover Rule:** If `oldestTs` is null, or `oldestTs > wireDispatchedAt`, an oplog rollover occurred between dispatch and reconciliation. The conclusive evidence was evicted.
+3. When oplog rollover is detected, **`CONFIRM_CLEANED` is STRICTLY FORBIDDEN**. The request must remain permanently in `QUARANTINED`.
+
+#### 7. Mandatory Live Evidence Checklist
+To authorize `CONFIRM_CLEANED`, all six evidence assertions must evaluate to `TRUE`:
+1. **Target Namespace Match:** `ns === `${targetDatabaseName}.$cmd`` and `o.dropDatabase === 1`.
+2. **Cryptographic Correlation Match:** `JSON.parse(o.comment).requestId === originalRequestId` and `JSON.parse(o.comment).payloadHash === originalPayloadHash`.
+3. **Temporal Consistency:** The oplog entry's `wall` clock time satisfies:
+   $$\text{wireDispatchedAt} - 1000\text{ms} \le \text{entry.wall} \le \text{reconcileRequestedAt}$$
+4. **Majority Commitment Proven:** $\text{IsMajorityCommitted}(E, C) === \text{true}$ against `optimes.lastCommittedOpTime`.
+5. **No Rollover:** `oldestOplogTs <= wireDispatchedAt`.
+6. **Primary Stability:** Queried node confirmed active primary throughout evidence extraction.
+
+#### 8. Insufficient Evidence Catalog (Immediate Rejection)
 The following evidence is explicitly classified as **INSUFFICIENT** to authorize `CONFIRM_CLEANED`:
 - Catalog absence (`listDatabases()` or `listCollections()` returning empty).
 - `currentOp()` reporting no in-flight drop.
 - An oplog `dropDatabase` record lacking the structured `comment` field.
+- An oplog record with missing, malformed, or unparseable JSON `comment`.
 - An oplog record with mismatched `requestId` or `payloadHash`.
-- An oplog record with `wall < wireDispatchedAt`.
-- An oplog record where `ts > majorityCommitPoint.ts` (not majority committed).
+- An oplog record where `wall < wireDispatchedAt`.
+- An oplog record where $\text{IsMajorityCommitted}(E, C) === \text{false}$ (uncommitted / rollback hazard).
 - An oplog where rollover occurred prior to `wireDispatchedAt`.
 
-#### 8. Live MongoDB 8.0 Verification Assumption
-The preservation of the `comment` field inside `local.oplog.rs` for DDL commands (`dropDatabase`) is an architectural assumption based on MongoDB 8.0 specification. This assumption must be validated via live test `D38-18` on replica set `rs0` prior to Phase C sign-off.
-
-#### 9. Missing, Incomplete, or Contradictory Evidence Protocol
-If authoritative oplog proof cannot be conclusively established:
+#### 9. Fail-Closed Protocol for Missing, Malformed, or Unproven Evidence
+If any requirement of the evidence protocol fails:
 - SRE request for `CONFIRM_CLEANED` is **rejected with HTTP 422 `UNPROVEN_DROP_COMPLETION`**.
-- The request **must remain in `QUARANTINED`**.
-- The execution lock (`dropExecutionLock: true`) is permanently retained.
+- The request **must remain permanently in `QUARANTINED`**.
+- The execution lock (`dropExecutionLock: true`) is **permanently retained**.
 - The database namespace is marked permanently poisoned in `ownership_locks`.
-- Safe operational resolution: The namespace remains abandoned. Automated tests generate fresh unique database names using UUIDs. Only safe scheduled offline cluster purges can reclaim storage.
+- Automated tests continue unaffected by provisioning fresh UUID-based database names (`decision_os_test_${runId}_w${workerId}`). Storage reclamation for quarantined namespaces is deferred to offline maintenance.
 
 ---
 
@@ -809,11 +1135,11 @@ Administrative reconciliation is an emergency, cryptographically authorized prot
      - Allowed **only** if the criteria of **Section 10.4 (Authoritative Oplog Drop Evidence Protocol)** are fully met:
        1. Server-side oplog entry matches correlation `comment` containing `requestId` and `payloadHash`.
        2. Timestamp $\ge \text{wireDispatchedAt}$ and $\le \text{reconcileRequestedAt}$.
-       3. Record confirmed committed to replica-set majority (`ts <= majorityCommitPoint`).
+       3. Record confirmed committed to replica-set majority via lexicographical OpTime comparison with `optimes.lastCommittedOpTime`.
        4. Oplog rollover verified not to have occurred.
      - If verifiable proof is absent or unconfirmed, the executor **rejects the request with HTTP 422 `UNPROVEN_DROP_COMPLETION`** and keeps the request in `QUARANTINED`.
      - If verified, transitions ledger state to `CLEANED` and releases execution lock.
-4. **Tamper-Evident Audit Record:** The transition is appended to `decision_os_coordination.cleanup_audit_log` with an immutable SHA-256 hash chain:
+4. **Tamper-Evident Audit Record:** The transition is appended to `decision_os_coordination.cleanup_audit_log` with an append-only enforced SHA-256 hash chain:
    $$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{ReconciliationID} + \text{OperatorID} + \text{TargetDB} + \text{Action} + \text{Timestamp})$$
 
 ### 11.4 Residual Operational Consequence
@@ -932,18 +1258,43 @@ This section details the resolution of all security inquest findings across Phas
 
 ### B38-12: Unsafe MongoDB Role-Management Privileges
 - **Defect:** Section 3.2 allowed direct CRUD on internal collections `admin.system.roles` and `admin.system.users` or granted built-in `userAdmin` on `admin` to the cleanup executor, violating least privilege and effectively granting cluster-level superuser rights.
-- **Remediation (Phase B.3):** Stripped all direct CRUD on system collections and removed `userAdmin` on `admin`. Established non-superuser role administration using supported MongoDB commands (`createRole`, `createUser`, `dropRole`, `dropUser`, `grantRolesToUser`, `revokeRolesFromUser`, `killAllUserConnections`), restricted by executor application policy strictly to test database namespaces. Audit logging with SHA-256 hash chaining records every user/role mutation.
+- **Remediation (Phase B.3):** Stripped all direct CRUD on system collections and removed `userAdmin` on `admin`. Established non-superuser role administration using supported MongoDB commands (`createRole`, `createUser`, `dropRole`, `dropUser`, `grantRolesToUser`, `revokeRolesFromUser`, `killAllSessionsByPattern`), restricted by executor application policy strictly to test database namespaces. Audit logging with SHA-256 hash chaining records every user/role mutation.
 - **Status:** REMEDIATED (PHASE B.3) — PENDING INDEPENDENT REVIEW.
 
 ### B38-13: Authoritative Oplog Evidence Is Underspecified
 - **Defect:** Section 4.2 / 9.3 allowed administrative `CONFIRM_CLEANED` based on underspecified "oplog proof", without defining correlation mechanisms, replica-set elections, majority commitment, or oplog rollover.
-- **Remediation (Phase B.3):** Established Section 10.4 **Authoritative MongoDB 8.0 Replica Set Oplog Drop Evidence Protocol**. Mandatory embedded correlation `comment` in `{ dropDatabase: 1 }` matching request metadata. Majority commitment verification (`ts <= majorityCommitPoint`). Handling of term changes/elections and capped collection rollover. If proof is missing or incomplete, `CONFIRM_CLEANED` is rejected with HTTP 422 and request remains permanently in `QUARANTINED`.
+- **Remediation (Phase B.3):** Established Section 10.4 **Authoritative MongoDB 8.0 Replica Set Oplog Drop Evidence Protocol**. Mandatory embedded correlation `comment` in `{ dropDatabase: 1 }` matching request metadata. Majority commitment verification via lexicographical OpTime comparison. Handling of term changes/elections and capped collection rollover. If proof is missing or incomplete, `CONFIRM_CLEANED` is rejected with HTTP 422 and request remains permanently in `QUARANTINED`.
 - **Status:** REMEDIATED (PHASE B.3) — PENDING INDEPENDENT REVIEW.
 
 ### B38-14: Role Lifecycle and Provisioning Concurrency
 - **Defect:** Lacked concurrency analysis of simultaneous claims, partial provisioning failures, credential delivery timeouts, worker crashes, and active connection reuse across role revocation and quarantine.
-- **Remediation (Phase B.3):** Analyzed 10 concurrent execution interleavings in Section 16.3. Defined single-step atomicity for user+role creation, retry idempotency, fail-closed rollbacks, and orphan lease reapers. Active connection invalidation enforced via `db.adminCommand({ killAllUserConnections: [workerUsername] })` / `killSessions`.
+- **Remediation (Phase B.3):** Analyzed 10 concurrent execution interleavings in Section 16.3. Defined retry idempotency, fail-closed rollbacks, and orphan lease reapers. Active connection invalidation enforced via session termination and worker connection pool shutdown.
 - **Status:** REMEDIATED (PHASE B.3) — PENDING INDEPENDENT REVIEW.
+
+### B38-15: Correct MongoDB Session Invalidation
+- **Defect:** Section 7.5 and Section 16.3 cited `killAllUserConnections`, which does not exist in MongoDB, claimed that session termination closes TCP sockets, and misscoped `killAnySession` to `{ db: "admin", collection: "" }`.
+- **Remediation (Phase B.4):** Replaced non-existent commands with supported MongoDB administrative command `killAllSessionsByPattern` targeting the specific worker user on authentication database `admin`. Corrected privilege placement by assigning `killAnySession` and `impersonate` to the `{ cluster: true }` resource. Explicitly separated logical session invalidation, in-flight operation abort (`killOp`), cursor closure, TCP transport retention, client driver-pool invalidation (`client.close(true)`), and fresh authentication prevention via `dropUser`. Documented that MongoDB ignores prepared transactions during session termination and formulated an abort procedure.
+- **Status:** REMEDIATED (PHASE B.4) — PENDING INDEPENDENT REVIEW.
+
+### B38-16: Make Oplog Evidence Protocol Technically Supportable
+- **Defect:** Section 10.4 referenced unsupported response fields (`optimesAndLocations.majorityCommitPoint`), falsely asserted that `readConcern: "majority"` applies to the `local` database, assumed DDL command comments are preserved in `local.oplog.rs`, and failed to define lexicographical OpTime comparison.
+- **Remediation (Phase B.4):** Reworked Section 10.4 using exact MongoDB 8.0 documented fields: `optimes.lastCommittedOpTime.ts` and `optimes.lastCommittedOpTime.t` from `replSetGetStatus` on the active primary. Explicitly acknowledged that the `local` database ignores read concern. Formulated strict lexicographical OpTime comparison $(t, ts)$. Formally treated comment preservation as an unverified hypothesis under test (verification item `D38-21`). Removed automatic `CONFIRM_CLEANED` unless live comment preservation is proven; unproven drops remain permanently `QUARANTINED`.
+- **Status:** REMEDIATED (PHASE B.4) — PENDING INDEPENDENT REVIEW.
+
+### B38-17: Define Crash-Safe Ephemeral Credential Recovery
+- **Defect:** Idempotent claim redelivery was claimed, but generated passwords were held only in volatile executor memory, while MongoDB stores credentials as irreversible SCRAM-SHA-256 verifiers. If the executor crashed after user creation but before HTTP response delivery, retrying workers could not receive the password.
+- **Remediation (Phase B.4):** Formulated a crash-safe credential recovery protocol utilizing a **Caller-Bound Encrypted Credential Envelope** (`ownership_locks.credentialEnvelope`). Encrypted with AES-256-GCM under an executor envelope key with AAD binding to request ID, database name, and caller public key fingerprint. Retrying callers verify identity and receive decrypted credentials. The envelope is zeroized upon worker activation for forward secrecy. Provided fallback to controlled rotation via `updateUser` before activation, or fail-closed saga rollback.
+- **Status:** REMEDIATED (PHASE B.4) — PENDING INDEPENDENT REVIEW.
+
+### B38-18: Replace False Provisioning Atomicity Claims
+- **Defect:** The architecture described separate `createRole` and `createUser` commands while claiming overall lifecycle atomicity. In MongoDB, administrative commands cannot run within multi-document ACID transactions.
+- **Remediation (Phase B.4):** Replaced false atomicity claims with a **Durable Idempotent Provisioning Saga** defining explicit states (`CLAIM_PENDING`, `ROLE_CREATED`, `USER_CREATED`, `ROLE_ASSIGNED`, `CREDENTIAL_ENCRYPTED`, `CREDENTIAL_DELIVERED`, `ACTIVATED`, `ROLLING_BACK`, `ROLLED_BACK`, `ORPHAN_RECOVERY`). Defined deterministic recovery at every transition, durable compensation for failed rollbacks, guarantees that partially provisioned identities possess zero unintended privileges, and strict 4-point verification proof before the orphan reaper deletes any user or role.
+- **Status:** REMEDIATED (PHASE B.4) — PENDING INDEPENDENT REVIEW.
+
+### B38-19: Make the Audit Ledger Genuinely Tamper-Evident
+- **Defect:** The executor possessed `update`, `remove`, and `findAndModify` privileges across all coordination collections, including `cleanup_audit_log`, making claims of "immutable" audit logging unfounded.
+- **Remediation (Phase B.4):** Separated audit log privileges from coordination CRUD. Scoped privileges on `cleanup_audit_log` strictly to append-only actions: `find`, `insert`, and `createIndex` (zero update, remove, or findAndModify). Implemented external chain-head checkpoint storage. Defined cryptographic detection for deletion, truncation, reordering, payload substitution, and full-chain rewriting. Configured fail-closed executor freezing upon verification failure. Discontinued inaccurate "immutable" claims in favor of verified append-only and tamper-evident semantics.
+- **Status:** REMEDIATED (PHASE B.4) — PENDING INDEPENDENT REVIEW.
 
 ---
 
@@ -974,7 +1325,7 @@ Assume an adversary gains arbitrary code execution inside a test runner thread (
 | **Scenario 9 (B38-11)** | **Worker A attempts cross-database CRUD on Worker B's database.** Worker A connects as `decision_os_worker_runA_wA` and queries `decision_os_test_runB_wB`. | Permitted: CRUD operations on `decision_os_test_runA_wA`. | **PROHIBITED:** Any read, write, or index operation on `decision_os_test_runB_wB`. | **MongoDB RBAC Engine:** Worker A's principal has no role granting access to DB B. MongoDB daemon throws Code 13 (`Unauthorized`). |
 | **Scenario 10 (B38-12)** | **Cleanup Executor attempts to grant cluster superuser rights.** Provisioner bugs or attacker attempts to call `createRole` granting `root` or `clusterAdmin`. | Permitted: Creating dynamic roles strictly scoped to `decision_os_test_*` with CRUD actions. | **PROHIBITED:** Granting administrative actions, cluster resources, or system database privileges. | **Daemon RBAC & Application Guard:** Executor lacks `userAdmin` or `grantRole` on `root`; daemon rejects with Code 13. Application guard validates role structure. |
 | **Scenario 11 (B38-13)** | **Admin attempts `CONFIRM_CLEANED` without verified majority oplog proof.** Operator submits reconciliation with unverified or pre-dispatch oplog timestamp. | Permitted: Submitting reconciliation with verified majority oplog proof or selecting `QUARANTINE`. | **PROHIBITED:** Marking `CLEANED` based on catalog absence, quiescent `currentOp`, or uncommitted oplog entries. | **Oplog Protocol Verification:** Section 10.4 asserts correlation `comment`, timestamp window, and majority commitment. Rejects unproven evidence with HTTP 422. |
-| **Scenario 12 (B38-14)** | **Quarantined worker attempts to execute commands using cached connections.** Quarantined worker issues writes over an already-open MongoDB connection. | Permitted: None. | **PROHIBITED:** Any subsequent operation by quarantined worker. | **Active Connection Invalidation:** Executor executes `killAllUserConnections` upon quarantine; MongoDB forcibly drops active sockets. Queries fail with Code 13 / socket error. |
+| **Scenario 12 (B38-14, B38-15)** | **Quarantined worker attempts to execute commands using cached connections.** Quarantined worker issues writes over an already-open MongoDB connection. | Permitted: None. | **PROHIBITED:** Any subsequent operation by quarantined worker. | **Session Invalidation & Fail-Closed Revocation:** Executor executes `killAllSessionsByPattern`, revokes dynamic role, drops user, and signals worker client to close pool. Active operations are cancelled; subsequent commands fail with Code 11, 13, or socket errors. |
 
 ### 15.3 Required Adversarial Test Design for Two Workers (Finding B38-11 & D38-16)
 To prove discrete identity isolation, the test suite implements a two-worker adversarial test:
@@ -1045,12 +1396,12 @@ Because MongoDB does not enforce application fencing tokens during `dropDatabase
 - **Handling (Rollback):** The executor catches the exception, immediately invokes `dropRole`, removes any partial entry from `ownership_locks`, and returns HTTP 500. No dangling user or active lease exists.
 
 #### 4. Interleaving 4: User creation succeeds but role assignment fails
-- In the primary provisioning path, user creation and role assignment are executed in a single atomic MongoDB command: `createUser({ user, pwd, roles: [{ role: dynamicRoleName }] })`.
-- If an environment executes separate `grantRolesToUser` and it fails, the executor catches the error, immediately drops the user via `dropUser` and drops the role via `dropRole`.
+- In the durable provisioning saga, the user is created in MongoDB with `roles: ["decision_os_worker_base_role"]` (granting zero test DB access), and the dynamic test role is assigned in the subsequent saga step via `grantRolesToUser`.
+- If `grantRolesToUser` fails (e.g. timeout or primary stepdown), the saga transitions to `ROLLING_BACK`. The executor executes compensating `dropUser` and `dropRole`. Because the user possessed only `decision_os_worker_base_role`, the partially provisioned identity had zero ability to read or write any test database.
 
-#### 5. Interleaving 5: Role assignment succeeds but credential delivery fails
-- Role and user exist in MongoDB, but the HTTP 200 response fails to reach the worker (client timeout, socket drop).
-- **Handling (Idempotency & Lease TTL):** The worker retries `POST /v1/ownership/claim` with the same `requestId`. The executor finds the existing lease with matching `callerId` and idempotently re-delivers the credentials. If the worker crashed and never retries, the 60-second lease expires without heartbeats. The lease reaper detects the expired lease, drops the user and role, and cleans the lock.
+#### 5. Interleaving 5: Role assignment succeeds but credential delivery fails (Finding B38-17)
+- Role and user exist in MongoDB, and the password was encrypted into `ownership_locks.credentialEnvelope`, but the HTTP 200 response fails to reach the worker (client timeout, socket drop, or executor crash).
+- **Handling (Encrypted Envelope Redelivery & Idempotency):** The worker retries `POST /v1/ownership/claim` with the same `requestId`. The executor validates the caller signature against `callerPublicKeyFingerprint`, verifies `status === 'PROVISIONED_PENDING_ACTIVATION'`, decrypts `credentialEnvelope` using `ENVELOPE_KEY`, validates AAD, and safely redelivers the exact credentials. If the worker crashed and never retries, the 60-second lease expires without heartbeats. The lease reaper detects the expired lease, drops the user and role, securely destroys the envelope, and releases the lock.
 
 #### 6. Interleaving 6: Worker crashes before cleanup
 - Worker claims the database, performs tests, and terminates abnormally before calling `cleanupTestDatabase`.
@@ -1060,17 +1411,17 @@ Because MongoDB does not enforce application fencing tokens during `dropDatabase
 - Physical `{ dropDatabase: 1 }` succeeds, and `cleanup_ledger` records `CLEANED`. However, the subsequent `dropRole` or `dropUser` command encounters a transient MongoDB timeout.
 - **Handling (Dangling Role Reaper):** The executor records `state: 'CLEANED'`, but flags `danglingRoleCleanupPending: true` in the ledger and audit log. The background orphan reaper sweeps `cleanup_ledger` every 30 seconds and retries dropping the orphaned role and user until confirmed deleted.
 
-#### 8. Interleaving 8: A quarantined worker attempts to reconnect using cached credentials
+#### 8. Interleaving 8: A quarantined worker attempts to reconnect using cached credentials (Finding B38-15)
 - A test run is quarantined due to an ambiguous drop, but a misconfigured or malicious worker process attempts to issue queries using previously delivered credentials.
-- **Handling (Active Revocation & Kill):** When a request transitions to `QUARANTINED`, the executor immediately drops the user via `dropUser` and terminates all active connections using `db.adminCommand({ killAllUserConnections: [workerUsername] })`. Subsequent connection attempts fail with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`).
+- **Handling (Active Revocation & Session Kill):** When a request transitions to `QUARANTINED`, the executor immediately drops the user via `dropUser` and executes `db.adminCommand({ killAllSessionsByPattern: [{ users: [{ user: workerUsername, db: "admin" }] }] })`. Active queries are aborted, cursors are closed, and subsequent connection attempts fail with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`).
 
-#### 9. Interleaving 9: A role is revoked while a worker has an active connection
-- The worker has an open TCP socket in its driver connection pool when teardown begins.
-- **Handling (Forced Socket Severing):** Role revocation alone does not terminate existing TCP sockets in MongoDB. The executor explicitly issues `killAllUserConnections: [workerUsername]` alongside `revokeRolesFromUser`. MongoDB terminates all TCP sockets for that user. The worker's connection pool throws an immediate socket closed error. Subsequent commands on reconnected sockets fail with Code 13.
+#### 9. Interleaving 9: A role is revoked while a worker has an active connection (Finding B38-15)
+- The worker has open TCP sockets in its driver connection pool when teardown begins.
+- **Handling (Fail-Closed Multi-Layer Revocation):** Session termination alone does not physically sever TCP sockets in MongoDB. The executor executes `killAllSessionsByPattern` alongside `revokeRolesFromUser` and `dropUser`. On the server, MongoDB cancels active operations and invalidates cached authorization. Simultaneously, `CleanupExecutorClient` in the worker process invokes `await client.close(true)` to invalidate and shut down the local socket pool. Even if lingering sockets exist, any subsequent wire command fails with MongoDB Error Code 11 or Code 13 because the user principal no longer exists.
 
 #### 10. Interleaving 10: An expired worker attempts to reuse a previous credential
 - A slow worker attempts to issue an `insert` command after its 60-second lease expired and was reaped.
-- **Handling:** Because the lease reaper executed `dropUser` and killed connections, the worker's commands fail with Code 11 or Code 13.
+- **Handling:** Because the lease reaper executed `dropUser`, revoked roles, and executed `killAllSessionsByPattern`, the worker's commands fail with Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`).
 
 ---
 
@@ -1116,9 +1467,77 @@ All log events emitted by `apps/cleanup-executor` follow standard structured log
 }
 ```
 
-### 18.2 Tamper-Evident Audit Ledger
-All state transitions, role creations, and user operations are appended to `decision_os_coordination.cleanup_audit_log` with SHA-256 hash chaining:
-$$\text{EntryHash} = \text{SHA256}(\text{PrevHash} + \text{AuditID} + \text{RequestID} + \text{ToState} + \text{Actor} + \text{Timestamp})$$
+### 18.2 Tamper-Evident Audit Ledger Architecture (Finding B38-19)
+
+The v1.3.0 architecture described the audit log as "immutable", but granted the cleanup executor broad `update` and `remove` permissions across all coordination collections. If the executor or an administrative token was compromised, historical audit records could be rewritten or purged without detection. Decision OS establishes genuine tamper-evidence through collection-level RBAC separation, append-only boundaries, and externally anchored checkpoints:
+
+#### 1. Separation of Audit Privileges from Coordination CRUD
+MongoDB RBAC privileges are explicitly decoupled between coordination state and audit history:
+- **Coordination State Collections (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`):**
+  Require full lifecycle CRUD:
+  `actions: [ "find", "insert", "update", "remove", "findAndModify", "createIndex" ]`
+- **Audit Log Collection (`decision_os_coordination.cleanup_audit_log`):**
+  Strictly restricted to append-only operations:
+  `actions: [ "find", "insert", "createIndex" ]`
+  **Explicitly denied actions:** `update`, `remove`, `findAndModify`, `dropCollection`, `dropDatabase`.
+
+#### 2. Native Append-Only Write Boundary Enforcement
+Because the MongoDB daemon enforces authorization at the wire level:
+- Any command attempting to modify or delete historical records (`db.cleanup_audit_log.updateOne()`, `deleteMany()`, `findAndModify()`) is rejected by the MongoDB storage engine with `MongoServerError: not authorized on decision_os_coordination.cleanup_audit_log` (Code 13).
+- The application code inside `apps/cleanup-executor/src/audit.ts` exposes strictly an `appendAuditEvent(event)` method. No update, delete, or overwrite functions are compiled into the codebase.
+
+#### 3. Cryptographic SHA-256 Hash Chaining
+Every audit event is cryptographically linked to its immediate predecessor:
+$$\text{EntryHash}_k = \text{SHA256}(\text{PrevHash}_{k-1} + \text{"\|"} + \text{SequenceNum}_k + \text{"\|"} + \text{RFC8785}(\text{AuditEventPayload}_k))$$
+
+Each record contains:
+```json
+{
+  "_id": "audit_seq_10842",
+  "sequenceNumber": 10842,
+  "prevHash": "3f8b7a2c...",
+  "entryHash": "e91c4d7a...",
+  "timestamp": "2026-11-06T01:15:12.104Z",
+  "actor": "decision_os_cleanup_executor",
+  "eventType": "STATE_TRANSITION",
+  "payload": {
+    "requestId": "550e8400-e29b-41d4-a716-446655440000",
+    "databaseName": "decision_os_test_run_alpha_w0",
+    "fromState": "OUTCOME_UNKNOWN",
+    "toState": "QUARANTINED"
+  }
+}
+```
+
+#### 4. Independently Protected Chain-Head Checkpoint Storage
+To prevent full-chain rewriting (where an attacker with MongoDB superuser access purges the collection and inserts a forged replacement chain from a fake genesis block), the architecture anchors the chain head externally:
+1. **Periodic Checkpoint Generation:** Every 60 seconds (or immediately upon entering critical terminal states `QUARANTINED` or `CLEANED`), the executor computes an **Audit Checkpoint**:
+   $$\text{Checkpoint} = \{ \text{checkpointId}, \text{sequenceNumber}, \text{headHash}, \text{timestamp}, \text{executorSignature} \}$$
+2. **External Anchoring:** The checkpoint is transmitted over an independent channel to an external, independently authenticated sink:
+   - **Production:** Emitted to an append-only cloud storage sink with WORM (Write Once, Read Many) / Object Lock policies (e.g. AWS S3 Object Lock, GCP Cloud Storage Bucket Lock, or CloudWatch Logs).
+   - **CI / Staging:** Written to a protected local volume (`/var/log/cleanup-executor/checkpoints.jsonl`) mounted with host-level root ownership and append-only filesystem attributes (`chattr +a`).
+
+#### 5. Concrete Tamper Detection Mechanisms
+An independent verification scanner sweeps the audit chain during startup and hourly health checks. It detects:
+1. **Record Deletion:** If record $k$ is removed, the sequence numbers gap ($\text{seq}_{k+1} \ne \text{seq}_{k-1} + 1$) and the hash link fails ($\text{prevHash}_{k+1} \ne \text{entryHash}_{k-1}$).
+2. **Chain Truncation:** If the tail of the collection is pruned, the latest collection record has a sequence number less than the externally anchored checkpoint sequence number, or its head hash does not match the external anchor.
+3. **Record Reordering:** If records $j$ and $k$ are swapped, both subsequent `prevHash` values fail SHA-256 verification.
+4. **Payload Substitution:** If any field in record $k$ is modified, $\text{SHA256}(\dots) \ne \text{entryHash}_k$.
+5. **Full-Chain Rewriting:** Even if an attacker recalculates all hashes internally, the resulting head hash will mismatch the independently protected external checkpoint head hash.
+
+#### 6. Failure Recovery and Alerting Protocol
+If the verification scanner detects an audit chain mismatch:
+1. **Critical Alarm:** Emit immediate high-priority alert: `CRITICAL_AUDIT_LEDGER_INTEGRITY_VIOLATION`.
+2. **Fail-Closed Executor Freeze:** The Cleanup Executor enters a **HARD-FREEZE STATE**:
+   - Rejects all incoming `POST /v1/ownership/claim` requests with HTTP 503 `SERVICE_FROZEN_AUDIT_VIOLATION`.
+   - Rejects all `POST /v1/cleanup/request` calls.
+   - Halts all role and user provisioning.
+   - Retains all active execution locks indefinitely.
+3. **Forensic Reconciliation:** Unfreezing the executor requires manual SRE intervention using an offline hardware token key to verify logs against external WORM storage and certify audit consistency.
+
+#### 7. Termination of Misleading "Immutability" Claims
+The term "immutable" is strictly discontinued when referring to database collections writable by privileged connections. The ledger is accurately documented as:
+> **Cryptographically Tamper-Evident with MongoDB RBAC-Enforced Append-Only Write Boundary and Externally Anchored WORM Checkpoints.**
 
 ### 18.3 Metrics & Alerting
 - Prometheus metrics: `cleanup_requests_total`, `cleanup_duration_seconds`, `cleanup_ambiguous_outcomes_total`, `cleanup_quarantined_total`, `cleanup_dangling_roles_reaped_total`.
@@ -1142,7 +1561,7 @@ Remediate Call Sites (CS-01 to CS-17)"]
     PhaseC5 --> PhaseC6["Phase C6:
 Static Guard Script & CI Negative Security Tests"]
     PhaseC6 --> PhaseC7["Phase C7:
-Full Verification & Regression Testing (D38-01 to D38-19)"]
+Full Verification & Regression Testing (D38-01 to D38-24)"]
 ```
 
 ---
@@ -1171,12 +1590,18 @@ All verification items are **PLANNED** for implementation and execution during P
 | **`D38-16`** | **Two-Worker Adversarial Database Isolation Test (Finding B38-11)** | Worker A owns DB A (`decision_os_test_run1_wA`), Worker B owns DB B (`decision_os_test_run1_wB`). Authenticate with distinct identities. Worker A attempts CRUD on DB B $\rightarrow$ Error Code 13. Worker B attempts CRUD on DB A $\rightarrow$ Error Code 13. Both attempt writes to coordination collections $\rightarrow$ Error Code 13. Both attempt role escalation $\rightarrow$ Error Code 13. | Phase C1 | PLANNED |
 | **`D38-17`** | **Scoped Role Provisioning & Non-Superuser Test (Finding B38-12)** | Connect as `decision_os_cleanup_executor`. Verify supported commands (`createRole`, `createUser`, `dropRole`, `dropUser`) succeed for test database roles. Attempt to grant `userAdmin`, `clusterAdmin`, or `root` $\rightarrow$ Error Code 13 or application guard rejection. Assert direct writes to `admin.system.roles` and `admin.system.users` throw Error Code 13. Verify SHA-256 hash chaining on `cleanup_audit_log`. | Phase C1 | PLANNED |
 | **`D38-18`** | **MongoDB 8.0 Replica Set Oplog Evidence Protocol Test (Finding B38-13)** | Dispatch drop command with correlation `comment` on replica set `rs0`. Assert oplog entry contains matching `comment`, timestamp, and majority commit point. Simulate election rollback, pre-dispatch timestamps, missing comment, and rolled-over oplog. Assert `CONFIRM_CLEANED` is rejected with HTTP 422 and request remains `QUARANTINED`. | Phase C3 | PLANNED |
-| **`D38-19`** | **Role Lifecycle & Concurrency Interleaving Integration Test (Finding B38-14)** | Execute automated integration tests simulating the 10 concurrency interleavings (concurrent claims, race on same DB, partial provisioning rollback, credential delivery timeout, crash before cleanup lease expiry, dangling role reaper, post-quarantine credential invalidation, active socket severing via `killAllUserConnections`). Assert 100% fail-closed behavior and zero cross-worker privilege leakage. | Phase C3 | PLANNED |
+| **`D38-19`** | **Role Lifecycle & Concurrency Interleaving Integration Test (Finding B38-14)** | Execute automated integration tests simulating the 10 concurrency interleavings (concurrent claims, race on same DB, partial provisioning saga rollback, credential envelope delivery timeout, crash before cleanup lease expiry, dangling role reaper, post-quarantine credential invalidation, active socket severing via `killAllSessionsByPattern`). Assert 100% fail-closed behavior and zero cross-worker privilege leakage. | Phase C3 | PLANNED |
+| **`D38-20`** | **Real MongoDB 8.0 Session Termination & Post-Revocation Test (Finding B38-15)** | Authenticate as `decision_os_cleanup_executor`. Execute `killAllSessionsByPattern` targeting worker principal on `admin` db using `{ cluster: true }` privileges. Assert logical session termination, active operation abort, cursor closure, TCP socket retention, worker client-pool shutdown (`client.close(true)`), and post-revocation connection denial (Code 11/13/18). Test prepared transaction limitation and abort handling. | Phase C1 / C3 | PLANNED |
+| **`D38-21`** | **Live MongoDB 8.0 Oplog Evidence Protocol & Comment Preservation Test (Finding B38-16)** | Dispatch `{ dropDatabase: 1, comment: JSON.stringify(...) }` on replica set `rs0`. Empirically verify whether MongoDB 8.0 preserves the `comment` field in `local.oplog.rs`. Verify that `readConcern` is ignored on `local.oplog.rs`. Extract `optimes.lastCommittedOpTime.ts` and `.t` from `replSetGetStatus` on active primary. Assert lexicographical OpTime comparison $(t, ts)$, election safety, and rollover detection. If comments are not preserved, assert automatic reconciliation is disabled and requests remain `QUARANTINED`. | Phase C3 | PLANNED |
+| **`D38-22`** | **Ephemeral Credential Envelope Recovery After Executor Crash (Finding B38-17)** | Worker claims DB; executor provisions role and user, generates password, and writes AES-256-GCM envelope to `ownership_locks.credentialEnvelope`. Simulate abrupt executor crash before HTTP response delivery. Restart executor. Worker retries `POST /v1/ownership/claim` with same `requestId`. Assert executor validates caller signature, decrypts envelope with `ENVELOPE_KEY`, validates AAD, and redelivers credentials without recovering plaintext from SCRAM verifier. Assert forward secrecy: envelope zeroized upon activation. | Phase C2 / C4 | PLANNED |
+| **`D38-23`** | **Multi-Command Provisioning Saga Crash & Compensation Test (Finding B38-18)** | Execute automated tests simulating executor crash at each of the 8 saga transitions (`CLAIM_PENDING`, `ROLE_CREATED`, `USER_CREATED`, `ROLE_ASSIGNED`, `ACTIVATED`, `ROLLING_BACK`, `ORPHAN_RECOVERY`). Simulate network failure during compensating `dropRole` / `dropUser`; assert saga records `compensationPending: true` and orphan reaper retries with backoff. Assert partially provisioned identities have zero test DB privileges. Assert orphan reaper 4-point verification check before deleting any user or role. | Phase C1 / C3 | PLANNED |
+| **`D38-24`** | **Adversarial Audit Mutation & External Checkpoint Test (Finding B38-19)** | Connect as `decision_os_cleanup_executor`. Attempt `updateOne`, `deleteMany`, `findAndModify`, or `drop` on `decision_os_coordination.cleanup_audit_log` $\rightarrow$ natively rejected by MongoDB RBAC with Error Code 13 (`Unauthorized`). Simulate adversarial tampering (deletion, truncation, reordering, substitution, rewriting) on historical records. Assert verification scanner detects tampering via SHA-256 recalculation and external checkpoint comparison, immediately firing critical alarm and entering executor hard freeze. | Phase C2 / C6 | PLANNED |
 
 ---
 
-## 21. Open Questions and Decisions Requiring Explicit Approval
+## 21. Open Questions, Unresolved Assumptions and Decisions Requiring Explicit Approval
 
+### 21.1 Open Decisions Requiring Technical Alignment
 1. **Test Runner Dynamic Key Registration Protocol:**
    - *Question:* Should test workers register their dynamic Ed25519 public keys with the executor via a signed registration API (`POST /v1/auth/register-worker`) during worker thread startup, or should key pairs be generated deterministically from the test run seed?
    - *Recommendation:* Signed registration API with a short-lived run token provisioned by the CI test runner.
@@ -1187,12 +1612,24 @@ All verification items are **PLANNED** for implementation and execution during P
    - *Question:* Should administrative reconciliation keys be integrated with AWS KMS / HashiCorp Vault transit secrets engine, or managed via offline SRE key pairs?
    - *Recommendation:* HashiCorp Vault transit engine with multi-party audit logging for production deployments.
 
+### 21.2 Explicit List of Unresolved Architectural Assumptions and Risks
+1. **DDL Command Comment Preservation in `local.oplog.rs` (Assumption under test in D38-21):**
+   MongoDB documentation explicitly guarantees comment preservation in server logs, profiler entries, and `currentOp`, but comment retention in `local.oplog.rs` for DDL commands (`dropDatabase`) is an unproven assumption in MongoDB 8.0. If live testing (`D38-21`) demonstrates that MongoDB 8.0 strips comments from drop records, automatic or administrative `CONFIRM_CLEANED` cannot be supported, and all ambiguous drops must remain permanently in `QUARANTINED`.
+2. **Prepared Transactions Bypass Session Termination (Known MongoDB 8.0 Limitation):**
+   MongoDB's `killAllSessionsByPattern` explicitly ignores sessions that currently have transactions in the `prepared` state. While unprivileged workers are barred from initiating distributed transactions, any unexpected prepared transaction requires coordinator abort handling rather than session kill.
+3. **Physical TCP Socket Retention Post Session Invalidation:**
+   Session termination invalidates logical sessions and server-side authorization caches, but does NOT physically sever client TCP network sockets. The system relies on worker-side client driver-pool invalidation (`client.close(true)`) and native MongoDB engine rejection (Error Code 11/13/18) if a rogue worker reuses cached sockets.
+4. **Mandatory Hard Security Boundary of the Test MongoDB Deployment:**
+   Because MongoDB RBAC does not support database wildcards, the cleanup executor must possess `{ db: "", collection: "" }` with `dropDatabase` to destroy dynamic test databases. This broad grant is safe **strictly because the deployment is physically and logically isolated** from staging and production (`mongodb-test:27018`). If the executor were misconfigured to connect to a production instance, application-level regex guards would be the only defense against production data loss.
+5. **Accumulation of Quarantined Database Namespaces:**
+   Because the fail-closed policy permanently retains execution locks for ambiguous drops with zero redispatch, frequent network partitions or replica set failovers could accumulate abandoned test databases. Automated tests avoid collision by using UUIDs, but physical storage cleanup requires scheduled offline maintenance.
+
 ---
 
 ## Gate B Completion Sign-Off Checklist
 
-- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at baseline commit `724f1076284b186f42759677ab9e480d27531b69`
-- [x] Document version upgraded to 1.3.0
+- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at baseline commit `949ca35a7154f4c4db308dd73badf85221a98c9f`
+- [x] Document version upgraded to 1.4.0 (Phase B.4 Session Invalidation, Evidence Integrity & Provisioning Recovery)
 - [x] Phase A destructive inventory (`CS-01` to `CS-17`) thoroughly inspected and addressed
 - [x] B38-01 resolved: MongoDB RBAC wildcards removed; Dedicated Isolated Test Deployment established
 - [x] B38-02 remediated (Phase B.2): Worker role additive privilege defect corrected; exact per-database scoped roles eliminate coordination write access
@@ -1207,7 +1644,12 @@ All verification items are **PLANNED** for implementation and execution during P
 - [ ] **B38-11 remediated (Phase B.3):** Shared MongoDB user defect eliminated; discrete per-worker principals, ephemeral in-memory credentials, and exact dynamic roles prevent cross-worker database leakage (Pending Independent Review)
 - [ ] **B38-12 remediated (Phase B.3):** Direct system collection CRUD and `userAdmin` superuser grants eliminated; non-superuser role administration with application guardrails and SHA-256 audit logging established (Pending Independent Review)
 - [ ] **B38-13 remediated (Phase B.3):** Authoritative MongoDB 8.0 replica-set oplog evidence protocol formulated with correlation comments, majority commitment checks, and fail-closed quarantine (Pending Independent Review)
-- [ ] **B38-14 remediated (Phase B.3):** Role lifecycle and concurrency interleavings analyzed; active connection invalidation via `killAllUserConnections` established (Pending Independent Review)
-- [x] Expanded verification plan (`D38-01` to `D38-19`) categorized and explicitly marked as PLANNED
+- [ ] **B38-14 remediated (Phase B.3):** Role lifecycle and concurrency interleavings analyzed; active connection invalidation established (Pending Independent Review)
+- [ ] **B38-15 remediated (Phase B.4):** Real MongoDB session invalidation (`killAllSessionsByPattern`, `killSessions`) on `{ cluster: true }` replaces unsupported `killAllUserConnections`; distinguishes logical sessions, operations, cursors, TCP sockets, and driver pools; addresses prepared transaction limitations (Pending Independent Review)
+- [ ] **B38-16 remediated (Phase B.4):** Technically supportable MongoDB 8.0 replica-set oplog evidence protocol using `optimes.lastCommittedOpTime.ts/.t`; explicitly documents that `local` ignores read concerns; requires live proof of comment preservation before any automated confirmation (Pending Independent Review)
+- [ ] **B38-17 remediated (Phase B.4):** Crash-safe ephemeral credential recovery via caller-bound encrypted envelopes (`ownership_locks.credentialEnvelope`), zeroized upon activation, with controlled rotation and fail-closed abandonment (Pending Independent Review)
+- [ ] **B38-18 remediated (Phase B.4):** False provisioning atomicity claims replaced with a durable idempotent saga model spanning 8 distinct states with crash/restart recovery, failed-compensation retry, and strict orphan reaper verification proof (Pending Independent Review)
+- [ ] **B38-19 remediated (Phase B.4):** Audit ledger made genuinely tamper-evident by separating audit privileges from coordination CRUD; enforcing append-only via MongoDB RBAC (`find`, `insert`, `createIndex` only); independently protected external checkpoints; detection of deletion, truncation, reordering, substitution, and rewriting (Pending Independent Review)
+- [x] Expanded verification plan (`D38-01` to `D38-24`) categorized and explicitly marked as PLANNED
 - [x] Zero application or test files modified; architecture design revision only
-- [x] **STOP gate observed:** Phase B.3 completed; awaiting independent architecture review and formal Gate B approval before Phase C.
+- [x] **STOP gate observed:** Phase B.4 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
