@@ -1,16 +1,16 @@
 # DECISION OS — BATCH 4 V3.8 ARCHITECTURE DECISION
 ## Independent Cleanup Executor, Real MongoDB Privilege Separation & Concurrency Safety
 
-**Document Version:** 1.7.0 (Phase B.7 Privileged Broker Isolation, Nonce Allocator Hardening & Revocation Enforcement)
+**Document Version:** 1.8.0 (Phase B.8 Broker Authority Elimination & Security Boundary Closure)
 **Repository:** `AmiTtiwari43/Decision-OS`
 **Branch:** `fix/batch4-replica-set-transactional-recovery`
-**Current Baseline Commit:** `992a4cd326fe39865a723c29e974ba0f31707e8a` (`docs: remediate provisioning scope, revocation authority, and cryptographic nonce uniqueness (v1.6.0)`)
-**Parent Baseline Commit:** `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (`docs: separate destructive and provisioning privilege boundaries and harden revocation protocol`)
-**Prior Lineage Commits:** `f0fbfc1b6d04ad947f85277435d0803282cd03cd`, `949ca35a7154f4c4db308dd73badf85221a98c9f`, `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
-**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `992a4cd326fe39865a723c29e974ba0f31707e8a` (Phase B.7 Deliverable)
+**Current Baseline Commit:** `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956` (`docs: harden bootstrap broker boundary, nonce allocator authority, and network revocation (v1.7.0)`)
+**Parent Baseline Commit:** `992a4cd326fe39865a723c29e974ba0f31707e8a` (`docs: remediate provisioning scope, revocation authority, and cryptographic nonce uniqueness (v1.6.0)`)
+**Prior Lineage Commits:** `5ef95550c0709fdc99186bf42e5352f3aa846b4e`, `f0fbfc1b6d04ad947f85277435d0803282cd03cd`, `949ca35a7154f4c4db308dd73badf85221a98c9f`, `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
+**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956` (Phase B.8 Deliverable)
 **Phase A Artifact:** `BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`
-**Date:** 2026-11-06
-**Status:** ARCHITECTURE DESIGN (Phase B.7 Deliverable — Pending Independent Review & Formal Gate B Approval)
+**Date:** 2026-11-10
+**Status:** ARCHITECTURE DESIGN (Phase B.8 Deliverable — Pending Independent Review & Formal Gate B Approval)
 
 ---
 
@@ -83,6 +83,22 @@ Independent architectural review of baseline commit `992a4cd326fe39865a723c29e97
    - *Defect:* Network transport fencing was listed in the operation matrix but was never invoked or acknowledged in the durable revocation handoff protocol.
    - *Remediation:* Formally integrated **Network Transport Fencing** into the durable revocation protocol. Defined the orchestrator/CNI identity (`decision_os_network_fence_controller`), control-plane API (`POST /v1/orchestrator/fence-worker` / Kubernetes NetworkPolicy), target worker pod identity, and egress-drop policy scope. Sequenced network fencing synchronously as Step 2 of the revocation protocol, verified before MongoDB identity deletion and session/operation cancellation. Defined retry backoff and fail-closed halt if the network controller is unavailable. Formally distinguished all 6 layers of isolation (logical session invalidation, server-side user deletion, operation cancellation, TCP socket retention, network transport isolation, database deletion) and mandated that `dropDatabase` is never represented as network fencing. Expanded `D38-30` and added adversarial verification item **`D38-35`**.
 
+
+### Phase B.8 Broker Authority Elimination & Security Boundary Closure Remediation
+Independent architectural review of baseline commit `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956` identified four critical security boundary, vault authorization, cryptographic trust model, and revocation ordering defects:
+
+1. **Elimination of the Broker's Cross-Database Administrative Blast Radius (Finding B38-36):**
+   - *Defect:* The v1.7.0 dynamic credential broker possessed user- and role-management actions on `{ db: "", collection: "" }` on `rs_test`. In MongoDB RBAC, this is an unrestricted wildcard covering all non-system databases. Application-level regex checks, signed requests, and separate container execution cannot constrain an attacker who compromises the broker and authenticates directly to MongoDB.
+   - *Remediation:* Explicitly acknowledged that `{ db: "", collection: "" }` is a cross-database administrative authority that cannot be constrained natively by application logic. Selected the **Pre-Provisioned Per-Target Administrative Principals Architecture** as the canonical runtime architecture: standard test execution leases strictly from pre-allocated partition slots (`decision_os_test_slot_000` through `slot_255`), where each slot $k$ has its own scoped database admin (`decision_os_db_admin_slot_${k}`) scoped strictly to `{ db: "decision_os_test_slot_" + k, collection: "" }`. Eliminated the central runtime broker holding broad shared credentials. Dynamic database creation is identified as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`), disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`). Requests targeting non-existent databases are rejected with `UnallocatedDatabaseException`. Added negative authorization verification item **`D38-36`**.
+2. **Partition Slot Vault Exact Lease-to-Secret Binding (Finding B38-37):**
+   - *Defect:* The v1.7.0 Partition Slot Vault specification lacked an exact policy and identity model to bind a signed lease claim to exactly one secret path, leaving open the risk of path guessing or substitution attacks by a compromised provisioner.
+   - *Remediation:* Formally specified HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied). Implemented a single-use JWT exchange model: coordination authority issues an Ed25519-signed JWT containing the leased `slot_id`, which the provisioner exchanges at `/v1/auth/jwt/login` for a single-use (`num_uses = 1`, `ttl = 60s`, `renewable = false`) client token. Direct path substitution (`slot_02` using a `slot_01` token) is rejected natively with HTTP 403 Forbidden. Added adversarial verification item **`D38-37`**.
+3. **Nonce Allocator as an Explicit Cryptographic Root of Trust (Finding B38-38):**
+   - *Defect:* v1.7.0 claimed unconditional mathematical certainty of nonce uniqueness without recognizing that MongoDB RBAC cannot enforce monotonic `$inc` semantics against an authorized identity holding `update` privileges, and lacked a formal compromise response protocol.
+   - *Remediation:* Clearly distinguished provisioner compromise (prevented by RBAC), allocator compromise (cryptographic root of trust; detected and recoverable, but NOT preventable at the MongoDB RBAC layer), and coordination replica set compromise. Formally documented why MongoDB 8.0 RBAC actions cannot distinguish `$inc` from `$set` and why `$jsonSchema` cannot enforce inter-update temporal monotonicity. Defined an emergency **Allocator-Compromise Response Protocol**: immediate encryption kill-switch, KMS Data Encryption Key (DEK) epoch retirement and `KeyVersionPrefix` increment (rendering new ciphertexts disjoint from compromised ciphertexts), envelope quarantine and re-encryption, sequence re-seeding, and audit forensic verification. Explicitly stated that the zero-collision claim ($P(\text{collision}) = 0$) is conditional on clearly stated trust assumptions. Added adversarial verification item **`D38-38`**.
+4. **Normalization of Revocation Execution Ordering (Finding B38-39):**
+   - *Defect:* The v1.7.0 operation matrix and protocol descriptions had inconsistent execution orderings, lacked an explicit execution-phase column, and did not enforce crash recovery and prerequisite gating prior to database drop.
+   - *Remediation:* Established **one canonical 5-Phase Ordered Revocation State Machine** across all diagrams, tables, and protocols: **Phase 1: Network Transport Fencing (`NET_FENCED`)** $\rightarrow$ **Phase 2: Scoped Worker Identity Revocation (`IDENTITY_REVOKED`)** $\rightarrow$ **Phase 3: In-Flight Operation & Session Cancellation (`OPS_KILLED`)** $\rightarrow$ **Phase 4: Database Storage Deletion (`STORAGE_DROPPED`)** $\rightarrow$ **Phase 5: Audit & Evidence Finalization (`AUDIT_FINALIZED`)**. Added an explicit `Execution Phase` column to the Operation Allocation Matrix. Defined durable acknowledgements in `cleanup_ledger` for every phase. Strictly enforced that Phase 4 (`dropDatabase`) refuses to execute unless Phases 1, 2, and 3 are durable and verified. Defined idempotent crash recovery at each phase boundary. Added adversarial verification item **`D38-39`**.
 ---
 
 ## 2. Baseline and Inspected Source References
@@ -90,9 +106,10 @@ Independent architectural review of baseline commit `992a4cd326fe39865a723c29e97
 ### 2.1 Git Baseline & Provenance Verification
 - **Target Repository:** `AmiTtiwari43/Decision-OS`
 - **Active Branch:** `fix/batch4-replica-set-transactional-recovery`
-- **Current Baseline Commit:** `992a4cd326fe39865a723c29e974ba0f31707e8a` (`docs: remediate provisioning scope, revocation authority, and cryptographic nonce uniqueness (v1.6.0)`)
-- **Parent Baseline Commit:** `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (`docs: separate destructive and provisioning privilege boundaries and harden revocation protocol`)
+- **Current Baseline Commit:** `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956` (`docs: harden bootstrap broker boundary, nonce allocator authority, and network revocation (v1.7.0)`)
+- **Parent Baseline Commit:** `992a4cd326fe39865a723c29e974ba0f31707e8a` (`docs: remediate provisioning scope, revocation authority, and cryptographic nonce uniqueness (v1.6.0)`)
 - **Prior Lineage Commits:**
+  - `5ef95550c0709fdc99186bf42e5352f3aa846b4e` (`docs: separate destructive and provisioning privilege boundaries and harden revocation protocol`)
   - `f0fbfc1b6d04ad947f85277435d0803282cd03cd` (`docs: harden batch 4 v3.8 revocation and recovery protocol`)
   - `949ca35a7154f4c4db308dd73badf85221a98c9f` (`docs: harden batch 4 v3.8 worker identity and role provisioning`)
   - `724f1076284b186f42759677ab9e480d27531b69` (`docs: close batch 4 v3.8 privilege and redispatch gaps`)
@@ -180,8 +197,8 @@ To resolve the vulnerability where `{ resource: { db: "", collection: "" }, acti
      - **Ephemeral Test Database Deployment (`mongodb-test:27018`):** Dedicated strictly to dynamic test databases (`decision_os_test_*`). The Destructive Cleanup Executor connects only to this deployment.
    - *Guarantee:* Because `decision_os_coordination` and `cleanup_audit_log` **do not exist in the catalog of `mongodb-test:27018`**, and because the Destructive Cleanup Executor has **zero network routing and zero credentials on `mongodb-coord:27019`**, it is mathematically and physically impossible for destructive cleanup to drop or alter coordination or audit data, regardless of executor bugs or total executor container compromise.
 
-### 3.3 Evaluation of Provisioning Delegation Architecture Alternatives (Finding B38-26, B38-31)
-To eliminate the central provisioner's cross-database user and role administration authority while ensuring dynamic databases receive initial narrowly scoped authority, three delegation models were evaluated:
+### 3.3 Evaluation of Provisioning Delegation Architecture Alternatives (Finding B38-26, B38-31, B38-36)
+To eliminate the central provisioner's cross-database user and role administration authority while ensuring test databases receive initial narrowly scoped authority, four architecture models were evaluated:
 
 1. **Alternative 1: Centralized Provisioner with `{ db: "", collection: "" }` UserAdmin (REJECTED — B38-26 Defect)**
    - *Mechanism:* Central `decision_os_provisioner` possesses `createRole`, `createUser`, `grantRole`, `dropUser`, `dropRole` across `{ db: "", collection: "" }` on `rs_test`. Roles are created directly on non-admin databases.
@@ -189,14 +206,18 @@ To eliminate the central provisioner's cross-database user and role administrati
 2. **Alternative 2: Pure On-Demand Role Administration via `admin` Superuser Delegation (REJECTED)**
    - *Mechanism:* Provisioner connects with root credentials on `admin` to dynamically grant itself scoped rights per claim.
    - *Flaw:* Merely moves unrestricted authority to a superuser credential, multiplying the blast radius of any compromise.
-3. **Alternative 3: Database-Scoped Provisioning Delegation via Leased Partition Pools & Isolated Broker (SELECTED — Hardened in Phase B.7)**
+3. **Alternative 3: Central Ephemeral Credential Broker with `{ db: "", collection: "" }` (REJECTED — B38-36 Defect)**
+   - *Mechanism:* In v1.7.0, an isolated credential broker (`apps/credential-broker`) held `{ db: "", collection: "" }` user/role management actions on `rs_test`, constrained by application-level regex validation (`^decision_os_test_[a-zA-Z0-9_-]+$`) and Ed25519-signed API claims.
+   - *Flaw:* **Explicit Acknowledgment of Cross-Database Blast Radius:** In MongoDB RBAC, `{ db: "", collection: "" }` is an unrestricted wildcard covering every non-system database across the entire replica set. Under MongoDB's native authorization engine, any principal with this privilege has wire-level authority to manage users and roles across all existing and future worker databases. Application-level regex checks, signed API requests, and container boundary isolation provide **zero MongoDB-native database isolation**. An adversary who compromises the broker process or extracts its MongoDB connection credentials can bypass the broker application code entirely, connect directly to `rs_test:27018`, and alter users or inject backdoors into any worker's database. Claiming native isolation under this topology is false.
+4. **Alternative 4: Pre-Provisioned Per-Target Administrative Principals Architecture (SELECTED — Finding B38-36)**
    - *Mechanism:*
-     - Strip `decision_os_provisioner` of all `{ db: "", collection: "" }` user and role administration privileges on `rs_test`.
-     - In standard CI/testing, worker databases are leased from pre-allocated partition slot pools (`decision_os_test_slot_000` to `slot_255`), where per-database provisioning credentials (`decision_os_db_admin_slot_XXX`) were minted at cluster deployment initialization by an offline bootstrap container (`deploy/init-mongo-test.sh`).
-     - **Partition Slot Custody Enforcement:** Slot credentials are held in an isolated **Partition Slot Vault** (`apps/slot-vault`) enforcing path-based ACLs (`secret/data/decision-os/slots/slot_${id}`). The central provisioner CANNOT retrieve slot credentials in bulk; it can lease exactly one slot at a time conditional on presenting an active lease token from `rs_coord:27019.ownership_locks`.
-     - **Offline Bootstrap Destruction & Recovery Protocol:** Root bootstrap credentials exist strictly in volatile RAM/tmpfs and are destroyed via secure zeroization (`shred -u`) upon initialization completion. Emergency reconstruction requires an air-gapped Shamir secret sharing ceremony (2-of-3 SRE custodians).
-     - **Isolated Ephemeral Credential Broker Enclave:** For dynamic unpooled databases, authority is minted on-demand via an **Isolated Ephemeral Credential Broker** (`apps/credential-broker`, identity `decision_os_credential_broker`) that validates an Ed25519-signed ownership claim, verifies target database naming against canonical test regex, and issues single-target credentials strictly scoped to `{ db: targetDb, collection: "" }` with a 60-second ephemeral TTL.
-   - *Guarantee:* At runtime, **no central service possesses unrestricted `{ db: "", collection: "" }` user/role administration rights**, and no service can retrieve partition credentials in bulk. Compromise of the central provisioning service or one worker's scoped admin credential gives an attacker zero wire-level capability to create, read, modify, or revoke principals in another worker's database.
+     - **Elimination of Runtime Broker:** The central runtime broker holding `{ db: "", collection: "" }` is completely eliminated from standard test execution. No service on the active worker path possesses wildcard user- or role-administration privileges.
+     - **Pre-Provisioned Partition Pools:** All standard test workloads lease pre-allocated partition slot databases (`decision_os_test_slot_000` through `slot_255`), pre-initialized during offline cluster bootstrap by `deploy/init-mongo-test.sh`.
+     - **Strict Database-Scoped Administrative Identities:** For each partition slot $k$, the offline bootstrap creates a dedicated, discrete administrator `decision_os_db_admin_slot_${k}` whose MongoDB RBAC authorization scope is strictly `{ db: "decision_os_test_slot_" + k, collection: "" }`. It possesses zero privileges on any other database.
+     - **Exact Lease-to-Secret Vault Binding (B38-37):** Slot credentials are held in a **Partition Slot Vault** (`apps/slot-vault`) enforcing templated path policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }`). The provisioner exchanges a signed lease JWT for a single-use (`num_uses = 1`, `ttl = 60s`, `renewable = false`) Vault token that can read *only* the specific leased slot. Direct path substitution (`slot_02` using a `slot_01` token) is rejected natively with HTTP 403 Forbidden.
+     - **Non-Existent Target Database Handling:** If a test requests an unallocated or non-existent database name, the request is immediately rejected with `UnallocatedDatabaseException`. No dynamic unscoped administrator exists to create arbitrary databases at runtime.
+     - **Control-Plane Root of Trust Designation:** If dynamic expansion beyond the pre-allocated pool is ever required, it is designated strictly as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`), executed during maintenance or scaling windows. Any optional dynamic broker is classified as an uncontained control-plane root of trust and disabled by default in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
+   - *Guarantee:* At runtime, **zero active services possess wildcard `{ db: "", collection: "" }` user/role administration rights**, and no service can retrieve partition credentials in bulk or substitute paths. Compromise of the provisioner or any individual worker's scoped admin credential gives an attacker zero wire-level capability to access or administer another worker's database.
 
 ### 3.4 Evaluation of Revocation Responsibility & Coordination Models (Finding B38-27, B38-35)
 To reconcile the contradiction where the executor was instructed to execute `dropUser` and `dropRole` while its privilege matrix strictly prohibited them, and to ensure physical network isolation is durably integrated, three coordination models were evaluated:
@@ -239,25 +260,27 @@ The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated 
 
 1. **Physical / Logical Multi-Deployment Isolation (B38-20):**
    - **Coordination & Audit Deployment (`mongodb-coord:27019`):** Hosts `decision_os_coordination` (`ownership_locks`, `cleanup_ledger`, `provisioning_saga`, `nonce_allocations`) and `cleanup_audit_log`. Zero destructive credentials or routes exist on this cluster.
-   - **Ephemeral Test Database Deployment (`mongodb-test:27018`):** Hosts dynamic test databases (`decision_os_test_*`).
-2. **Decoupled Roles & Database-Scoped Provisioning Delegation (B38-24, B38-26, B38-31, B38-32):**
+   - **Ephemeral Test Database Deployment (`mongodb-test:27018`):** Hosts pre-allocated test databases (`decision_os_test_slot_*`).
+2. **Decoupled Roles & Database-Scoped Provisioning Delegation (B38-24, B38-26, B38-31, B38-32, B38-36, B38-37, B38-38):**
    - **Provisioning Service (`apps/provisioner`):** Identity `decision_os_provisioner`. Manages ownership leases and durable sagas on `mongodb-coord:27019`. Stripped of `{ db: "", collection: "" }` user/role administration rights on `rs_test` and stripped of write access to `nonce_allocations`.
-   - **Nonce Allocation Service (`apps/nonce-allocator`):** Identity `decision_os_nonce_allocator`. Holds exclusive write authority on `decision_os_coordination.nonce_allocations` on `rs_coord:27019` (`find`, `insert`, `update`, `createIndex` only; NO `findAndModify` action). Leases counter blocks via atomic `$inc`.
-   - **Partition Slot Vault (`apps/slot-vault`):** Manages pre-allocated partition credentials with path-based ACLs, preventing bulk retrieval.
-   - **Ephemeral Credential Broker (`apps/credential-broker`):** Identity `decision_os_credential_broker` on `rs_test`. Generates scoped database administrators (`decision_os_db_admin_${dbName}`) with 60s TTL strictly for verified Ed25519-signed ownership claims. Zero cluster or coordination privileges.
-   - **Scoped Database Provisioning Principals (`decision_os_db_admin_${dbName}`):** Ephemeral administrative credentials scoped strictly to `{ db: targetTestDb, collection: "" }`. Creates worker roles and users directly on the target test database namespace. Has zero capability to administer principals on other databases. Possesses zero destructive drop capability.
+   - **Nonce Allocation Service (`apps/nonce-allocator`):** Identity `decision_os_nonce_allocator`. Cryptographic Root of Trust holding exclusive write authority on `decision_os_coordination.nonce_allocations` on `rs_coord:27019` (`find`, `insert`, `update`, `createIndex` only; zero `findAndModify`). Leases non-overlapping counter blocks via atomic `$inc`. Governed by the Allocator-Compromise Response Protocol (emergency kill-switch, KMS DEK epoch retirement, envelope re-encryption).
+   - **Partition Slot Vault (`apps/slot-vault`):** Enforces exact lease-to-secret binding via HashiCorp Vault templated policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }`) and single-use JWT exchange (`num_uses = 1`, `ttl = 60s`, `renewable = false`). Path guessing and path substitution are rejected natively with HTTP 403 Forbidden.
+   - **Scoped Partition Database Administrators (`decision_os_db_admin_slot_${k}`):** Discrete per-database administrative principals pre-created during offline bootstrap on `rs_test:27018`. Authorization scope is strictly `{ db: "decision_os_test_slot_" + k, collection: "" }`. Creates and drops worker principals directly on that single database. Possesses zero privileges on other databases and zero destructive drop authority.
+   - **Elimination of Runtime Credential Broker (Finding B38-36):** No central service with wildcard `{ db: "", collection: "" }` user/role administration runs on the active worker path. Dynamic database creation is designated as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`). Dynamic broker is disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`). Requests targeting non-existent databases fail closed with `UnallocatedDatabaseException`.
    - **Destructive Cleanup Executor (`apps/cleanup-executor`):** Identity `decision_os_destructive_executor`. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` and `{ resource: { cluster: true }, actions: ["killop", "inprog", "killAnySession", "impersonate", "checkCursorSanity"] }` strictly on `mongodb-test:27018`. Possesses zero role-management privileges and zero user-creation/drop privileges (`createUser`, `createRole`, `dropUser`, `dropRole` are strictly forbidden). Zero access to `mongodb-coord:27019`.
    - **Audit Service (`apps/audit-service`):** Identity `decision_os_audit_writer`. Possesses strictly append-only privileges (`find`, `insert`, `createIndex`) on `cleanup_audit_log` on `mongodb-coord:27019`. Emits signed checkpoints to external WORM storage.
-3. **Executable Coordinated Multi-Layer Worker Revocation (B38-25, B38-27, B38-35):**
-   - Durable 3-phase revocation protocol coordinated across the Network Fence Controller, Scoped Provisioning Service, and Cleanup Executor.
-   - **Layer 1 (Transport):** Network Fence Controller isolates worker pod/container network egress to ports 27018 and 27019 at the CNI/netfilter layer.
-   - **Layer 2 (Identity):** Scoped Provisioner drops user and role directly on `targetTestDb` with majority write concern, invalidating the MongoDB daemon's internal authorization cache for lingering sockets.
-   - **Layer 3 (Operations & Sessions):** Cleanup Executor inspects `currentOp` for prepared transactions (`inprog` on `{ cluster: true }`), coordinates abort if found, executes `killOp` (`actions: ["killop"]` on `{ cluster: true }`) against running worker operations, and terminates logical sessions via `killAllSessionsByPattern`.
-   - Subsequent operations issued over lingering sockets retained by a hostile worker fail immediately at the netfilter layer or with Code 11 or Code 13 on subsequent wire operations. Fresh authentication attempts fail with Code 11 or Code 18.
-   - Only after server-side revocation and network transport fencing are durably acknowledged does the Cleanup Executor dispatch `{ dropDatabase: 1 }`.
-4. **Crash-Safe Credential Recovery & Durable Nonce Allocation (B38-17, B38-28, B38-32):**
+3. **Canonical 5-Phase Ordered Worker Revocation Execution (B38-25, B38-27, B38-35, B38-39):**
+   - Single canonical ordered execution state machine coordinated across the Network Fence Controller, Scoped Provisioning Service, and Cleanup Executor:
+     - **Phase 1 (Transport Fencing — `NET_FENCED`):** Network Fence Controller isolates worker pod/container egress to MongoDB ports 27018 and 27019 at the CNI/netfilter layer, dropping in-flight wire packets.
+     - **Phase 2 (Identity Revocation — `IDENTITY_REVOKED`):** Scoped Provisioner connects as `decision_os_db_admin_slot_${k}` and executes `dropUser` and `dropRole` directly on `targetTestDb` with `w: "majority", j: true`, invalidating the MongoDB daemon authorization cache.
+     - **Phase 3 (Operation & Session Cancellation — `OPS_KILLED`):** Cleanup Executor inspects `currentOp` for prepared transactions (`inprog` on `{ cluster: true }`), executes `killOp` (`actions: ["killop"]` on `{ cluster: true }`) against active worker operations, and terminates logical sessions via `killAllSessionsByPattern`.
+     - **Phase 4 (Storage Engine Deletion — `STORAGE_DROPPED`):** Cleanup Executor verifies that Phases 1, 2, and 3 are durably acknowledged in `cleanup_ledger`, then dispatches `dropDatabase` on `rs_test:27018`. If any prior phase is missing, `dropDatabase` strictly refuses to execute and transitions to `QUARANTINED`.
+     - **Phase 5 (Audit Finalization — `AUDIT_FINALIZED`):** Audit Service appends a tamper-evident SHA-256 hash-chained record to `cleanup_audit_log` with external WORM checkpoint reference.
+   - Every phase records a durable acknowledgement in `cleanup_ledger`. Crashes after any phase resume idempotently from the exact incomplete phase.
+4. **Crash-Safe Credential Recovery & Durable Nonce Allocation (B38-17, B38-28, B38-32, B38-38):**
    - Caller-bound encrypted envelope (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM.
    - NIST SP 800-38D Section 8.2.1 deterministic nonces leased atomically in blocks from dedicated `apps/nonce-allocator` with majority write concern. Nonce encoding: `KeyVersionPrefix (16 bits) || AllocatedRangeBlock (32 bits) || MonotonicCounter (48 bits)` = 96 bits.
+   - Cryptographic root of trust formally recognized: Nonce Allocator compromise mitigated via emergency kill-switch, KMS DEK epoch retirement, and envelope quarantine.
    - Strict durable acknowledgement ordering before envelope destruction.
    - Exactly 12 fully formalized saga states with deterministic transition recovery and orphan reaper verification proof.
 5. **Authoritative Oplog Evidence Protocol & Quarantine State Machine (B38-13, B38-16):**
@@ -267,17 +290,19 @@ The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated 
 ### 4.2 Architectural Justification
 1. **Mathematical Impossibility of Coordination Destruction (B38-20):**
    By physically isolating the coordination and audit collections on a separate MongoDB deployment (`mongodb-coord:27019`) to which the destructive executor has no network connectivity or credentials, the system eliminates reliance on application-level regex validation. Even if the cleanup executor is fully compromised and attempts `db.getSiblingDB("decision_os_coordination").dropDatabase()`, the command is executed against the test instance where the database does not exist, leaving production coordination and audit records completely untouched.
-2. **Elimination of Cross-Database Privilege Escalation (B38-24, B38-26, B38-31):**
-   By stripping the central provisioning service of `{ db: "", collection: "" }` user/role administration and delegating provisioning authority strictly to per-database scoped identities (`decision_os_db_admin_${dbName}`) or through a segregated Broker enclave validating signed ownership claims, MongoDB's RBAC engine natively enforces that each provisioning principal can only create, modify, or drop roles and users on its specific database. Even if a provisioning identity is compromised or an attacker subverts the provisioner container, MongoDB RBAC natively rejects cross-database principal manipulation with Error Code 13.
-3. **Protection of Nonce Allocation Authority (B38-32):**
-   Decoupling nonce allocation into an independent service running identity `decision_os_nonce_allocator` protects counter state from unauthorized reset. The general provisioner possesses zero write credentials on `nonce_allocations`. The allocator implementation uses strictly serialized `$inc` mutations with zero `$set` pathways, guaranteeing non-overlapping counter ranges across process crashes, restarts, and concurrent replicas under clearly stated trust assumptions.
-4. **Internally Consistent, Non-Contradictory Revocation Execution (B38-27, B38-33, B38-35):**
-   By establishing an explicit multi-layer protocol across the Network Fence Controller, Scoped Provisioner, and Cleanup Executor, every action is executed by an identity explicitly authorized in the MongoDB privilege matrix or infrastructure control plane. The executor never attempts `dropUser` or `dropRole` (actions it is forbidden to execute), while server-side user deletion, authorization cache invalidation, cluster-scoped operation cancellation (`killop`), session termination, and network transport fencing are guaranteed before physical database drop begins.
-5. **Multi-Layer Defense Against Hostile Workers (B38-25, B38-35):**
+2. **Elimination of Cross-Database Privilege Escalation & Broker Blast Radius (B38-24, B38-26, B38-31, B38-36):**
+   By eliminating the central credential broker from the active runtime path and provisioning standard workloads exclusively through pre-allocated partition slot databases (`decision_os_test_slot_000` through `slot_255`), MongoDB's RBAC engine natively enforces database isolation. Each partition slot possesses its own scoped administrator (`decision_os_db_admin_slot_${k}`) whose authorization scope is strictly `{ db: "decision_os_test_slot_" + k, collection: "" }`. Because no runtime service holds wildcard `{ db: "", collection: "" }` userAdmin credentials on `rs_test`, cross-database principal manipulation is physically and natively rejected by MongoDB RBAC with Error Code 13. Dynamic pool scaling is isolated to an offline control-plane root of trust (`deploy/init-mongo-test.sh`).
+3. **Partition Slot Vault Exact Lease-to-Secret Binding (B38-37):**
+   By pairing HashiCorp Vault templated policies (`secret/data/slots/{{identity.entity.metadata.slot_id}}`) with a signed single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease. Direct path guessing or path substitution attacks are natively rejected by Vault with HTTP 403 Forbidden.
+4. **Nonce Allocator as an Explicit Cryptographic Root of Trust (B38-32, B38-38):**
+   Decoupling nonce allocation into an independent service running identity `decision_os_nonce_allocator` protects counter state from unauthorized reset by the general provisioner. Because MongoDB RBAC cannot enforce monotonic arithmetic against an identity possessing `update` privileges, the Nonce Allocator is formally identified as a Cryptographic Root of Trust. Allocator compromise is mitigated via an emergency Kill-Switch, KMS Data Encryption Key (DEK) epoch retirement, `KeyVersionPrefix` incrementation (rendering new ciphertexts disjoint from compromised ciphertexts), and envelope quarantine/re-encryption under clearly defined trust assumptions.
+5. **Canonical 5-Phase Ordered Revocation & Crash Safety (B38-27, B38-33, B38-35, B38-39):**
+   Establishing a single canonical ordered execution state machine guarantees that transport-level fencing, server-side user deletion, and cluster-level operation cancellation are completed and durably acknowledged before physical database deletion begins. Precondition gating strictly prevents `dropDatabase` from executing if prior phases are incomplete, and idempotent crash recovery ensures that restarts resume at the exact unverified phase boundary.
+6. **Multi-Layer Defense Against Hostile Workers (B38-25, B38-35):**
    Client-side driver connection closure (`client.close(true)`) is treated as a cooperative convenience rather than a security boundary. Permanent revocation is enforced at multiple layers: transport-level network fencing drops wire packets, server-side `dropUser` invalidates authorization caches, and cluster-level `killop` aborts running queries. Commands issued over lingering TCP sockets fail authorization natively at the database wire protocol layer or are discarded at netfilter.
-6. **Guaranteed Forward Secrecy & Crash Recovery (B38-17):**
+7. **Guaranteed Forward Secrecy & Crash Recovery (B38-17):**
    Storing ephemeral credentials in caller-bound AES-256-GCM encrypted envelopes guarantees that retrying workers receive deterministic credentials after executor crashes, without attempting to reverse SCRAM-SHA-256 verifiers. Enforcing exact durable majority acknowledgement before envelope deletion guarantees that credentials are never destroyed before the worker has safely activated.
-7. **Deterministic Destruction Without Dual-Drop Danger:**
+8. **Deterministic Destruction Without Dual-Drop Danger:**
    Eliminating administrative redispatch guarantees that once `{ dropDatabase: 1 }` is transmitted across the wire, no subsequent or delayed drop command can ever execute against a reused or active database namespace.
 
 ---
@@ -289,13 +314,13 @@ flowchart TD
     subgraph ClientAndTestSpace["Client & Ordinary Worker Boundary (Unprivileged)"]
         WorkerA["Vitest Worker A / API
 (Identity: decision_os_worker_runA_wA)
-(DB: decision_os_test_runA_wA)"]
+(Leased Slot: decision_os_test_slot_01)"]
         WorkerB["Vitest Worker B / API
 (Identity: decision_os_worker_runB_wB)
-(DB: decision_os_test_runB_wB)"]
+(Leased Slot: decision_os_test_slot_02)"]
         BenchmarkCLI["Benchmark Runner
 (Identity: decision_os_benchmark_bench1)
-(DB: decision_os_benchmark_bench1_test)"]
+(Leased Slot: decision_os_test_slot_03)"]
         ClientProxy["CleanupExecutorClient
 (apps/api/src/db/cleanup-client.ts)"]
 
@@ -315,26 +340,20 @@ POST /v1/cleanup/request
 POST /v1/cleanup/reconcile| mTLS
     end
 
-    subgraph BootstrapAndBrokerSpace["Offline Bootstrap & Ephemeral Credential Broker Boundary"]
+    subgraph BootstrapAndVaultSpace["Offline Bootstrap & Partition Slot Vault Boundary"]
         OfflineBootstrap["Offline Bootstrap Container
 (deploy/init-mongo-test.sh)
 Identity: decision_os_offline_bootstrap
 - Runs once at deployment initialization
-- Mints Slot Pools & Init Schema
-- Ephemeral Root Credentials (RAM Shred)"]
+- Pre-provisions Slots (slot_000 to slot_255)
+- Mints Scoped Admins: decision_os_db_admin_slot_k
+- Zeroizes credentials from tmpfs (shred -u)"]
         SlotVault["Partition Slot Vault
-(apps/slot-vault)
-- Path-based ACL: secret/slots/slot_id
-- Blocks Bulk Enumeration
-- Single-Lease Token Verification"]
-        CredentialBroker["Ephemeral Credential Broker
-(apps/credential-broker)
-Identity: decision_os_credential_broker
-- Segregated Enclave
-- Validates Signed Ownership Claim
-- Mints decision_os_db_admin_targetDb
-- 60s Ephemeral TTL
-- Zero Coord/Cluster Rights"]
+(apps/slot-vault / HashiCorp Vault)
+- Policy: secret/data/slots/{{identity.entity.metadata.slot_id}}
+- Single-Use JWT Exchange (num_uses=1, TTL=60s)
+- Native HTTP 403 on Path Substitution
+- Denies Bulk Listing & Directory Enumeration"]
     end
 
     subgraph ProvisioningServiceSpace["Dedicated Provisioning Service Boundary (apps/provisioner)"]
@@ -342,23 +361,23 @@ Identity: decision_os_credential_broker
 (Binds Ed25519 Public Key to Worker ID)"]
         ProvisionerAPI --> SagaManager["Durable 12-State Provisioning Saga Manager
 (Generates Ephemeral Credentials & Envelopes)"]
-        SagaManager --> ScopedRoleEngine["Scoped Role & User Engine
+        SagaManager --> ScopedRoleEngine["Scoped Partition Role & User Engine
 (Database-Scoped Delegation Model)
 *NO dropDatabase or Cluster Rights!*"]
-        ScopedRoleEngine --> ProvisionerPoolTest["Scoped Provisioner Test Pool
-(Identity: decision_os_db_admin_targetDb)
-*Scoped STRICTLY to target DB; NO cross-db rights!*"]
+        ScopedRoleEngine --> ProvisionerPoolTest["Scoped Partition Slot Admin Pool
+(Identity: decision_os_db_admin_slot_k)
+*Scoped STRICTLY to slot DB; NO cross-db rights!*"]
         SagaManager --> ProvisionerPoolCoord["Provisioner Coord Pool
 (Identity: decision_os_provisioner)
 *Zero Write to nonce_allocations!*"]
-        ScopedRoleEngine -.->|Lease Single Slot| SlotVault
-        ScopedRoleEngine -.->|Mint Dynamic Admin| CredentialBroker
+        ScopedRoleEngine -->|Single-Use JWT Exchange| SlotVault
     end
 
     subgraph NonceAllocatorSpace["Dedicated Nonce Allocation Service Boundary (apps/nonce-allocator)"]
         SagaManager -->|mTLS: POST /v1/nonce/lease-block| NonceAllocatorAPI["Nonce Allocator Engine & API
+*Cryptographic Root of Trust*
 (Enforces Monotonic Block Leases via $inc)
-*NO $set code paths!*"]
+*Zero $set code paths; Emergency Kill-Switch*"]
         NonceAllocatorAPI --> NonceAllocatorPoolCoord["Nonce Allocator Coord Pool
 (Identity: decision_os_nonce_allocator)
 *Exclusive $inc Write Authority on nonce_allocations!*"]
@@ -376,14 +395,14 @@ Identity: decision_os_network_fence_controller
     subgraph DestructiveExecutorSpace["Dedicated Destructive Cleanup Service Boundary (apps/cleanup-executor)"]
         mTLS --> CleanupValidator["Cleanup Request Validator
 (Verifies Signed Request & Ownership Lease)"]
-        CleanupValidator --> StateMachineEngine["Durable State Machine Engine
+        CleanupValidator --> StateMachineEngine["Canonical 5-Phase State Machine Engine
 (Authoritative Sole Writer of cleanup_ledger)"]
-        StateMachineEngine --> RevocationCoordinator["Coordinated Revocation Client
-(Coordinates Multi-Layer Revocation)"]
-        RevocationCoordinator -->|Step 2: POST /v1/orchestrator/fence-worker| NetFenceController
-        RevocationCoordinator -->|Step 3: POST /v1/provisioning/revoke-worker| ProvisionerAPI
+        StateMachineEngine --> RevocationCoordinator["Canonical Revocation Coordinator
+(Orchestrates 5-Phase Execution Sequence)"]
+        RevocationCoordinator -->|Phase 1: POST /v1/orchestrator/fence-worker| NetFenceController
+        RevocationCoordinator -->|Phase 2: POST /v1/provisioning/revoke-worker| ProvisionerAPI
         StateMachineEngine --> DropEngine["Destructive Drop Engine
-*ONLY Production Allowlisted Drop Site*
+*Phase 4: Executed ONLY after Phases 1-3 Verified*
 *Dispatches { dropDatabase: 1, comment: ... }*"]
         DropEngine --> DestructivePoolTest["Destructive MongoDB Pool
 (Identity: decision_os_destructive_executor)
@@ -415,16 +434,15 @@ Object Lock / append-only filesystem")]
     end
 
     subgraph TestCluster["MongoDB Ephemeral Test Database Deployment (rs_test :27018)"]
-        OfflineBootstrap -.->|Init Pre-Allocated Slots| TestDBAuth
-        CredentialBroker -.->|Mint Scoped Admin| TestDBAuth
-        ProvisionerPoolTest -->|Scoped Role & User Admin on Target DB ONLY| TestDBAuth[("Target Test DB Catalog
-- Scoped Admin: decision_os_db_admin_targetDb
+        OfflineBootstrap -.->|Init 256 Slot DBs & Admins| TestDBAuth
+        ProvisionerPoolTest -->|Scoped User Admin on Leased Slot ONLY| TestDBAuth[("Target Test DB Catalog
+- Scoped Admin: decision_os_db_admin_slot_k
 - Scoped Dynamic Role: worker_access_role
 - Ephemeral Worker Principal")]
-        DestructivePoolTest -->|Drop Ephemeral Test DBs ONLY| TargetDBs[("Test Databases
-- decision_os_test_runA_wA
-- decision_os_test_runB_wB")]
-        DestructivePoolTest -->|Session, Op & Tx Termination| ClusterRes[("Cluster Resource
+        DestructivePoolTest -->|Drop Ephemeral Test DBs ONLY (Phase 4)| TargetDBs[("Pre-Allocated Slot DBs
+- decision_os_test_slot_01
+- decision_os_test_slot_02")]
+        DestructivePoolTest -->|Phase 3: Session, Op & Tx Termination| ClusterRes[("Cluster Resource
 - currentOp (inprog for prepared tx)
 - killOp (killop on cluster: true)
 - killAllSessionsByPattern")]
@@ -437,13 +455,13 @@ Object Lock / append-only filesystem")]
         WorkerA -.-> PoolA
         WorkerB -.-> PoolB
 
-        PoolA -->|CRUD ONLY on assigned DB| TargetDBA[("Target DB A
-decision_os_test_runA_wA")]
-        PoolB -->|CRUD ONLY on assigned DB| TargetDBB[("Target DB B
-decision_os_test_runB_wB")]
+        PoolA -->|CRUD ONLY on leased slot_01| TargetDBA[("Target DB Slot 01
+decision_os_test_slot_01")]
+        PoolB -->|CRUD ONLY on leased slot_02| TargetDBB[("Target DB Slot 02
+decision_os_test_slot_02")]
 
-        PoolA -.->|BLOCKED BY RBAC: Code 13 on DB B| TargetDBB
-        PoolB -.->|BLOCKED BY RBAC: Code 13 on DB A| TargetDBA
+        PoolA -.->|BLOCKED BY RBAC: Code 13 on Slot 02| TargetDBB
+        PoolB -.->|BLOCKED BY RBAC: Code 13 on Slot 01| TargetDBA
         PoolA -.->|BLOCKED BY RBAC: Code 13 on dropDatabase| TargetDBs
     end
 
@@ -460,7 +478,7 @@ decision_os_test_runB_wB")]
 
     class WorkerA,WorkerB,BenchmarkCLI,ClientProxy,PoolA,PoolB unprivileged;
     class mTLS,ProvisionerAPI,CleanupValidator,SecurityBoundary,SlotVault boundary;
-    class SagaManager,ScopedRoleEngine,ProvisionerPoolTest,ProvisionerPoolCoord,StateMachineEngine,RevocationCoordinator,DropEngine,DestructivePoolTest,AuditWriterEngine,AuditPoolCoord,CheckpointEngine,NonceAllocatorAPI,NonceAllocatorPoolCoord,NetFenceController,OfflineBootstrap,CredentialBroker privileged;
+    class SagaManager,ScopedRoleEngine,ProvisionerPoolTest,ProvisionerPoolCoord,StateMachineEngine,RevocationCoordinator,DropEngine,DestructivePoolTest,AuditWriterEngine,AuditPoolCoord,CheckpointEngine,NonceAllocatorAPI,NonceAllocatorPoolCoord,NetFenceController,OfflineBootstrap privileged;
     class CoordDB,NonceColl,AuditLogColl,TestDBAuth,TargetDBs,TargetDBA,TargetDBB,ClusterRes database;
     class ExternalWORM external;
 ```
@@ -475,8 +493,8 @@ sequenceDiagram
     participant WorkerA as Worker A (Hostile/Test)
     participant Client as CleanupExecutorClient
     participant Provisioner as Provisioning Service (apps/provisioner)
-    participant NonceService as Nonce Allocator (apps/nonce-allocator)
-    participant Broker as Credential Broker / Slot Vault
+    participant NonceService as Nonce Allocator (apps/nonce-allocator [Root of Trust])
+    participant Vault as Partition Slot Vault (apps/slot-vault)
     participant NetFence as Network Fence Controller
     participant Executor as Destructive Cleanup Executor (apps/cleanup-executor)
     participant CoordDB as MongoDB: rs_coord (:27019)
@@ -489,29 +507,35 @@ sequenceDiagram
     WorkerA->>CoordDB: TCP SYN to Port 27019 (Attempt direct coordination tampering)
     CoordDB-->>WorkerA: Connection Refused (Network Policy / Firewall Blocked)
 
-    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA WITH NONCE & SCOPED DELEGATION (B38-24, B38-26, B38-31, B38-32)
-    WorkerA->>Client: claimTestDatabaseOwnership("decision_os_test_runA_wA", "runA", "wA")
+    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA WITH NONCE & EXACT VAULT BINDING (B38-24, B38-26, B38-36, B38-37, B38-38)
+    WorkerA->>Client: claimTestDatabaseOwnership("decision_os_test_slot_01", "runA", "wA")
     Client->>Client: Sign claim payload using Worker A Ed25519 Private Key
     Client->>Provisioner: POST /v1/ownership/claim (Payload + Ed25519 Signature)
     Provisioner->>Provisioner: Verify Signature, Caller ID "runA:wA", DB Naming Contract
     Provisioner->>CoordDB: Persist Saga CLAIM_PENDING in ownership_locks & provisioning_saga (w: majority)
     
-    Note over Provisioner,NonceService: Lease Monotonic Counter Block via Dedicated Nonce Allocator
+    Note over Provisioner,NonceService: Lease Monotonic Counter Block via Dedicated Nonce Allocator (Root of Trust)
     Provisioner->>NonceService: POST /v1/nonce/lease-block (Signed mTLS Request)
     NonceService->>CoordDB: findOneAndUpdate({ _id: "nonce_seq_v1" }, { $inc: { nextBlockStart: BLOCK_SIZE } }) (w: majority, j: true)
     CoordDB-->>NonceService: Nonce Block Range Leased [blockStart, blockEnd)
     NonceService-->>Provisioner: Leased Block Range { blockStart, blockSize, keyVersion }
 
-    Note over Provisioner,Broker: Acquire Scoped Admin: Slot Vault (Tier 1) or Credential Broker (Tier 2)
-    Provisioner->>Broker: Acquire Scoped Admin Credential (Signed Claim Verification)
-    Broker-->>Provisioner: decision_os_db_admin_runA_wA Credentials (TTL: 60s)
+    Note over Provisioner,Vault: Exact Lease-to-Secret Binding via Single-Use JWT Exchange (B38-37)
+    Provisioner->>Vault: POST /v1/auth/jwt/login { jwt: signed_lease_jwt_for_slot_01 }
+    Vault->>Vault: Validate JWT Signature; Bind Metadata slot_id="slot_01"; Issue Single-Use Token (TTL: 60s, num_uses: 1)
+    Vault-->>Provisioner: Ephemeral Vault Token
+    Provisioner->>Vault: GET /v1/secret/data/slots/slot_01 (Authorized by Templated Policy)
+    Vault-->>Provisioner: Scoped Credentials: decision_os_db_admin_slot_01 (Single-use token revoked)
+    Note over Provisioner,Vault: Direct Path Substitution Attack Blocked:
+    Provisioner->>Vault: GET /v1/secret/data/slots/slot_02 (Attempted access to slot 02)
+    Vault-->>Provisioner: HTTP 403 Forbidden (Natively blocked by Vault Policy Engine)
 
-    Note over Provisioner,TestDB: Connect using Scoped DB Admin (decision_os_db_admin_runA_wA) scoped strictly to DB A:
-    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").createRole({ role: "workerRole", privileges: [CRUD on self] })
-    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").createUser({ user: "decision_os_worker_runA_wA", pwd: pwdA, roles: ["workerRole"] })
+    Note over Provisioner,TestDB: Connect using Scoped DB Admin (decision_os_db_admin_slot_01) scoped strictly to slot_01:
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_slot_01").createRole({ role: "workerRole", privileges: [CRUD on self] })
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_slot_01").createUser({ user: "decision_os_worker_runA_wA", pwd: pwdA, roles: ["workerRole"] })
     Provisioner->>CoordDB: Persist AES-256-GCM envelope (Deterministic Nonce from leased block) in ownership_locks (w: majority)
     Provisioner->>AuditService: Append Audit Event: USER_PROVISIONED (SHA-256 Chained)
-    Provisioner-->>Client: HTTP 200 OK { user, pwdA, authSource: "decision_os_test_runA_wA" }
+    Provisioner-->>Client: HTTP 200 OK { user, pwdA, authSource: "decision_os_test_slot_01" }
 
     Note over WorkerA,CoordDB: PHASE 3: DURABLE ACKNOWLEDGEMENT ORDERING (B38-17)
     Client->>TestDB: Connect PoolA & execute { ping: 1 } (Authentication Verified)
@@ -521,33 +545,36 @@ sequenceDiagram
     Provisioner->>CoordDB: Atomic $unset: { credentialEnvelope: 1 } (w: majority)
     Provisioner-->>Client: HTTP 200 OK { status: 'ACTIVATED' }
 
-    Note over WorkerA,TestDB: PHASE 4: CROSS-DATABASE ISOLATION NATIVELY ENFORCED (B38-11, B38-26)
-    WorkerA->>TestDB: PoolA.db("decision_os_test_runB_wB").collection("data").find()
-    TestDB-->>WorkerA: MongoServerError: not authorized on decision_os_test_runB_wB (Code 13)
+    Note over WorkerA,TestDB: PHASE 4: CROSS-DATABASE ISOLATION NATIVELY ENFORCED (B38-11, B38-26, B38-36)
+    WorkerA->>TestDB: PoolA.db("decision_os_test_slot_02").collection("data").find()
+    TestDB-->>WorkerA: MongoServerError: not authorized on decision_os_test_slot_02 (Code 13)
 
-    Note over WorkerA,TestDB: PHASE 5: RECONCILED COORDINATED WORKER REVOCATION & TRANSPORT FENCING (B38-25, B38-27, B38-33, B38-35)
-    WorkerA->>Client: cleanupTestDatabase("decision_os_test_runA_wA", "runA", "wA")
+    Note over WorkerA,TestDB: PHASE 5: CANONICAL 5-PHASE ORDERED REVOCATION EXECUTION (B38-25, B38-27, B38-35, B38-39)
+    WorkerA->>Client: cleanupTestDatabase("decision_os_test_slot_01", "runA", "wA")
     Client->>Executor: POST /v1/cleanup/request (Signed Cleanup Order)
     Executor->>CoordDB: Verify Ownership Lease, Mark CLAIMED in cleanup_ledger (w: majority)
     
-    Note over Executor,NetFence: Step 5a: Network Transport Fencing via CNI / Netfilter
+    Note over Executor,NetFence: Phase 1: Network Transport Fencing (NET_FENCED)
     Executor->>NetFence: POST /v1/orchestrator/fence-worker (Isolate Worker A Pod Egress)
-    NetFence->>NetFence: Apply Linux Netfilter / Kubernetes NetworkPolicy Egress Drop
+    NetFence->>NetFence: Apply Linux Netfilter / CNI Egress Drop to Ports 27018 & 27019
     NetFence-->>Executor: HTTP 200 OK { fenced: true, netfilterVerified: true }
+    Executor->>CoordDB: Record phase1_net_fenced_at in cleanup_ledger (w: majority)
 
-    Note over Executor,Provisioner: Step 5b: Coordinated Revocation Handoff to Scoped Provisioner
-    Executor->>Provisioner: POST /v1/provisioning/revoke-worker (Signed Revocation Order targeting DB A)
-    Provisioner->>Provisioner: Authenticate order; bind to decision_os_db_admin_runA_wA
-    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropUser("decision_os_worker_runA_wA") (w: majority)
-    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_runA_wA").dropRole("workerRole") (w: majority)
+    Note over Executor,Provisioner: Phase 2: Scoped Worker Identity Revocation (IDENTITY_REVOKED)
+    Executor->>Provisioner: POST /v1/provisioning/revoke-worker (Signed Revocation Order targeting slot_01)
+    Provisioner->>Provisioner: Authenticate order; bind to decision_os_db_admin_slot_01
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_slot_01").dropUser("decision_os_worker_runA_wA") (w: majority, j: true)
+    Provisioner->>TestDB: db.getSiblingDB("decision_os_test_slot_01").dropRole("workerRole") (w: majority, j: true)
     Provisioner->>CoordDB: Mark ownership_locks.state = 'REVOKED' (w: majority)
     Provisioner-->>Executor: HTTP 200 OK { userDropped: true, roleDropped: true }
+    Executor->>CoordDB: Record phase2_identity_revoked_at in cleanup_ledger (w: majority)
     
-    Note over Executor,TestDB: Step 5c: Session & Operation Cancellation via Destructive Executor
+    Note over Executor,TestDB: Phase 3: In-Flight Operation & Session Cancellation (OPS_KILLED)
     Executor->>TestDB: db.adminCommand({ currentOp: 1, "command.user": "decision_os_worker_runA_wA", "preparedTransaction": true }) (action: inprog on cluster)
     Note over Executor,TestDB: If prepared transactions detected, coordinate coordinator abort before proceeding
     Executor->>TestDB: db.adminCommand({ killOp: 1, query: { "command.user": "decision_os_worker_runA_wA" } }) (action: killop on cluster)
-    Executor->>TestDB: db.adminCommand({ killAllSessionsByPattern: [{ users: [{ user: "decision_os_worker_runA_wA", db: "decision_os_test_runA_wA" }] }] }) (actions: killAnySession, impersonate on cluster)
+    Executor->>TestDB: db.adminCommand({ killAllSessionsByPattern: [{ users: [{ user: "decision_os_worker_runA_wA", db: "decision_os_test_slot_01" }] }] }) (actions: killAnySession, impersonate on cluster)
+    Executor->>CoordDB: Record phase3_ops_killed_at in cleanup_ledger (w: majority)
 
     Note over WorkerA,TestDB: Hostile Worker retains open TCP sockets and sends write operations:
     WorkerA->>TestDB: PoolA.collection("data").insertOne({ hostile: true }) over lingering socket
@@ -555,16 +582,20 @@ sequenceDiagram
     WorkerA->>TestDB: PoolA attempts fresh SCRAM authentication with old password
     TestDB--xWorkerA: Dropped by Netfilter / MongoServerError: AuthenticationFailed / UserNotFound (Code 18 / Code 11)
 
-    Note over Executor,CoordDB: PHASE 6: DESTRUCTIVE CLEANUP ON TEST DB ONLY (B38-20)
+    Note over Executor,CoordDB: Phase 4: Database Storage Deletion (STORAGE_DROPPED)
+    Note over Executor: Verify Prerequisites: Phases 1, 2, 3 non-null and confirmed in cleanup_ledger!
     Executor->>CoordDB: Mark DISPATCHING in cleanup_ledger (dropExecutionLock = true, w: majority)
-    Executor->>TestDB: db.runCommand({ dropDatabase: 1, comment: JSON.stringify({ requestId, runA, wA }) })
-    TestDB-->>Executor: { ok: 1, dropped: "decision_os_test_runA_wA" }
-    Executor->>CoordDB: Mark CLEANED in cleanup_ledger (dropExecutionLock = false, w: majority)
+    Executor->>TestDB: db.runCommand({ dropDatabase: 1, comment: JSON.stringify({ requestId, slot: "slot_01", runA, wA }) })
+    TestDB-->>Executor: { ok: 1, dropped: "decision_os_test_slot_01" }
+    Executor->>CoordDB: Mark CLEANED in cleanup_ledger (dropExecutionLock = false, phase4_storage_dropped_at = now, w: majority)
+
+    Note over Executor,AuditService: Phase 5: Audit & Evidence Finalization (AUDIT_FINALIZED)
     Executor->>AuditService: Append Audit Event: DB_CLEANED (SHA-256 Chained)
     AuditService->>AuditService: Generate Ed25519 Signed Checkpoint -> Emit to WORM
+    Executor->>CoordDB: Record phase5_audit_finalized_at in cleanup_ledger (w: majority)
     Executor-->>Client: HTTP 200 OK { status: 'CLEANED' }
 
-    Note over Executor,CoordDB: PHASE 7: ADVERSARIAL ATTEMPT TO DROP COORDINATION STORAGE (B38-20)
+    Note over Executor,CoordDB: ADVERSARIAL ATTEMPT TO DROP COORDINATION STORAGE BLOCKED (B38-20)
     Note over Executor: Compromised Executor attempts db.getSiblingDB("decision_os_coordination").dropDatabase()
     Executor->>TestDB: db.runCommand({ dropDatabase: 1 }) on decision_os_coordination
     TestDB-->>Executor: { ok: 1, dropped: 0 } (No-op; DB never existed on rs_test)
@@ -684,112 +715,144 @@ e D$.
    - *Definition:* The set of roles that an identity is authorized to assign or revoke from users via `grantRolesToUser` or `revokeRolesFromUser`.
    - *Engine Constraint:* An identity authorized on `{ db: D, collection: "" }` can only assign roles defined on database $D$.
 
-#### 4. The Database-Scoped Provisioning Delegation Model (Finding B38-26, B38-31)
+#### 4. The Database-Scoped Provisioning Delegation Model (Finding B38-26, B38-31, B38-36, B38-37)
 To satisfy least-privilege isolation without granting central unrestricted database-wide administration:
 
 1. **Complete Removal of `{ db: "", collection: "" }` from Central Provisioner:**
    The central identity `decision_os_provisioner` has **zero** user-management, role-management, and role-grant privileges on `rs_test`. It cannot execute `createUser`, `createRole`, `dropUser`, or `dropRole` on any database on `rs_test`.
-2. **Scoped Administrative Principals (`decision_os_db_admin_${dbName}`):**
-   Role and user administration on `rs_test` is mediated strictly through per-target-database scoped administrative identities:
-   - Resource Scope: strictly `{ db: targetTestDb, collection: "" }`.
-   - Actions: `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser`.
-   - Authorization Scope: strictly confined to that single database namespace.
+2. **Elimination of the Runtime Credential Broker (Finding B38-36):**
+   - **Explicit Flaw of `{ db: "", collection: "" }`:** In v1.7.0, the dynamic credential broker possessed user- and role-management actions across `{ db: "", collection: "" }` on `rs_test`. In MongoDB RBAC, `{ db: "", collection: "" }` is an unrestricted wildcard covering every non-system database across the entire replica set. Under MongoDB's native authorization engine, any principal with this privilege has the power to manage users and roles across all existing and future non-system databases. Application-level regex checks (`^decision_os_test_.*$`), signed API claims, and separate container boundaries provide **zero MongoDB-native database isolation**. An adversary compromising the broker process or extracting its MongoDB connection credentials can bypass the broker application code entirely, connect directly to `rs_test:27018`, and alter users or inject backdoors into any worker's database.
+   - **Selected Architecture — Elimination of Runtime Broker:** To achieve real, native database isolation, the runtime broker holding broad credentials is **completely eliminated from the active worker execution path**. Standard workloads run exclusively on the Pre-Provisioned Partition Pool (Tier 1). No active runtime service possesses wildcard `{ db: "", collection: "" }` user/role administration rights on `rs_test`.
 3. **Tier 1 — Leased Partition Pools & Partition Slot Vault (Primary CI & Test Harness Path):**
-   - **Pre-Allocation via Offline Bootstrap:** During cluster deployment initialization, an ephemeral offline container (`deploy/init-mongo-test.sh`) running identity `decision_os_offline_bootstrap` pre-allocates dedicated partition slot databases (`decision_os_test_slot_000` through `slot_255`) on `rs_test:27018`.
-   - For each partition slot $k$, it creates a scoped role and administrator `decision_os_db_admin_slot_${k}` authorized exclusively on `{ db: "decision_os_test_slot_" + k, collection: "" }`.
+   - **Pre-Allocation via Offline Bootstrap:** During cluster deployment initialization, an ephemeral offline container (`deploy/init-mongo-test.sh`) running identity `decision_os_offline_bootstrap` pre-allocates 256 dedicated partition slot databases (`decision_os_test_slot_000` through `slot_255`) on `rs_test:27018`.
+   - **Discrete Scoped Administrators (`decision_os_db_admin_slot_${k}`):** For each partition slot $k$, the offline bootstrap creates a dedicated, discrete administrator `decision_os_db_admin_slot_${k}` whose MongoDB RBAC authorization scope is strictly:
+     $$\text{Resource: } \{ \text{db: } \text{"decision_os_test_slot\_" + k}, \text{collection: } \text{""} \}$$
+     $$\text{Actions: } [ \text{"createUser"}, \text{"dropUser"}, \text{"grantRole"}, \text{"revokeRole"}, \text{"createRole"}, \text{"dropRole"}, \text{"viewRole"}, \text{"changeCustomData"} ]$$
+     It possesses **zero privileges on any other database**, zero cluster privileges, and zero destructive drop authority.
    - **Offline Bootstrap Credential Destruction Protocol:** Root administrative credentials required for initialization are generated in tmpfs (`/tmp/bootstrap_admin.key`). Upon successful creation of slot databases and roles, the initialization container securely shreds the credential file (`shred -u -z /tmp/bootstrap_admin.key`), verifies file zeroization, and permanently terminates. The bootstrap identity never runs in an active online container.
    - **Emergency Recovery Protocol:** If cluster metadata is lost or corrupted, an air-gapped break-glass procedure requires an offline Shamir's Secret Sharing ceremony (2-of-3 designated SRE key custodians) to launch a temporary maintenance pod with full session audit logging.
-   - **Partition Slot Custody & Bulk-Retrieval Prevention:** Slot credentials are held in a dedicated **Partition Slot Vault** (`apps/slot-vault` or HashiCorp Vault KV). The vault enforces strict path-based ACLs (`path "secret/data/decision-os/slots/slot_${id}"`). The central provisioner cannot list or enumerate slot secrets in bulk (`list` capability is denied by policy). To lease a slot, the provisioner presents a cryptographically signed lease token corresponding to an active lease acquired in `rs_coord:27019.ownership_locks`. The vault releases only that single slot's credentials with a 60-second TTL. The provisioner holds at most the actively leased slot credentials in volatile RAM, scrubbing them immediately upon lease release or teardown.
-4. **Tier 2 — Isolated Ephemeral Credential Broker (Dynamic On-Demand Expansion Path):**
-   When an unpooled dynamic database (`decision_os_test_${runId}_${workerId}`) is required:
-   - **Segregated Enclave Execution:** Minting authority is isolated in a dedicated service enclave (`apps/credential-broker`) running under identity `decision_os_credential_broker` on `rs_test:27018`.
-   - **Exact MongoDB Privilege Scope:** The broker holds `{ resource: { db: "", collection: "" }, actions: ["createUser", "dropUser", "createRole", "dropRole", "grantRole", "revokeRole", "changePassword", "getRole", "getUser"] }`. It possesses **ZERO cluster privileges**, **ZERO dropDatabase/dropCollection privileges**, and **ZERO access to `admin`, `config`, or `local` system namespaces**. It has zero network routes and zero credentials for `rs_coord:27019`.
-   - **Signed Ownership Claim Validation:** The broker exposes a single hardened endpoint `POST /v1/broker/mint-scoped-admin`. To request a scoped admin credential, the caller (Provisioning Service) must submit an Ed25519-signed ownership claim containing: `requestId`, `targetDatabase`, `runId`, `workerId`, and `leaseExpiresAt`.
-   - The broker cryptographically verifies the provisioner's signature against the provisioner's registered public key.
-   - The broker verifies that `targetDatabase` strictly matches the canonical test namespace regex: `^decision_os_test_[a-zA-Z0-9_-]+$`.
-   - **Authority Binding to Single Target Database:** The broker creates user `decision_os_db_admin_${targetDatabase}` stored on `targetDatabase` (`authSource = targetDatabase`), with privileges strictly constrained to `{ db: targetDatabase, collection: "" }`.
-   - **Delivery, Expiration, Rotation, Revocation, and Audit Lifecycle:**
-     - The generated 32-byte cryptographically secure random password is delivered to the provisioner exclusively over mTLS.
-     - **Expiration:** Credential TTL is strictly 60 seconds (ephemeral).
-     - **Rotation:** If a lease is extended, the broker rotates the password via `updateUser`.
-     - **Revocation:** During teardown, the scoped user is deleted via `dropUser`.
-     - **Audit:** Every credential minting event is written to `cleanup_audit_log` with SHA-256 chaining.
+4. **Exact Lease-to-Secret Vault Binding (Finding B38-37):**
+   - **Vault Policy Model:** Slot credentials are held in a **Partition Slot Vault** (`apps/slot-vault` or HashiCorp Vault KV-v2 engine) mounted at `secret/`. The vault enforces templated path policies based on identity entity metadata:
+     ```hcl
+     # Vault Policy: slot-lease-reader
+     path "secret/data/slots/{{identity.entity.metadata.slot_id}}" {
+       capabilities = ["read"]
+     }
+     path "secret/data/slots/*" {
+       capabilities = ["deny"]
+     }
+     path "secret/metadata/*" {
+       capabilities = ["deny"]
+     }
+     ```
+   - **Signed Lease Claim to Secret Path Mapping:**
+     1. When the Provisioning Service acquires an active lease on `rs_coord:27019.ownership_locks` for `slot_01`, the coordination authority issues an Ed25519-signed single-use JWT:
+        ```json
+        {
+          "sub": "decision_os_provisioner",
+          "slot_id": "slot_01",
+          "lease_id": "lease_8a7d3b2e_41d4",
+          "iss": "decision_os_coordination_authority",
+          "aud": "vault.decision-os.internal",
+          "iat": 1762770000,
+          "exp": 1762770060
+        }
+        ```
+     2. The Provisioner calls HashiCorp Vault at `POST /v1/auth/jwt/login` presenting the signed JWT.
+     3. Vault's JWT Auth Method verifies the signature against the coordination authority's public key registered in Vault, extracts `slot_id` into entity metadata `identity.entity.metadata.slot_id`, and issues an ephemeral client token bound to policy `slot-lease-reader`.
+   - **Prevention of Path Guessing and Substitution:**
+     - The token's policy dynamically resolves to `path "secret/data/slots/slot_01"`.
+     - If a compromised provisioner attempts direct path substitution by calling `GET /v1/secret/data/slots/slot_02`, Vault matches the request against `path "secret/data/slots/*"` (`deny`) and natively returns `HTTP 403 Forbidden`. The provisioner cannot read other slots even if it knows their identifiers.
+   - **Token Lifecycle, Expiration, and Audit:**
+     - **Usage Limit (`num_uses`):** Exactly 1. Once `GET /v1/secret/data/slots/slot_01` returns the secret, Vault automatically and irreversibly destroys the token.
+     - **TTL:** 60 seconds.
+     - **Renewal:** Explicitly forbidden (`renewable = false`).
+     - **Audit Logging:** Every Vault request logs caller entity, lease ID, bound slot ID, IP, and the target secret path.
+     - **Crash & Partition Recovery:** If the single-use token expires or network drops before reading, the provisioner must re-verify lock ownership on `rs_coord` and request a fresh exchange token.
+5. **Handling of Non-Existent Target Databases:**
+   In the Pre-Provisioned Partition Pool, every allocatable database `decision_os_test_slot_${k}` already exists. If an unpooled or non-existent database name (e.g. `decision_os_test_nonexistent`) is requested without leasing a valid partition slot, the request is **strictly rejected** with `UnallocatedDatabaseException`. No dynamic unscoped administrator exists, and no broad-privilege broker is invoked.
+6. **Designation of Dynamic Scaling as an Offline / Control-Plane Root of Trust:**
+   Dynamic database creation inherently requires broad administrative credentials (`{ db: "", collection: "" }` or cluster userAdmin) because a database that does not yet exist has no scoped administrator. Rather than running a broad credential broker on the active worker path, capacity expansion is designated strictly as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`), executed by infrastructure pipelines during maintenance or scaling windows. Any optional dynamic broker is classified as an uncontained control-plane root of trust, with full cross-database blast radius acknowledged, and disabled by default in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
 
-#### 5. Concrete Negative Authorization Cases (B38-26, B38-31)
-MongoDB RBAC natively enforces the following negative authorization boundaries on `rs_test:27018`:
+#### 5. Concrete Negative Authorization Cases (B38-26, B38-31, B38-36, B38-37)
+MongoDB RBAC and HashiCorp Vault natively enforce the following negative authorization boundaries:
 
 1. **Central Provisioner Direct User/Role Creation (NC-1):**
-   - `decision_os_provisioner` executes `db.getSiblingDB("decision_os_test_runA_wA").createRole(...)`
-   - *Result:* `MongoServerError: not authorized on decision_os_test_runA_wA to execute command { createRole: ... }` (Error Code 13).
-2. **Cross-Database Scoped Identity Attack (User Manipulation) (NC-2):**
-   - Compromised `decision_os_db_admin_runA_wA` executes `db.getSiblingDB("decision_os_test_runB_wB").createUser(...)`
-   - *Result:* `MongoServerError: not authorized on decision_os_test_runB_wB to execute command { createUser: ... }` (Error Code 13).
-3. **Cross-Database Scoped Identity Attack (Password Modification) (NC-3):**
-   - Compromised `decision_os_db_admin_runA_wA` executes `db.getSiblingDB("decision_os_test_runB_wB").changeUserPassword(...)`
-   - *Result:* `MongoServerError: not authorized on decision_os_test_runB_wB to execute command { updateUser: ... }` (Error Code 13).
-4. **Cross-Database Role Definition Attempt (NC-4):**
-   - Compromised `decision_os_db_admin_runA_wA` attempts to define a role on `decision_os_test_runA_wA` containing privileges on `decision_os_test_runB_wB`:
+   - `decision_os_provisioner` executes `db.getSiblingDB("decision_os_test_slot_01").createRole(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_slot_01 to execute command { createRole: ... }` (Error Code 13).
+2. **Cross-Slot Scoped Identity Attack (User Manipulation) (NC-2):**
+   - Compromised `decision_os_db_admin_slot_01` executes `db.getSiblingDB("decision_os_test_slot_02").createUser(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_slot_02 to execute command { createUser: ... }` (Error Code 13).
+3. **Cross-Slot Scoped Identity Attack (Password Modification) (NC-3):**
+   - Compromised `decision_os_db_admin_slot_01` executes `db.getSiblingDB("decision_os_test_slot_02").changeUserPassword(...)`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_slot_02 to execute command { updateUser: ... }` (Error Code 13).
+4. **Cross-Slot Role Definition Attempt (NC-4):**
+   - Compromised `decision_os_db_admin_slot_01` attempts to define a role on `decision_os_test_slot_01` containing privileges on `decision_os_test_slot_02`:
      ```javascript
-     db.getSiblingDB("decision_os_test_runA_wA").createRole({
+     db.getSiblingDB("decision_os_test_slot_01").createRole({
        role: "illegal_cross_role",
-       privileges: [{ resource: { db: "decision_os_test_runB_wB", collection: "" }, actions: ["find"] }],
+       privileges: [{ resource: { db: "decision_os_test_slot_02", collection: "" }, actions: ["find"] }],
        roles: []
      });
      ```
    - *Result:* `MongoServerError: Cannot grant privileges on other databases for a role defined on a non-admin database`.
 5. **Scoped Identity Destructive Escalation (NC-5):**
-   - Compromised `decision_os_db_admin_runA_wA` attempts `db.getSiblingDB("decision_os_test_runA_wA").dropDatabase()`
-   - *Result:* `MongoServerError: not authorized on decision_os_test_runA_wA to execute command { dropDatabase: 1 }` (Error Code 13).
-6. **Compromised Broker Destructive Escalation (NC-6):**
-   - Compromised `decision_os_credential_broker` attempts `db.getSiblingDB("decision_os_test_runA_wA").dropDatabase()`
-   - *Result:* `MongoServerError: not authorized on decision_os_test_runA_wA to execute command { dropDatabase: 1 }` (Error Code 13).
-7. **Compromised Broker System DB Escalation (NC-7):**
+   - Compromised `decision_os_db_admin_slot_01` attempts `db.getSiblingDB("decision_os_test_slot_01").dropDatabase()`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_slot_01 to execute command { dropDatabase: 1 }` (Error Code 13).
+6. **Compromised Dynamic Broker Destructive Escalation (NC-6):**
+   - Compromised `decision_os_credential_broker` attempts `db.getSiblingDB("decision_os_test_slot_01").dropDatabase()`
+   - *Result:* `MongoServerError: not authorized on decision_os_test_slot_01 to execute command { dropDatabase: 1 }` (Error Code 13).
+7. **Compromised Dynamic Broker System DB Escalation (NC-7):**
    - Compromised `decision_os_credential_broker` attempts `db.getSiblingDB("admin").createUser(...)`
    - *Result:* `MongoServerError: not authorized on admin to execute command { createUser: ... }` (Error Code 13; broker privileges restricted to `{ db: "", collection: "" }` which excludes system databases).
 8. **Provisioner Bulk Slot Enumeration Attempt (NC-8):**
-   - Compromised `decision_os_provisioner` attempts `vault.list("secret/metadata/decision-os/slots")`
+   - Compromised `decision_os_provisioner` attempts `vault.list("secret/metadata/slots")`
    - *Result:* `VaultError: 403 permission denied (path-based ACL denies list capability)`.
-
----
+9. **Compromised Provisioner Direct Vault API Path Substitution Attack (NC-9 - B38-37):**
+   - Attacker compromises provisioner, acquires single-use Vault token bound to `slot_01`, and directly issues `GET /v1/secret/data/slots/slot_02` using Vault HTTP API.
+   - *Result:* `HTTP 403 Forbidden` (`{"errors":["1 error occurred: * permission denied"]}`). Templated policy restricts access strictly to bound `slot_01`.
+10. **Scoped Partition Admin Cross-Database Wire Attack (NC-10 - B38-36):**
+    - Attacker connects directly to `rs_test:27018` using `decision_os_db_admin_slot_01` credentials and attempts `db.getSiblingDB("decision_os_test_slot_02").createUser(...)`.
+    - *Result:* `MongoServerError: not authorized on decision_os_test_slot_02 to execute command { createUser: ... }` (Error Code 13). Cross-database administration is natively rejected by MongoDB RBAC.
 
 ### 7.6 Exact Privilege Matrix by Identity & Deployment
 
-The following matrix formally specifies permissions for every principal across both MongoDB deployments, reconciling every assigned command with native database RBAC and correcting all action names and scopes:
+The following matrix formally specifies permissions for every principal across both MongoDB deployments, reconciling every assigned command with native database RBAC and correcting all action names, scopes, and trust boundaries:
 
-| Identity Principal | Target Deployment | Resource Scope | Permitted Actions | Explicitly Prohibited Actions | Enforcement Mechanism |
+| Identity Principal | Target Deployment | Resource Scope | Permitted Actions | Explicitly Prohibited Actions | Enforcement Mechanism & Trust Boundary |
 |---|---|---|---|---|---|
-| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `dropDatabase`, `dropCollection`, `listCollections`, `find` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `update`, `insert`, `remove` | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `inprog`, `killop`, `killAnySession`, `impersonate`, `checkCursorSanity` | `grantRole`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test` (Command `killOp` executed on `admin.$cmd`) |
-| **`decision_os_destructive_executor`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS AND WIRE TRAFFIC** | Network policy (egress/ingress blocked) + zero credentials |
-| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | **NONE (Zero Admin Rights)** | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `dropDatabase` | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "admin", collection: "" }` | `find` (read-only system metadata) | `createRole`, `createUser`, `grantRole`, `dropUser` on `admin` | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `listDatabases` | `killAnySession`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test` |
-| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.ownership_locks` | `find`, `insert`, `update`, `remove`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; authorizes `findAndModify` command) |
-| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.provisioning_saga` | `find`, `insert`, `update`, `remove`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; authorizes `findAndModify` command) |
-| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_ledger` | `find` | `insert`, `update`, `remove`, `dropCollection` | MongoDB RBAC engine on `rs_coord` (Code 13) |
-| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.nonce_allocations` | **NONE (Zero Write Access)** | `insert`, `update`, `remove`, `dropCollection`, `dropDatabase` | Decoupled to `decision_os_nonce_allocator` |
-| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | **NONE** | `find`, `insert`, `update`, `remove`, `drop` | MongoDB RBAC engine on `rs_coord` (Code 13) |
-| **`decision_os_nonce_allocator`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.nonce_allocations` | `find`, `insert`, `update`, `createIndex` (Monotonic `$inc` blocks) | `remove`, `dropCollection`, `dropDatabase` | Dedicated Nonce Allocator RBAC on `rs_coord` |
-| **`decision_os_nonce_allocator`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13) |
-| **`decision_os_nonce_allocator`** | **`rs_test` (`:27018`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
-| **`decision_os_offline_bootstrap`** | **`rs_test` (`:27018`)** | Pre-allocated slot DBs (`slot_000`–`slot_255`) | `createRole`, `createUser`, `createCollection` | Runtime persistence | Ephemeral bootstrap container; shredded on exit |
-| **`decision_os_offline_bootstrap`** | **`rs_test` (`:27018`)** | `admin` | `createRole`, `createUser` (Broker principal only) | Granting cluster superusers | Ephemeral bootstrap container; shredded on exit |
-| **`decision_os_offline_bootstrap`** | **`rs_coord` (`:27019`)** | Initial collections & `nonce_seq_v1` | `insert`, `createIndex` | Runtime persistence | Ephemeral bootstrap container; shredded on exit |
-| **`decision_os_credential_broker`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `createUser`, `dropUser`, `createRole`, `dropRole`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser` | `dropDatabase`, `dropCollection`, application CRUD, and system DB access | Enclave service validating signed ownership claims |
-| **`decision_os_credential_broker`** | **`rs_test` (`:27018`)** | `admin`, `config`, `local`, `{ cluster: true }` | **NONE** | All commands and actions | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_credential_broker`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
-| **`decision_os_db_admin_${dbName}`** | **`rs_test` (`:27018`)** | `{ db: targetTestDb, collection: "" }` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser` | `dropDatabase`, `dropCollection`, any command on other databases | Scoped Dynamic DB Admin Role (Code 13 on other DBs) |
-| **`decision_os_db_admin_${dbName}`** | **`rs_test` (`:27018`)** | Other databases & cluster | **NONE** | All commands on $db 
-e targetTestDb$ or `{ cluster: true }` | MongoDB RBAC engine on `rs_test` (Code 13) |
-| **`decision_os_db_admin_${dbName}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
-| **`decision_os_network_fence_controller`** | **Infrastructure Plane** | Worker pod/container veth interfaces | Program netfilter/iptables egress drops to ports 27018/27019 | ALL MongoDB wire commands | CNI / Linux netfilter engine; zero DB credentials |
-| **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | `find`, `insert`, `createIndex` (Append-Only) | `update`, `remove`, `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; prevents `findAndModify` write ops) |
-| **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13) |
-| **`decision_os_audit_writer`** | **`rs_test` (`:27018`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials |
-| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Assigned test DB (`decision_os_test_${runId}_${workerId}`) | `find`, `insert`, `update`, `remove`, `createCollection`, `createIndex`, `dropIndex` | `dropDatabase`, `dropCollection`, `createRole`, `createUser` | Dynamic test role defined on assigned DB (Code 13) |
-| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Other test DBs & system DBs | **NONE** | Any read or write command | Scoped dynamic role isolation (Code 13) |
-| **`decision_os_worker_${runId}_${workerId}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Network policy + zero credentials |
-| **`decision_os_admin_operator`** | **API Interface Only** | HTTP `/v1/cleanup/reconcile` | Signed administrative reconciliation (`QUARANTINE`, `CONFIRM_CLEANED`) | Direct database wire access; redispatch of wire drop | Ed25519 signature verification on API gateway |
+| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `dropDatabase`, `dropCollection`, `listCollections`, `find` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `update`, `insert`, `remove` | MongoDB RBAC engine on `rs_test` (Code 13). Phase 4 drop strictly gated on durable Phases 1-3. |
+| **`decision_os_destructive_executor`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `inprog`, `killop`, `killAnySession`, `impersonate`, `checkCursorSanity` | `grantRole`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test` (Command `killOp` executed on `admin.$cmd`). |
+| **`decision_os_destructive_executor`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS AND WIRE TRAFFIC** | Network policy (egress/ingress blocked) + zero credentials. |
+| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | **NONE (Zero Admin Rights)** | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `dropDatabase` | MongoDB RBAC engine on `rs_test` (Code 13). |
+| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ db: "admin", collection: "" }` | `find` (read-only system metadata) | `createRole`, `createUser`, `grantRole`, `dropUser` on `admin` | MongoDB RBAC engine on `rs_test` (Code 13). |
+| **`decision_os_provisioner`** | **`rs_test` (`:27018`)** | `{ cluster: true }` | `listDatabases` | `killAnySession`, `shutdown`, `replSetReconfig` | MongoDB RBAC engine on `rs_test`. |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.ownership_locks` | `find`, `insert`, `update`, `remove`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; authorizes `findAndModify` command). |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.provisioning_saga` | `find`, `insert`, `update`, `remove`, `createIndex` | `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; authorizes `findAndModify` command). |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_ledger` | `find` | `insert`, `update`, `remove`, `dropCollection` | MongoDB RBAC engine on `rs_coord` (Code 13). |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.nonce_allocations` | **NONE (Zero Write Access)** | `insert`, `update`, `remove`, `dropCollection`, `dropDatabase` | Decoupled strictly to `decision_os_nonce_allocator`. |
+| **`decision_os_provisioner`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | **NONE** | `find`, `insert`, `update`, `remove`, `drop` | MongoDB RBAC engine on `rs_coord` (Code 13). |
+| **`decision_os_nonce_allocator`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.nonce_allocations` | `find`, `insert`, `update`, `createIndex` (Monotonic `$inc` blocks) | `remove`, `dropCollection`, `dropDatabase` | **Cryptographic Root of Trust.** Authorized for `$inc`. Governed by Allocator-Compromise Protocol (B38-38). |
+| **`decision_os_nonce_allocator`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13). |
+| **`decision_os_nonce_allocator`** | **`rs_test` (`:27018`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials. |
+| **`decision_os_offline_bootstrap`** | **`rs_test` (`:27018`)** | Pre-allocated slot DBs (`slot_000`–`slot_255`) | `createRole`, `createUser`, `createCollection` | Runtime persistence | Ephemeral bootstrap container; shredded on exit (`shred -u`). |
+| **`decision_os_offline_bootstrap`** | **`rs_test` (`:27018`)** | `admin` | `createRole`, `createUser` (Root setup only) | Granting cluster superusers | Ephemeral bootstrap container; shredded on exit (`shred -u`). |
+| **`decision_os_offline_bootstrap`** | **`rs_coord` (`:27019`)** | Initial collections & `nonce_seq_v1` | `insert`, `createIndex` | Runtime persistence | Ephemeral bootstrap container; shredded on exit (`shred -u`). |
+| **`decision_os_credential_broker`** *(Optional Dev Only)* | **`rs_test` (`:27018`)** | `{ db: "", collection: "" }` | `createUser`, `dropUser`, `createRole`, `dropRole`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser` | `dropDatabase`, `dropCollection`, application CRUD, and system DB access | **CONTROL-PLANE ROOT OF TRUST (Disabled in Prod via DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false).** Blast radius: All non-system DBs on `rs_test`. Regex/signatures provide ZERO native DB isolation. (Finding B38-36). |
+| **`decision_os_credential_broker`** | **`rs_test` (`:27018`)** | `admin`, `config`, `local`, `{ cluster: true }` | **NONE** | All commands and actions | MongoDB RBAC engine on `rs_test` (Code 13). |
+| **`decision_os_credential_broker`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials. |
+| **`decision_os_db_admin_slot_${k}`** | **`rs_test` (`:27018`)** | `{ db: "decision_os_test_slot_" + k, collection: "" }` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changePassword`, `getRole`, `getUser` | `dropDatabase`, `dropCollection`, any command on other databases | Scoped Partition Slot DB Admin. Natively constrained to slot $k$ by MongoDB RBAC (Code 13 on all other DBs). |
+| **`decision_os_db_admin_slot_${k}`** | **`rs_test` (`:27018`)** | Other databases & cluster | **NONE** | All commands on $db 
+e 	ext{slot\_}k$ or `{ cluster: true }` | MongoDB RBAC engine on `rs_test` (Code 13). |
+| **`decision_os_db_admin_slot_${k}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials. |
+| **`decision_os_network_fence_controller`** | **Infrastructure Plane** | Worker pod/container veth interfaces | Program netfilter/iptables egress drops to ports 27018/27019 | ALL MongoDB wire commands | CNI / Linux netfilter engine; zero DB credentials. Phase 1 fence execution. |
+| **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | `find`, `insert`, `createIndex` (Append-Only) | `update`, `remove`, `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; prevents `findAndModify` write ops). |
+| **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13). |
+| **`decision_os_audit_writer`** | **`rs_test` (`:27018`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials. |
+| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Assigned partition DB (`decision_os_test_slot_${k}`) | `find`, `insert`, `update`, `remove`, `createCollection`, `createIndex`, `dropIndex` | `dropDatabase`, `dropCollection`, `createRole`, `createUser` | Dynamic test role defined on assigned slot DB (Code 13). |
+| **`decision_os_worker_${runId}_${workerId}`** | **`rs_test` (`:27018`)** | Other test DBs & system DBs | **NONE** | Any read or write command | Scoped dynamic role isolation (Code 13). |
+| **`decision_os_worker_${runId}_${workerId}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Network policy + zero credentials. |
+| **`decision_os_admin_operator`** | **API Interface Only** | HTTP `/v1/cleanup/reconcile` | Signed administrative reconciliation (`QUARANTINE`, `CONFIRM_CLEANED`) | Direct database wire access; redispatch of wire drop | Ed25519 signature verification on API gateway. |
 
 ---
 
@@ -854,73 +917,101 @@ To eliminate authorization contradictions and ensure physical network isolation 
 2. The **Scoped Provisioning Service (`decision_os_db_admin_${targetTestDb}`)** possesses exact role- and user-management privileges scoped strictly to `{ db: targetTestDb, collection: "" }`. It executes `dropUser` and `dropRole` directly on the target test database, invalidating the MongoDB daemon's internal authorization cache. It possesses **ZERO destructive drop privileges**.
 3. The **Destructive Cleanup Executor (`decision_os_destructive_executor`)** possesses `{ cluster: true }` privileges on `rs_test` to inspect prepared transactions (`actions: ["inprog"]`), abort in-flight wire operations (`actions: ["killop"]`), and terminate logical sessions (`actions: ["killAnySession", "impersonate"]`). It possesses `{ db: "", collection: "" }` with `dropDatabase` on `rs_test`. It possesses **ZERO user/role administration rights**.
 
-#### 4. Executable Operation Allocation Matrix for All 8 Revocation Operations
-The following matrix resolves exact responsibilities, identities, privileges, acknowledgements, retry behaviors, and fail-closed conditions for every revocation operation:
+#### 4. Executable Operation Allocation Matrix for All Revocation Operations (Finding B38-39)
+The following matrix establishes the **canonical 5-phase execution order**, assigning exact phases, responsibilities, identities, privileges, acknowledgements, retry behaviors, and fail-closed conditions for every revocation operation:
 
-| Operation Index & Name | Responsible Service | Required MongoDB / Infra Identity | Exact Privilege Scope & Resource | Target Deployment & Namespace | Required Acknowledgement | Retry & Crash Recovery Behavior | Fail-Closed Condition |
-|---|---|---|---|---|---|---|---|
-| **1. Prepared Transaction Resolution** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["inprog"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `currentOp` returns 0 matching operations with `preparedTransaction: true` | Rescan `currentOp` on restart; coordinate abort with transaction coordinator | If prepared transaction cannot be aborted within 30s, halt teardown; transition to `QUARANTINED`. Never drop database while prepared transactions remain. |
-| **2. In-Flight Operation Cancellation (`killOp`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killop"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned for all active worker `opid`s | Query active ops; re-issue `killOp` until active count is 0 | If `killOp` fails repeatedly, halt; transition to `QUARANTINED`. Do not dispatch wire drop while worker ops are executing. |
-| **3. Logical Session Termination (`killAllSessionsByPattern`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killAnySession", "impersonate"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned from `killAllSessionsByPattern` | Idempotent command; re-execute on process restart or network timeout | If command fails, retry 3 times with exponential backoff (1s, 2s, 4s); if persistent failure, mark `QUARANTINED`. |
-| **4. Server-Side Identity Deletion (`dropUser`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_${targetTestDb}` | `actions: ["dropUser"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `UserNotFound` Code 11) | Idempotent command; retried on network partition; orphan reaper sweeps if stalled | Executor will NOT proceed to `DISPATCHING` without verified majority acknowledgement of `dropUser`. If unreachable, lease expires $
-ightarrow$ `QUARANTINED`. |
-| **5. Server-Side Role Deletion (`dropRole`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_${targetTestDb}` | `actions: ["dropRole"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `RoleNotFound`) | Idempotent; retried on restart; orphan reaper sweeps if stalled | If unconfirmed, recorded in saga with `compensationPending: true`; background reaper completes. |
-| **6. Lingering TCP Socket Behavior** | MongoDB Daemon Engine Subsystem | N/A (Server-side daemon cache invalidation) | N/A (Internal engine cache lookup) | `rs_test:27018` (Server connection pool) | Commands over lingering sockets fail with Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`) | Engine re-evaluates user credentials on next wire packet after `dropUser` | Daemon halts command processing immediately upon missing user verifier; zero reads or writes permitted. |
-| **7. Fresh Authentication Rejection** | MongoDB Daemon Authentication Subsystem | N/A (SCRAM-SHA-256 verifier lookup) | N/A (Internal `system.users` catalog lookup) | `rs_test:27018` (`targetTestDb`) | SCRAM-SHA-256 handshake fails with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`) | Attempt rejected natively by MongoDB wire protocol | Wire connection cannot establish authenticated session. |
-| **8. Network Transport Fencing** | Network Fence Controller (`apps/network-fence-controller`) | `decision_os_network_fence_controller` | Egress drop policy on container veth / Linux netfilter | Worker Container Network Namespace | Controller queries data plane (`iptables -C` or CNI status) and returns `{ ok: 1, fenced: true }` | Re-verified by controller before teardown proceeds; re-applied on container restart | If network controller is unreachable or fails to program drop rule within 15s, fail closed $
-ightarrow$ halt teardown; transition to `QUARANTINED`. |
+| Execution Phase | Operation Index & Name | Responsible Service | Required Identity & Protocol | Exact Privilege Scope & Resource | Target Deployment & Namespace | Required Durable Acknowledgement | Retry & Crash Recovery Behavior | Fail-Closed Condition |
+|---|---|---|---|---|---|---|---|---|
+| **Phase 1: Transport Fencing** | **1. Network Transport Isolation (`NET_FENCED`)** | Network Fence Controller (`apps/network-fence-controller`) | `decision_os_network_fence_controller` via Linux netfilter / CNI | Egress drop policy on container veth / host iptables | Worker Container Network Namespace | Controller queries kernel data plane (`iptables -C`) and returns `{ ok: 1, fenced: true }`; recorded as `phase1_net_fenced_at` in `cleanup_ledger` | Idempotent; re-verified on container restart or coordinator crash | If controller fails to verify drop rule within 15s, fail closed $\rightarrow$ halt teardown; transition to `QUARANTINED`. |
+| **Phase 2: Identity Revocation** | **2. Server-Side Identity Deletion (`dropUser`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_slot_${k}` via mTLS handoff | `actions: ["dropUser"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `UserNotFound` Code 11); recorded as `phase2_identity_revoked_at` in `cleanup_ledger` | Idempotent; retried on network partition; orphan reaper sweeps if stalled | Executor strictly blocks Phase 3 and Phase 4 until `dropUser` majority ack is verified. If unreachable, lease expires $\rightarrow$ `QUARANTINED`. |
+| **Phase 2: Identity Revocation** | **3. Server-Side Role Deletion (`dropRole`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_slot_${k}` via mTLS handoff | `actions: ["dropRole"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `RoleNotFound` Code 31) | Idempotent; retried on restart; orphan reaper sweeps if stalled | If unconfirmed, recorded in saga with `compensationPending: true`; background reaper completes. |
+| **Phase 3: Op Cancellation** | **4. Prepared Transaction Resolution** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["inprog"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `currentOp` returns 0 matching operations with `preparedTransaction: true` | Rescan `currentOp` on restart; coordinate abort with transaction coordinator | If prepared transaction cannot be aborted within 30s, halt teardown; transition to `QUARANTINED`. Never proceed to Phase 4 while prepared transactions remain. |
+| **Phase 3: Op Cancellation** | **5. In-Flight Operation Cancellation (`killOp`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killop"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned for all active worker `opid`s; active query count reaches 0 | Query active ops; re-issue `killOp` until active count is 0 | If `killOp` fails repeatedly, halt; transition to `QUARANTINED`. Never dispatch Phase 4 wire drop while worker ops are executing. |
+| **Phase 3: Op Cancellation** | **6. Logical Session Termination (`killAllSessionsByPattern`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killAnySession", "impersonate"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned from `killAllSessionsByPattern`; recorded as `phase3_ops_killed_at` in `cleanup_ledger` | Idempotent command; re-execute on process restart or network timeout | If command fails, retry 3 times with exponential backoff (1s, 2s, 4s); if persistent failure, mark `QUARANTINED`. |
+| **Phase 4: Storage Deletion** | **7. Database Storage Deletion (`dropDatabase`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["dropDatabase"]` on `{ db: "", collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with majority replication proof $(t, ts)$ and oplog correlation token; recorded as `phase4_storage_dropped_at` in `cleanup_ledger` | Idempotent; if wire drop response lost, verify via oplog correlation scanner; never redispatch | **Prerequisite Gate:** Strictly blocked unless Phases 1, 2, and 3 are durably verified in `cleanup_ledger`. If ambiguous drop outcome, locks held indefinitely in `QUARANTINED`. |
+| **Phase 5: Audit Finalization** | **8. Tamper-Evident Audit Record & Checkpoint** | Audit Service (`apps/audit-service`) | `decision_os_audit_writer` | `actions: ["find", "insert", "createIndex"]` on `cleanup_audit_log` | `rs_coord:27019` (`decision_os_coordination`) | SHA-256 hash-chain appended to `cleanup_audit_log`; signed checkpoint emitted to external WORM; recorded as `phase5_audit_finalized_at` | Idempotent append-only record; retried on restart until acknowledged | Audit log failure alerts SRE; triggers fail-closed executor freeze. |
+| **Engine Invariant** | **9. Lingering TCP Socket Invalidation** | MongoDB Daemon Engine Subsystem | N/A (Server-side daemon cache invalidation) | N/A (Internal engine cache lookup) | `rs_test:27018` (Server connection pool) | Commands over lingering sockets fail with Code 11 (`UserNotFound`) or Code 13 (`Unauthorized`) | Engine re-evaluates user credentials on next wire packet after `dropUser` | Daemon halts command processing immediately upon missing user verifier; zero reads or writes permitted. |
+| **Engine Invariant** | **10. Fresh Authentication Rejection** | MongoDB Daemon Authentication Subsystem | N/A (SCRAM-SHA-256 verifier lookup) | N/A (Internal `system.users` catalog lookup) | `rs_test:27018` (`targetTestDb`) | SCRAM-SHA-256 handshake fails with Code 11 (`UserNotFound`) or Code 18 (`AuthenticationFailed`) | Attempt rejected natively by MongoDB wire protocol | Wire connection cannot establish authenticated session. |
 
 #### 4a. Formal Distinction of the Six Isolation Layers (Finding B38-35)
 To eliminate conceptual conflation and establish defense-in-depth, Decision OS distinguishes six distinct layers of worker isolation:
 
 1. **Logical Session Invalidation:** Performed via `killAllSessionsByPattern`. Deletes session documents from `config.system.sessions`, terminating logical transaction context. Does NOT close TCP sockets.
-2. **Server-Side User Deletion:** Performed via `dropUser` with `w: "majority"`. Deletes user credentials from `system.users`, invalidating the MongoDB daemon's in-memory authorization cache. Causes subsequent wire commands on open sockets to fail with Error Code 11/13.
+2. **Server-Side User Deletion:** Performed via `dropUser` with `w: "majority", j: true`. Deletes user credentials from `system.users`, invalidating the MongoDB daemon's in-memory authorization cache. Causes subsequent wire commands on open sockets to fail with Error Code 11/13.
 3. **Operation Cancellation:** Performed via `killOp` (action `killop` on `{ cluster: true }`). Interrupts currently running wire queries and storage operations in the execution pipeline.
 4. **Physical TCP Socket Retention:** Physical TCP connection state maintained by the client OS kernel and MongoDB daemon connection pool. Sockets remain open until closed by client, severed by network fencing, or terminated by process exit.
 5. **Network Transport Isolation:** Programmed by the Network Fence Controller at the Linux netfilter / iptables or CNI eBPF layer. Drops IP packets at layer 3/4 before they reach MongoDB port 27018 or 27019.
 6. **Database Deletion:** Performed via `dropDatabase` by the Destructive Cleanup Executor. Removes database files and catalog entries from the WiredTiger storage engine.
 - **Architectural Tenet:** **`dropDatabase` is NEVER represented as network transport fencing.** Dropping a database is a storage engine DDL mutation that deletes disk catalog structures; it possesses zero transport-layer fencing capability and does not sever network connections.
 
-#### 5. Durable Coordination Protocol Between Executor, Network Controller, and Provisioner
-To ensure the Cleanup Executor never executes operations outside its authorized boundary and guarantees multi-layer fencing:
+#### 5. Canonical 5-Phase Ordered Revocation Protocol Between Executor, Network Controller, and Provisioner (Finding B38-39)
+To guarantee strict execution ordering, eliminate concurrency races, and ensure database deletion cannot proceed before transport and identity revocation are durably acknowledged:
 
-1. **Step 1 (Claim Request):** The Cleanup Executor receives `POST /v1/cleanup/request`, validates the caller signature and ownership lease, and records state `CLAIMED` in `cleanup_ledger` with `w: "majority"`.
-2. **Step 2 (Network Transport Fencing Handoff):** The Executor sends a signed mutual TLS request `POST /v1/orchestrator/fence-worker` to the Network Fence Controller:
-   ```json
-   {
-     "fenceId": "fence_550e8400_e29b",
-     "requestId": "550e8400-e29b-41d4-a716-446655440000",
-     "runId": "runA",
-     "workerId": "wA",
-     "workerPodLabel": "decision-os-worker-runA-wA",
-     "targetDatabases": ["decision_os_test_runA_wA"],
-     "action": "ISOLATE_WORKER_EGRESS",
-     "requestedAt": "2026-11-06T02:09:59.000Z"
-   }
-   ```
+1. **Initial Claim & Phase 1 (Network Transport Fencing - `NET_FENCED`):**
+   - The Cleanup Executor receives `POST /v1/cleanup/request`, validates caller Ed25519 signature and ownership lease, and records state `CLAIMED` in `cleanup_ledger` with `w: "majority"`.
+   - The Executor issues a signed mutual TLS request `POST /v1/orchestrator/fence-worker` to the Network Fence Controller:
+     ```json
+     {
+       "fenceId": "fence_550e8400_e29b",
+       "requestId": "550e8400-e29b-41d4-a716-446655440000",
+       "runId": "runA",
+       "workerId": "wA",
+       "workerPodLabel": "decision-os-worker-runA-wA",
+       "targetDatabases": ["decision_os_test_slot_01"],
+       "action": "ISOLATE_WORKER_EGRESS",
+       "requestedAt": "2026-11-10T02:09:59.000Z"
+     }
+     ```
    - The Network Fence Controller validates the signature, applies netfilter/iptables rules dropping all egress from the worker container to ports 27018 and 27019, verifies the rule in the kernel data plane (`iptables -C`), and returns HTTP 200 `{ ok: 1, fenced: true, netfilterVerified: true }`.
-   - *Failure & Retry:* If the controller is unreachable, the Executor retries 3 times with exponential backoff (1s, 2s, 4s). If fencing cannot be verified within 15s, teardown **fails closed**: the Executor transitions the request to `OUTCOME_UNKNOWN` / `QUARANTINED`, preserving `dropExecutionLock: true`.
-3. **Step 3 (Scoped Identity Revocation Handoff):** The Executor sends a signed mutual TLS request `POST /v1/provisioning/revoke-worker` to the Provisioning Service:
-   ```json
-   {
-     "revocationId": "rev_550e8400_e29b",
-     "requestId": "550e8400-e29b-41d4-a716-446655440000",
-     "targetDatabase": "decision_os_test_runA_wA",
-     "workerUsername": "decision_os_worker_runA_wA",
-     "requestedAt": "2026-11-06T02:10:00.000Z"
-   }
-   ```
-   - The Provisioning Service verifies the signature, binds to `decision_os_db_admin_runA_wA`, dispatches `dropUser` and `dropRole` with `{ writeConcern: { w: "majority", j: true } }`, marks `ownership_locks.state = 'REVOKED'`, and responds with HTTP 200 `{ ok: 1, userDropped: true, roleDropped: true }`.
-4. **Step 4 (Executor Revocation & Cancellation):**
-   - Upon receiving HTTP 200 confirmation, the Cleanup Executor connects as `decision_os_destructive_executor` to `rs_test:27018`.
-   - It inspects `currentOp` for prepared transactions (`actions: ["inprog"]` on `{ cluster: true }`); if found, coordinates abort.
+   - The Executor writes `{ phase1_net_fenced_at: new Date() }` to `cleanup_ledger` with `w: "majority"`.
+   - *Failure & Retry:* If the controller is unreachable, the Executor retries 3 times with exponential backoff (1s, 2s, 4s). If fencing cannot be verified within 15s, teardown **fails closed**: the Executor transitions the request to `QUARANTINED`, preserving `dropExecutionLock: true`.
+2. **Phase 2 (Scoped Identity Revocation - `IDENTITY_REVOKED`):**
+   - The Executor issues a signed mutual TLS request `POST /v1/provisioning/revoke-worker` to the Provisioning Service:
+     ```json
+     {
+       "revocationId": "rev_550e8400_e29b",
+       "requestId": "550e8400-e29b-41d4-a716-446655440000",
+       "targetDatabase": "decision_os_test_slot_01",
+       "workerUsername": "decision_os_worker_runA_wA",
+       "requestedAt": "2026-11-10T02:10:00.000Z"
+     }
+     ```
+   - The Provisioning Service verifies the signature, binds to `decision_os_db_admin_slot_01`, dispatches `dropUser` and `dropRole` with `{ writeConcern: { w: "majority", j: true } }`, marks `ownership_locks.state = 'REVOKED'`, and responds with HTTP 200 `{ ok: 1, userDropped: true, roleDropped: true }`.
+   - The Executor writes `{ phase2_identity_revoked_at: new Date() }` to `cleanup_ledger` with `w: "majority"`.
+   - *Failure & Retry:* If Provisioner is unreachable, Executor retries with exponential backoff. If unacknowledged when lease expires, transitions to `QUARANTINED`. **The Executor NEVER attempts to execute `dropUser` itself.**
+3. **Phase 3 (In-Flight Operation & Session Cancellation - `OPS_KILLED`):**
+   - The Cleanup Executor connects as `decision_os_destructive_executor` to `rs_test:27018`.
+   - It inspects `currentOp` for prepared transactions (`actions: ["inprog"]` on `{ cluster: true }`); if found, coordinates abort before proceeding.
    - It issues `killOp` (`actions: ["killop"]` on `{ cluster: true }`, executed on `admin.$cmd`) against active worker ops.
    - It executes `killAllSessionsByPattern` (`actions: ["killAnySession", "impersonate"]` on `{ cluster: true }`).
-5. **Step 5 (Crash & Failure Recovery During Handoff):**
-   - *If Provisioner is down or returns error:* The Executor retries with exponential backoff. If unreachable when the cleanup lease expires, the Executor transitions to `QUARANTINED`. **The Executor NEVER attempts to execute `dropUser` or `dropRole` itself.**
-   - *If Executor crashes after Step 3, before Step 4:* On restart, the Executor detects `state === 'CLAIMED'` and `ownership_locks.state === 'REVOKED'`. It resumes Step 4 without re-requesting identity creation.
-6. **Step 6 (Physical Teardown):**
-   - Only after Steps 1–4 are fully acknowledged does the Executor transition `cleanup_ledger` to `DISPATCHING` (`dropExecutionLock = true`), write the audit log entry, and issue `db.runCommand({ dropDatabase: 1, comment: ... })`.
+   - The Executor writes `{ phase3_ops_killed_at: new Date() }` to `cleanup_ledger` with `w: "majority"`.
+4. **Phase 4 (Database Storage Deletion - `STORAGE_DROPPED`):**
+   - **MANDATORY PREREQUISITE GATE:** Before dispatching `dropDatabase`, the Executor executes an atomic precondition check on `cleanup_ledger`:
+     ```javascript
+     const record = await cleanupLedger.findOne({ requestId });
+     if (!record.phase1_net_fenced_at || !record.phase2_identity_revoked_at || !record.phase3_ops_killed_at) {
+       await cleanupLedger.updateOne(
+         { requestId },
+         { $set: { state: "QUARANTINED", reason: "MISSING_REVOCATION_PREREQUISITES", quarantinedAt: new Date() } }
+       );
+       throw new SecurityException("Cannot drop database: Prior revocation phases not durably verified!");
+     }
+     ```
+   - Only after verifying all three prerequisite phases does the Executor transition `cleanup_ledger` to `DISPATCHING` (`dropExecutionLock = true`, `w: "majority"`).
+   - The Executor dispatches `db.runCommand({ dropDatabase: 1, comment: JSON.stringify({ requestId, slot: "slot_01", runA, wA }) })` on `rs_test:27018`.
+   - Upon receiving majority drop proof, the Executor writes `{ state: "CLEANED", dropExecutionLock: false, phase4_storage_dropped_at: new Date() }` to `cleanup_ledger`.
+5. **Phase 5 (Audit Finalization - `AUDIT_FINALIZED`):**
+   - The Audit Service appends a tamper-evident SHA-256 hash-chained record (`DB_CLEANED`) to `cleanup_audit_log` on `rs_coord:27019`.
+   - Signed milestone checkpoint is emitted to external WORM storage.
+   - The Executor writes `{ phase5_audit_finalized_at: new Date() }` to `cleanup_ledger` and returns HTTP 200 `{ status: "CLEANED" }`.
+
+#### 6. Idempotent Crash Recovery Protocol for All 5 Phases (Finding B38-39)
+If the Cleanup Executor or Network Controller crashes at any point during teardown, the system guarantees deterministic, idempotent recovery without skipping or reordering phases:
+- **Crash after Phase 1, before Phase 2:** On restart, recovery coordinator reads `phase1_net_fenced_at != null` and `phase2_identity_revoked_at == null`. It re-verifies netfilter status, then idempotently resumes at Phase 2 (`revoke-worker`).
+- **Crash after Phase 2, before Phase 3:** Reads `phase2_identity_revoked_at != null` and `phase3_ops_killed_at == null`. It directly executes Phase 3 (`killOp` and session invalidation).
+- **Crash after Phase 3, before Phase 4:** Reads `phase3_ops_killed_at != null` and `state === 'CLAIMED'`. All prerequisites are satisfied; it transitions to `DISPATCHING` and dispatches Phase 4 (`dropDatabase`).
+- **Crash during Phase 4 wire drop:** If the executor crashes while `{ dropDatabase: 1 }` is in-flight, on restart it detects `state === 'DISPATCHING'`. Per fail-closed policy, it transitions to `OUTCOME_UNKNOWN` / `QUARANTINED`. It invokes the Oplog Correlation Scanner to verify whether the drop committed. It **NEVER re-dispatches the drop command**.
+- **Crash after Phase 4, before Phase 5:** Reads `phase4_storage_dropped_at != null` and `phase5_audit_finalized_at == null`. It retries the append-only audit event submission to finalize the ledger.
 
 ---
 
@@ -950,37 +1041,44 @@ Where `InstanceSalt` was a 32-bit random value generated at startup, and `Monoto
    Under AES-GCM, encrypting two distinct plaintext messages under the same key and identical nonce exposes the XOR difference of the plaintexts and permits recovery of the GCM authentication hash key $H$, destroying all confidentiality and authenticity.
 6. Therefore, the v1.5.0 construction does **NOT** guarantee nonce uniqueness across process lifetimes.
 
-#### 3. Durable Globally Coordinated Block Allocation Protocol with Decoupled Authority (NIST SP 800-38D Section 8.2.1, Finding B38-32)
-To achieve mathematical certainty of nonce uniqueness across multiple replicas, crashes, and restarts, Decision OS replaces volatile random salts with a **Durable Globally Coordinated Counter Range Block Reservation Protocol** adhering to NIST SP 800-38D Section 8.2.1 Deterministic Construction, hardened through dedicated service authority decoupling:
+#### 3. Durable Globally Coordinated Block Allocation Protocol with Decoupled Authority (NIST SP 800-38D Section 8.2.1, Finding B38-32, B38-38)
+To achieve mathematical certainty of nonce uniqueness across multiple replicas, crashes, and restarts, Decision OS replaces volatile random salts with a **Durable Globally Coordinated Counter Range Block Reservation Protocol** adhering to NIST SP 800-38D Section 8.2.1 Deterministic Construction, hardened through dedicated service authority decoupling and formal root-of-trust recognition:
 
-##### 1. Nonce Allocation Authority Hardening & Unauthorized Reset Prevention (Finding B38-32)
-1. **Decoupled Allocation Authority:** Nonce allocation is separated entirely from the general provisioning service into an independent **Nonce Allocation Service** (`apps/nonce-allocator`, running identity `decision_os_nonce_allocator`) on `rs_coord:27019`.
-2. **Stripping General Provisioner Authority:** The central provisioner identity (`decision_os_provisioner`) has **ZERO write or update access** to `decision_os_coordination.nonce_allocations`. It cannot execute `update`, `insert`, or `remove`. Even if the central provisioner is completely compromised, the attacker cannot execute `$set: { nextBlockStart: 0 }` to regress counter state.
-3. **Dedicated Monotonic Allocation Implementation:** The Nonce Allocation Service exposes a strictly constrained API (`POST /v1/nonce/lease-block`) over mTLS. The allocator implementation contains **zero `$set` pathways** for `nextBlockStart` and executes exclusively:
-   ```javascript
-   const allocation = await db.collection("nonce_allocations").findOneAndUpdate(
-     { _id: `nonce_seq_${keyVersion}`, nextBlockStart: { $lt: maxInvocationCeiling } },
-     { $inc: { nextBlockStart: BLOCK_SIZE }, $set: { allocatedAt: new Date() } },
-     { returnDocument: "after", writeConcern: { w: "majority", j: true } }
-   );
-   ```
-4. **Pre-Initialization of Sequence Document:** The sequence document is pre-initialized during offline cluster bootstrap (`decision_os_offline_bootstrap`) before concurrent allocation begins:
-   ```json
-   {
-     "_id": "nonce_seq_v1",
-     "keyVersion": "v1",
-     "nextBlockStart": NumberLong(0),
-     "blockSize": NumberInt(1048576),
-     "allocatedAt": ISODate("2026-11-06T00:00:00.000Z"),
-     "maxInvocationCeiling": NumberLong("281474976710656")
-   }
-   ```
-5. **Duplicate-Key & Key Rotation Race Handling:** When a new key version (`v2`) is introduced, the allocator attempts an atomic initialization. If concurrent allocator replicas attempt simultaneous creation, MongoDB raises Duplicate Key Error Code 11000 (`E11000 duplicate key error collection: nonce_allocations index: _id_`). The allocator catches Code 11000 and gracefully falls back to `findOneAndUpdate` with `$inc`.
-6. **Consensus Linearizability & Election Recovery:** Every block reservation requires journaled majority write concern (`w: "majority", j: true`). If a primary failover or stepdown interrupts allocation, any unacknowledged write rolls back, and the client retries the lease request against the new primary, guaranteeing that no two replicas ever lease the same counter block.
-7. **Disaster Recovery Mandate (Backup Restore Epoch Bumping):** Cold restoration of `rs_coord` from asynchronous backups could roll back `nextBlockStart`. Any database backup restoration mandates an **immediate KMS Epoch Bump and key rotation to `keyVersion + 1`**. Encryption with an old key version after a database restore is strictly prohibited.
-8. **Allocator Compromise Containment & Monotonicity Watchdog:** The Nonce Allocation Service has zero network connectivity and zero credentials on `rs_test:27018`. It possesses access strictly to `nonce_allocations` on `rs_coord:27019`. An external integrity watchdog monitors leased block boundaries in audit logs. If an out-of-order or regressed block is detected, it triggers an immediate emergency key rotation in KMS, retiring the active key version and alerting SRE.
+##### 1. Nonce Allocation Authority Separation & Compromise Classification (Finding B38-32, B38-38)
+Decision OS distinguishes three distinct compromise classes regarding counter state custody:
 
-##### 2. Exact 96-Bit Nonce Encoding & Bit Layout
+1. **Class 1 — Central Provisioner Compromise (`decision_os_provisioner`):**
+   - *Status: PREVENTED NATIVELY.*
+   - *Mechanism:* The central provisioner identity has **ZERO write or update access** to `decision_os_coordination.nonce_allocations` on `rs_coord:27019`. It cannot execute `update`, `insert`, or `remove`. Even if the central provisioner process is completely compromised or arbitrary remote code execution is achieved, the attacker cannot execute `$set: { nextBlockStart: 0 }` to regress counter state. The provisioner can only lease blocks by presenting an mTLS request to the allocator.
+2. **Class 2 — Nonce Allocator Compromise (`decision_os_nonce_allocator`):**
+   - *Status: CRYPTOGRAPHIC ROOT OF TRUST (Detected & Recoverable; NOT Prevented at MongoDB RBAC Layer).*
+   - *Engine Limitation:* In MongoDB 8.0 RBAC, authorization is granted at the collection action level: `actions: ["update"]` on `nonce_allocations`. MongoDB's authorization engine **cannot restrict the update operator**—it possesses no mechanism to permit `$inc` while forbidding `$set`. Furthermore, MongoDB document schema validation (`$jsonSchema`) validates document structure upon write, but cannot enforce inter-update temporal monotonicity (i.e. verifying that $x_{\text{new}} > x_{\text{old}}$ across time).
+   - *Compromise Reality:* An adversary who compromises the Nonce Allocation Service memory or extracts its MongoDB connection credentials CAN directly execute `updateOne({ _id: "nonce_seq_v1" }, { $set: { nextBlockStart: 0 } })`. Therefore, the Nonce Allocation Service is explicitly identified as an **Independent Cryptographic Root of Trust**. Its security cannot be asserted merely through database RBAC.
+3. **Class 3 — Coordination Replica Set Compromise (`rs_coord:27019`):**
+   - *Status: STORAGE ROOT OF TRUST (Detected & Recoverable).*
+   - *Mechanism:* Direct compromise of the coordination replica set storage engine or cluster administrator allows arbitrary modification of sequence documents.
+
+##### 2. Allocator-Compromise Response Protocol: Emergency Kill-Switch & Epoch Invalidation (Finding B38-38)
+Because MongoDB RBAC cannot prevent an authorized allocator identity from executing `$set`, Decision OS specifies a rigorous multi-stage emergency response protocol upon allocator compromise:
+
+1. **Emergency Encryption Halt (Kill-Switch):**
+   - An external **Monotonicity Watchdog** continuously cross-references leased block boundaries emitted in `cleanup_audit_log` against high-water marks.
+   - If a regressed block is detected (e.g. `blockStart <= historical_max_blockStart`), or if the allocator emits duplicate blocks, the watchdog trips the coordination emergency halt latch (`rs_coord.emergency_halt = true`).
+   - The kill-switch signals all worker nodes via mTLS to abort all active encryption operations and revoke local leased blocks immediately.
+2. **KMS Key Material Retirement & Epoch Invalidation:**
+   - The master envelope key material (KEK / DEK) is immediately retired in KMS / Vault.
+   - The KMS advances the envelope key epoch by incrementing `KeyVersionPrefix` (e.g. `0x0001` $\rightarrow$ `0x0002`).
+   - **Mathematical Invariant:** Because the 96-bit nonce embeds `KeyVersionPrefix (16 bits)` as its high-order bytes, any nonce issued under `KeyVersionPrefix = 0x0002` is **provably disjoint** from all nonces issued under `KeyVersionPrefix = 0x0001`, even if `nextBlockStart` was rewound to 0 by an attacker. Domain separation is preserved across the key rotation boundary.
+3. **Quarantine & Recovery of Outstanding Envelopes:**
+   - All envelopes encrypted during the compromised epoch window are identified via `cleanup_ledger` timestamps and quarantined.
+   - Quarantined payloads are decrypted under the retired DEK, verified for integrity, and re-encrypted with freshly allocated nonces under the new DEK epoch.
+4. **Sequence Re-Seeding & Forensic Ledger Audit:**
+   - The sequence document is re-seeded under a new identifier: `_id: "nonce_seq_v2"` with `nextBlockStart: NumberLong(0)`.
+   - The audit ledger hash chain is traversed to verify all events against the independent external checkpoint, and an incident report is generated for SRE.
+5. **Watchdog Limitation Acknowledgment:**
+   - The watchdog is a **detection and circuit-breaking mechanism**, NOT an active prevention boundary. It detects regressions and halts further encryption, but cannot retroactively reverse nonce collisions that already occurred on the wire prior to detection.
+
+##### 3. Exact 96-Bit Nonce Encoding & Bit Layout
 The 96-bit (12-byte) initialization vector is structured as follows:
 $$\text{IV} = \text{KeyVersionPrefix}_{16\text{-bit}} \parallel \text{AllocatedRangeBlock}_{32\text{-bit}} \parallel \text{MonotonicCounter}_{48\text{-bit}} = 96\text{ bits (12 bytes)}$$
 
@@ -999,7 +1097,7 @@ $$\text{IV} = \text{KeyVersionPrefix}_{16\text{-bit}} \parallel \text{AllocatedR
   - Initialized to 0 when a new block is leased, and incremented atomically via `Atomics.add` or atomic 64-bit local integer increment for each encryption within the leased block range $[0, \text{BLOCK\_SIZE} - 1]$.
   - Formatted as a 48-bit (6-byte) unsigned big-endian integer.
 
-##### 3. BSON Numeric Types, Ceilings, and Block Boundary Handling
+##### 4. BSON Numeric Types, Ceilings, and Block Boundary Handling
 - **BSON Numeric Types:**
   - `nextBlockStart`: BSON `NumberLong` (64-bit signed integer).
   - `blockSize`: BSON `NumberInt` (32-bit signed integer).
@@ -1013,7 +1111,7 @@ $$\text{IV} = \text{KeyVersionPrefix}_{16\text{-bit}} \parallel \text{AllocatedR
 - **Availability Fail-Closed Behavior:**
   - If `rs_coord:27019` or the Nonce Allocation Service is partitioned or unreachable, and a provisioner replica's local block is exhausted, the provisioner **strictly fails closed**. It refuses to encrypt credentials, rejecting claim requests with HTTP 503 `SERVICE_UNAVAILABLE_NONCE_UNAVAILABLE`. Local uncoordinated counters or random IV fallbacks are strictly prohibited.
 
-##### 4. Mathematical Collision Proof Conditional on Trust Assumptions
+##### 5. Mathematical Collision Proof Conditional on Clearly Stated Trust Assumptions
 Let $R_a$ and $R_b$ be two distinct leased blocks: $R_a \ne R_b$. For any counters $c_a, c_b \in [0, \text{BLOCK\_SIZE} - 1]$:
 $$\text{AllocatedRangeBlock}(R_a) \ne \text{AllocatedRangeBlock}(R_b) \implies \text{IV}(R_a, c_a) \ne \text{IV}(R_b, c_b)$$
 For encryptions within the same block $R_a$, strict atomic in-memory incrementation ensures:
@@ -1025,9 +1123,9 @@ $$\text{KeyVersionPrefix}(v_1) \ne \text{KeyVersionPrefix}(v_2) \implies \text{I
 The mathematical uniqueness guarantee ($P(\text{collision}) = 0$) is **strictly conditional** upon the following trust assumptions:
 1. **Trust Assumption 1 (KMS/Vault Key Custody):** The master envelope key material in cloud KMS / HashiCorp Vault is not compromised, and key version identifiers monotonically advance without prefix reuse.
 2. **Trust Assumption 2 (Consensus Linearizability):** The MongoDB replica set consensus mechanism on `rs_coord:27019` maintains linearizability through journaled majority writes (`w: "majority", j: true`), guaranteeing that successfully acknowledged block leases are never regressed across primary elections.
-3. **Trust Assumption 3 (Allocator Authority Integrity):** The Nonce Allocation Service code correctly applies atomic `$inc` and does not execute unauthorized `$set` mutations or sequence resets.
+3. **Trust Assumption 3 (Allocator Authority Integrity):** The Nonce Allocation Service process memory and credentials are uncompromised, correctly applying atomic `$inc` and executing no unauthorized `$set` mutations or sequence resets.
 4. **Trust Assumption 4 (Disaster Recovery Compliance):** Any restoration of `rs_coord` from cold backups enforces a mandatory KMS Epoch Bump and rotation to a fresh key version before encryption resumes.
-*If any of these trust assumptions are breached (e.g. key material compromised, allocator code modified, or uncoordinated backup restore), mathematical uniqueness cannot be guaranteed.* $\blacksquare$
+*If any of these trust assumptions are breached (e.g. key material compromised, allocator code modified, or uncoordinated backup restore), mathematical uniqueness cannot be guaranteed. Unconditional nonce uniqueness claims are explicitly rejected.* $\blacksquare$
 
 #### 4. Versioned Envelope Schema & Authenticated Data (AAD)
 The encrypted credential envelope stored in `ownership_locks.credentialEnvelope` adheres to the following strict schema:
@@ -1266,7 +1364,7 @@ Workers are denied wire write access to `decision_os_coordination.cleanup_ledger
 
 ---
 
-### 9.3 State Machine Transition Table
+### 9.3 State Machine Transition Table (Reconciled with 5-Phase Revocation — Finding B38-39)
 
 ```mermaid
 stateDiagram-v2
@@ -1274,9 +1372,10 @@ stateDiagram-v2
     REQUESTED --> REJECTED: Validation Failure / Nonce Replay
     REQUESTED --> CLAIMED: Acquire Execution Lease (Atomic CAS)
     CLAIMED --> RECONCILIATION_REQUIRED: Authority Superseded / Gen Bumped
-    CLAIMED --> DISPATCHING: Pre-Wire Verification (dropExecutionLock = true)
+    CLAIMED --> QUARANTINED: Missing Revocation Prerequisites (Phases 1-3 unverified)
+    CLAIMED --> DISPATCHING: Prerequisites Verified (Phases 1-3 Confirmed, dropExecutionLock = true)
 
-    DISPATCHING --> CLEANED: Synchronous Wire Drop Success (dropExecutionLock = false)
+    DISPATCHING --> CLEANED: Synchronous Wire Drop Success (Phase 4 Done, dropExecutionLock = false)
     DISPATCHING --> OUTCOME_UNKNOWN: Wire Timeout / Lost Response / Crash (dropExecutionLock = true)
 
     OUTCOME_UNKNOWN --> OUTCOME_UNKNOWN: Catalog Absence Observed (targetAbsentObserved = true)
@@ -1284,7 +1383,7 @@ stateDiagram-v2
     OUTCOME_UNKNOWN --> CLEANED: Authoritative Majority Oplog Proof ONLY (Section 10.4)
 
     QUARANTINED --> [*]: Terminal Locked State (Namespace Abandoned)
-    CLEANED --> [*]: Successful Teardown Complete
+    CLEANED --> [*]: Successful Teardown Complete (Phase 5 Audit Appended)
     REJECTED --> [*]: Terminal Validation Failure
 ```
 
@@ -1293,15 +1392,17 @@ stateDiagram-v2
 | **(None)** | `POST /v1/cleanup/request` | `REQUESTED` | Cleanup Executor (Sole Writer) | Signature valid, nonce unused, target DB whitelisted, caller owns lease in `ownership_locks`. | Insert `_id: requestId`, `runId`, `workerId`, `dbName`, `payloadHash`, `createdAt`, `state: 'REQUESTED'`. |
 | **`REQUESTED`** | Validation Failure | `REJECTED` | Cleanup Executor | Signature invalid, target DB blacklisted, or nonce seen. | `$set: { state: 'REJECTED', rejectedReason, completedAt: now }`. |
 | **`REQUESTED`** | Acquire Execution Lease | `CLAIMED` | Cleanup Executor | Ledger state is `REQUESTED`. Caller verified as active owner in `ownership_locks`. | `$set: { state: 'CLAIMED', claimedBy: executorId, claimGen: gen + 1, leaseExpiresAt: now + 30s }`. |
-| **`CLAIMED`** | Pre-Wire Verification & Coordinated Revocation | `DISPATCHING` | Cleanup Executor | Lease active, `ownership_locks` confirms no generation bump, Network Fence Controller verified netfilter egress drop, Scoped Provisioner confirmed `dropUser`/`dropRole` with majority write concern, Executor terminated ops/sessions via cluster `killop`/session invalidation, collections present. | `$set: { state: 'DISPATCHING', wireDispatchedAt: now, dropExecutionLock: true, networkFenced: true }`. |
+| **`CLAIMED`** | Mandatory Prerequisite Check Failed | `QUARANTINED` | Cleanup Executor | Any of `phase1_net_fenced_at`, `phase2_identity_revoked_at`, or `phase3_ops_killed_at` is null or unverified when cleanup lease expires. | `$set: { state: 'QUARANTINED', reason: 'MISSING_REVOCATION_PREREQUISITES', dropExecutionLock: true, quarantinedAt: now }`. |
+| **`CLAIMED`** | Prerequisite Verification & Coordinated Revocation Verified | `DISPATCHING` | Cleanup Executor | Lease active, `ownership_locks` confirms no generation bump. **MANDATORY PREREQUISITES VERIFIED:** `phase1_net_fenced_at != null` (NetFence verified), `phase2_identity_revoked_at != null` (Scoped `dropUser`/`dropRole` majority ack verified), and `phase3_ops_killed_at != null` (`killop` & sessions cleared). | `$set: { state: 'DISPATCHING', wireDispatchedAt: now, dropExecutionLock: true }`. |
 | **`CLAIMED`** | Revocation Detected | `RECONCILIATION_REQUIRED` | Cleanup Executor | Ownership superseded by another worker or generation bumped. | `$set: { state: 'RECONCILIATION_REQUIRED', reason: 'AUTHORITY_SUPERSEDED' }`. |
-| **`DISPATCHING`** | Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire to the original dispatching connection. | `$set: { state: 'CLEANED', cleanedAt: now, dropExecutionLock: false }`. (Worker egress fenced at netfilter layer in Step 2; User and role deleted by Scoped Provisioner in Step 3; in-flight ops/sessions terminated by Executor in Step 4). |
+| **`DISPATCHING`** | Phase 4 Wire Drop Returns Success | `CLEANED` | Cleanup Executor | MongoDB returns `{ ok: 1 }` across wire to the original dispatching connection with oplog correlation token. | `$set: { state: 'CLEANED', cleanedAt: now, phase4_storage_dropped_at: now, dropExecutionLock: false }`. Triggers Phase 5 audit record append. |
 | **`DISPATCHING`** | Wire Timeout / Socket Drop / Crash | `OUTCOME_UNKNOWN` | Cleanup Executor / Supervisor | Socket disconnect, driver timeout, or executor restart during wire dispatch. | `$set: { state: 'OUTCOME_UNKNOWN', error: 'SOCKET_TIMEOUT_OR_CRASH', dropExecutionLock: true }`. |
 | **`OUTCOME_UNKNOWN`** | Catalog Absence Observed | `OUTCOME_UNKNOWN` | Cleanup Executor | Catalog query shows 0 collections. **Does NOT transition to CLEANED!** | `$set: { targetAbsentObserved: true, observedQuiescenceAt: now }`. |
 | **`OUTCOME_UNKNOWN`** | Signed SRE Reconciliation Order (`action: "QUARANTINE"`) | `QUARANTINED` | Admin Operator (Signed) | SRE reviews incident, verifies evidence, signs quarantine order. **NO redispatch drop is issued!** | `$set: { state: 'QUARANTINED', quarantinedAt: now, quarantinedBy: opId, ticketId, dropExecutionLock: true }`. |
-| **`OUTCOME_UNKNOWN`** | Authoritative Oplog Proof (`action: "CONFIRM_CLEANED"`) | `CLEANED` | Admin Operator (Signed) | Demonstrable server oplog record satisfies Section 10.4 (majority commit, comment correlation). | `$set: { state: 'CLEANED', reconciledAt: now, proofType: 'OPLOG_VERIFIED', dropExecutionLock: false }`. |
+| **`OUTCOME_UNKNOWN`** | Authoritative Oplog Proof (`action: "CONFIRM_CLEANED"`) | `CLEANED` | Admin Operator (Signed) | Demonstrable server oplog record satisfies Section 10.4 (majority commit, comment correlation). | `$set: { state: 'CLEANED', reconciledAt: now, proofType: 'OPLOG_VERIFIED', dropExecutionLock: false, phase4_storage_dropped_at: now }`. |
 
 ---
+
 
 ## 10. Ambiguous Destructive Outcomes & Recovery Matrix
 
@@ -1512,7 +1613,7 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
 
 ---
 
-## 14. Architecture Security Review — B38-01 through B38-25
+## 14. Architecture Security Review — B38-01 through B38-39
 
 ### B38-01: Correct MongoDB Native Privilege Scoping
 - **Defect:** Custom role used unsupported wildcard resource `{ db: "decision_os_test_*", collection: "" }`.
@@ -1748,6 +1849,71 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
   9. Expanded `D38-30` and added adversarial verification test **`D38-35`**.
 - **Status:** REMEDIATED (PHASE B.7) — PENDING INDEPENDENT REVIEW.
 
+
+### B38-36: Eliminate the Broker's Cross-Database Administrative Blast Radius (Phase B.8)
+- **Defect:** The v1.7.0 dynamic credential broker possessed user- and role-management actions across `{ db: "", collection: "" }` on `rs_test`. In MongoDB RBAC, this is an unrestricted wildcard covering all non-system databases. Application-level regex checks (`^decision_os_test_.*$`), signed API claims, and separate container boundaries cannot constrain an attacker who compromises the broker and authenticates directly to MongoDB.
+- **Remediation (Phase B.8):**
+  1. Explicitly acknowledged that `{ db: "", collection: "" }` is a cross-database administrative authority under MongoDB RBAC that cannot be constrained natively by application logic.
+  2. Selected the **Pre-Provisioned Per-Target Administrative Principals Architecture** as the canonical runtime architecture: standard test execution leases strictly from pre-allocated partition slots (`decision_os_test_slot_000` through `slot_255`), where each slot $k$ has its own scoped database admin (`decision_os_db_admin_slot_${k}`) scoped strictly to `{ db: "decision_os_test_slot_" + k, collection: "" }`.
+  3. Eliminated the central runtime broker holding broad shared credentials from the active worker execution path.
+  4. Specified non-existent database handling: any request targeting an unallocated or non-existent database is strictly rejected with `UnallocatedDatabaseException`.
+  5. Designated dynamic capacity scaling strictly as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`). Any optional dynamic broker is classified as an uncontained control-plane root of trust and disabled by default in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
+  6. Added negative authorization verification item **`D38-36`**.
+- **Status:** REMEDIATED (PHASE B.8) — PENDING INDEPENDENT REVIEW.
+
+### B38-37: Partition Slot Vault Must Enforce Exact Lease-to-Secret Binding (Phase B.8)
+- **Defect:** The v1.7.0 Partition Slot Vault specification lacked an exact policy and identity model to bind a signed lease claim to exactly one secret path, leaving open the risk of path guessing or substitution attacks by a compromised provisioner.
+- **Remediation (Phase B.8):**
+  1. Specified the exact HashiCorp Vault templated identity policy:
+     ```hcl
+     path "secret/data/slots/{{identity.entity.metadata.slot_id}}" {
+       capabilities = ["read"]
+     }
+     path "secret/data/slots/*" {
+       capabilities = ["deny"]
+     }
+     path "secret/metadata/*" {
+       capabilities = ["deny"]
+     }
+     ```
+  2. Defined the single-use JWT exchange model: coordination authority issues an Ed25519-signed JWT containing the leased `slot_id`. The provisioner exchanges this at `/v1/auth/jwt/login` for an ephemeral Vault token.
+  3. Vault validates the signature against the coordination public key, extracts `slot_id` into entity metadata `identity.entity.metadata.slot_id`, and issues a single-use token (`num_uses = 1`, `ttl = 60s`, `renewable = false`).
+  4. Natively prevented path guessing and path substitution: direct API calls to `GET /v1/secret/data/slots/slot_02` using a token bound to `slot_01` are rejected by Vault's policy engine with HTTP 403 Forbidden.
+  5. Defined token lifecycle: destroyed immediately upon single read; audit logging of caller entity, lease ID, bound slot ID, and client IP.
+  6. Added direct Vault API path substitution verification item **`D38-37`**.
+- **Status:** REMEDIATED (PHASE B.8) — PENDING INDEPENDENT REVIEW.
+
+### B38-38: Define the Nonce Allocator as an Explicit Cryptographic Root of Trust (Phase B.8)
+- **Defect:** v1.7.0 claimed unconditional mathematical certainty of nonce uniqueness without recognizing that MongoDB RBAC cannot enforce monotonic `$inc` semantics against an authorized identity holding `update` privileges, and lacked a formal compromise response protocol.
+- **Remediation (Phase B.8):**
+  1. Clearly distinguished three compromise classes: provisioner compromise (prevented by RBAC), allocator compromise (cryptographic root of trust; detected and recoverable, but NOT preventable at the MongoDB RBAC layer), and coordination replica set compromise.
+  2. Formally documented why MongoDB 8.0 RBAC actions cannot distinguish `$inc` from `$set` (privilege action is collection-level `update`) and why `$jsonSchema` cannot enforce inter-update temporal monotonicity ($x_{\text{new}} > x_{\text{old}}$).
+  3. Defined an emergency **Allocator-Compromise Response Protocol**:
+     - *Emergency Encryption Halt (Kill-Switch):* Watchdog detects regressed block boundaries and asserts the emergency halt latch, immediately revoking active leased blocks across all workers.
+     - *KMS Key Material Retirement & Epoch Invalidation:* KMS retires active key material and increments `KeyVersionPrefix` (e.g. `0x0001` $\rightarrow$ `0x0002`), mathematically guaranteeing that newly encrypted ciphertexts cannot collide with old ciphertexts even if sequence numbers were reset.
+     - *Quarantine & Recovery:* Compromised epoch envelopes are quarantined, decrypted under the retired DEK, verified for integrity, and re-encrypted with fresh nonces under the new epoch.
+     - *Sequence Re-Seeding & Audit:* Sequence document re-seeded under `_id: "nonce_seq_v2"`, and audit ledger hash-chain traversed to verify external checkpoints.
+  4. Clarified that the Monotonicity Watchdog is a detection and circuit-breaking mechanism, not retroactive collision reversal.
+  5. Formally stated the 4 conditional trust assumptions for $P(\text{collision}) = 0$, explicitly rejecting claims of unconditional mathematical certainty.
+  6. Added adversarial verification item **`D38-38`**.
+- **Status:** REMEDIATED (PHASE B.8) — PENDING INDEPENDENT REVIEW.
+
+### B38-39: Normalize Revocation Execution Ordering (Phase B.8)
+- **Defect:** Revocation descriptions had inconsistent execution orderings across diagrams, tables, and saga descriptions, lacked an explicit execution-phase column in the operation matrix, and did not enforce crash recovery and prerequisite gating prior to database drop.
+- **Remediation (Phase B.8):**
+  1. Established **one canonical 5-Phase Ordered Revocation State Machine** across the entire document:
+     - **Phase 1: Network Transport Fencing (`NET_FENCED`)**
+     - **Phase 2: Scoped Worker Identity Revocation (`IDENTITY_REVOKED`)**
+     - **Phase 3: In-Flight Operation & Session Cancellation (`OPS_KILLED`)**
+     - **Phase 4: Database Storage Deletion (`STORAGE_DROPPED`)**
+     - **Phase 5: Audit & Evidence Finalization (`AUDIT_FINALIZED`)**
+  2. Added an explicit `Execution Phase` column to Section 7.9.4 Operation Allocation Matrix and ordered rows by phase.
+  3. Reconciled sequence diagram (Section 6), state machine table (Section 9.3), saga transitions, audit event emissions, and recovery protocols.
+  4. Defined durable acknowledgements in `cleanup_ledger` for every phase (`phase1_net_fenced_at`, `phase2_identity_revoked_at`, `phase3_ops_killed_at`, `phase4_storage_dropped_at`, `phase5_audit_finalized_at`).
+  5. Enforced an atomic prerequisite gate: `dropDatabase` strictly refuses to execute if Phases 1, 2, or 3 are null or unverified in `cleanup_ledger`, failing closed to `QUARANTINED`.
+  6. Defined idempotent crash recovery at each phase boundary.
+  7. Added canonical ordering and crash recovery verification item **`D38-39`**.
+- **Status:** REMEDIATED (PHASE B.8) — PENDING INDEPENDENT REVIEW.
 ---
 
 ## 15. Threat Model & Required Adversarial Analysis
@@ -1805,42 +1971,50 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 - **Attacker Profile:** An attacker obtains an SRE administrative key pair.
 - **Containment:** Administrative reconciliation interface contains **zero drop capabilities**. Operator signatures can only transition requests to `QUARANTINED` (permanently retaining execution locks) or `CONFIRM_CLEANED` (which strictly requires demonstrable, committed server oplog proof per Section 10.4). No administrative command can force redispatch or delete active data.
 
-#### 6. Compromised Ephemeral Credential Broker (Finding B38-31)
+#### 6. Compromised Ephemeral Credential Broker (Finding B38-31, B38-36)
 - **Attacker Profile:** An attacker achieves arbitrary code execution inside the `apps/credential-broker` enclave.
 - **Adversarial Capabilities:** Possesses `decision_os_credential_broker` credentials on `rs_test:27018`.
-- **Hostile Actions Attempted:**
-  1. *Database Dropping:* Attacker attempts `db.getSiblingDB("decision_os_test_runB_wB").dropDatabase()`.
-  2. *System Database Tampering:* Attacker attempts `createUser` on `admin` to gain `root` or cluster-wide roles.
-  3. *Coordination Storage Attack:* Attacker attempts TCP connection to `rs_coord:27019`.
-- **Enforcement & Containment:**
-  - Broker possesses zero `dropDatabase` or `dropCollection` privileges on `rs_test` (Code 13).
-  - Broker privileges are scoped strictly to `{ db: "", collection: "" }`, which in MongoDB RBAC excludes `admin`, `config`, and `local` (Code 13).
-  - Enclave network egress policies block all traffic to `rs_coord:27019`. Broker holds zero coordination credentials.
-  - Broker cannot mint credentials for unapproved namespaces because client requests must conform to canonical regex and signed claims.
+- **Explicit Blast Radius Acknowledgment (B38-36):**
+  - In MongoDB RBAC, `{ db: "", collection: "" }` is an unrestricted wildcard covering every non-system database across the entire replica set.
+  - An attacker possessing these credentials can connect directly to `rs_test:27018` and administer roles, create backdoors, or alter user passwords in **any and all worker databases**, completely bypassing application-level regex validation or signed claims.
+  - Regex checks, signed API claims, and separate container execution do **NOT provide MongoDB-native database isolation**.
+- **Architectural Containment & Elimination:**
+  - Because this cross-database blast radius cannot be constrained natively by MongoDB RBAC when dynamic database creation is used, the runtime broker is **ELIMINATED from the active worker execution path**.
+  - Standard workloads execute exclusively against pre-allocated partition slots where each scoped admin (`decision_os_db_admin_slot_${k}`) is constrained strictly to its single slot.
+  - Any optional dynamic broker is classified as an **Uncontained Control-Plane Root of Trust** and disabled by default in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
+  - The broker has zero network routes and zero credentials for `rs_coord:27019`, and is denied all cluster and system database actions (`admin`, `config`, `local`) (Code 13).
 
 #### 7. Compromised Offline Bootstrap Process (Finding B38-31)
 - **Attacker Profile:** An adversary compromises the initialization image `deploy/init-mongo-test.sh` before cluster deployment.
 - **Containment:** Bootstrap container executes strictly offline during infrastructure provisioning, prior to public ingress availability. Temporary administrative credentials exist solely in RAM/tmpfs and are shredded (`shred -u`) prior to container termination. No bootstrap process remains online during test execution. Emergency recovery requires an air-gapped Shamir's Secret Sharing ceremony (2-of-3 SRE custodians).
 
-#### 8. Compromised Partition Slot Vault / Secrets Engine (Finding B38-31)
-- **Attacker Profile:** An adversary gains read access to the secrets engine storing partition slot credentials.
-- **Containment:** Partition Slot Vault (`apps/slot-vault`) enforces path-based ACLs denying bulk enumeration (`list` capability blocked). Each slot credential has an ephemeral TTL (60s) and requires an active lease proof in `ownership_locks`. Stolen offline slot credentials cannot be used without an active unexpired lease token committed on `rs_coord:27019`.
+#### 8. Compromised Partition Slot Vault / Secrets Engine (Finding B38-31, B38-37)
+- **Attacker Profile:** An adversary gains read access or compromises the Provisioning Service attempting to retrieve slot credentials from HashiCorp Vault.
+- **Adversarial Actions Attempted:** Direct path guessing, path substitution (`slot_02` using a `slot_01` token), or bulk directory listing.
+- **Containment & Vault Enforcement (B38-37):**
+  - Partition Slot Vault enforces templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied).
+  - The provisioner exchanges an Ed25519-signed lease JWT from the coordination authority for a single-use client token (`num_uses = 1`, `ttl = 60s`, `renewable = false`).
+  - Attempting to read any other slot's credentials (`GET /v1/secret/data/slots/slot_02` using token bound to `slot_01`) is rejected natively by Vault's policy engine with `HTTP 403 Forbidden`.
+  - Bulk enumeration is denied by policy (`list` capability denied).
+  - The token is automatically destroyed by Vault immediately upon the first read.
 
-#### 9. Compromised Nonce Allocation Service (Finding B38-32)
-- **Attacker Profile:** An adversary compromises the `apps/nonce-allocator` microservice.
-- **Adversarial Capabilities:** Possesses `decision_os_nonce_allocator` credentials on `rs_coord:27019`.
-- **Hostile Actions Attempted:** Attacker attempts to reset `nextBlockStart` to 0 or delete allocation records.
-- **Enforcement & Containment:**
-  - Nonce Allocator possesses zero network route and zero credentials on `rs_test:27018`.
-  - Nonce Allocator is denied `remove`, `dropCollection`, and `dropDatabase` on `rs_coord:27019` by MongoDB RBAC (Code 13).
-  - Monotonicity watchdog monitors leased block progression in audit logs. Regressed or duplicate blocks immediately trigger automated KMS emergency key rotation, retiring the compromised key version and invalidating repeated nonces.
+#### 9. Compromised Nonce Allocation Service (Finding B38-32, B38-38)
+- **Attacker Profile:** An adversary compromises the `apps/nonce-allocator` microservice or extracts its MongoDB connection credentials.
+- **Adversarial Capabilities:** Possesses `decision_os_nonce_allocator` credentials on `rs_coord:27019` (`actions: ["update"]` on `nonce_allocations`).
+- **Engine Limitation & Root of Trust (B38-38):**
+  - Because MongoDB RBAC authorizes commands at the action level (`update`) without inspecting operators (`$inc` vs `$set`), and `$jsonSchema` cannot enforce inter-update temporal monotonicity, the compromised allocator CAN execute `$set: { nextBlockStart: 0 }`.
+  - The Nonce Allocator is formally recognized as an **Independent Cryptographic Root of Trust**.
+- **Containment & Emergency Recovery:**
+  - Nonce Allocator possesses zero network routes and zero credentials on `rs_test:27018`.
+  - Allocator is denied `remove`, `dropCollection`, and `dropDatabase` on `rs_coord:27019` by MongoDB RBAC (Code 13).
+  - An external **Monotonicity Watchdog** detects block regression and trips the emergency kill-switch, halting all worker encryption.
+  - KMS immediately retires active key material and increments `KeyVersionPrefix`, mathematically ensuring that new ciphertexts cannot collide with compromised ciphertexts. Compromised envelopes are quarantined and re-encrypted under the new key epoch.
 
 #### 10. Compromised Network-Fencing Controller (Finding B38-35)
 - **Attacker Profile:** An adversary disables or tampers with the `apps/network-fence-controller`.
 - **Containment:** Cleanup Executor requires synchronous data-plane verification of netfilter rules (`iptables -C`) before proceeding to identity deletion. If network fencing fails or times out, the teardown strictly fails closed: execution halts, the request transitions to `QUARANTINED`, and the execution lock is permanently retained. Furthermore, defense-in-depth ensures that even if transport fencing is bypassed, server-side MongoDB `dropUser` and session termination prevent unauthorized wire operations.
 
 ---
-
 ### 15.2 Explicit Adversarial Analysis Matrix (Scenarios 1–25)
 
 | Scenario ID | Attack Vector / Adversarial Event | Permitted Action | Prohibited Action | Concrete Enforcement Mechanism |
@@ -1870,6 +2044,10 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 | **Scenario 23 (B38-33)** | **Compromised Cleanup Executor attempts operation termination without cluster authorization.** Attacker issues `killOp` without `{ cluster: true }` authorization or attempts cluster shutdown. | Permitted: `killop` and `inprog` on `{ cluster: true }`. | **PROHIBITED:** Shutting down replica set, modifying replica set config, or creating users. | **Cluster Privilege Scoping:** Executor granted strictly `killop`, `inprog`, `killAnySession`, `impersonate`, `checkCursorSanity` on `{ cluster: true }`. `shutdown` and `replSetReconfig` denied (Code 13). |
 | **Scenario 24 (B38-34)** | **Adversary attempts `findAndModify` write operation on append-only collection.** Attacker connects as `decision_os_audit_writer` and issues `findAndModify` with remove/update payload. | Permitted: `find`, `insert`, `createIndex`. | **PROHIBITED:** Executing `findAndModify` with `{ remove: true }` or `{ update: ... }`. | **Underlying Action Authorization:** MongoDB authorizes `findAndModify` via `update`/`remove`. With `update` and `remove` denied, command throws Error Code 13 natively. |
 | **Scenario 25 (B38-35)** | **Hostile Worker attempts wire writes while Network Transport Fencing controller fails.** Network controller is offline during revocation; worker attempts post-revocation writes. | Permitted: None. | **PROHIBITED:** Completing writes after revocation request is received. | **Fail-Closed Teardown & Multi-Layer Defense:** Executor halts teardown and moves request to `QUARANTINED` if network fencing fails. Concurrently, server-side `dropUser` invalidates authorization cache, rejecting writes with Code 11/13. |
+| **Scenario 26 (B38-36)** | **Scoped Partition Admin Cross-Database Wire Attack.** Attacker connects to `rs_test:27018` using `decision_os_db_admin_slot_01` credentials and attempts `db.getSiblingDB("decision_os_test_slot_02").createUser(...)`. | Permitted: User/role management on `slot_01`. | **PROHIBITED:** Any command or operation on `slot_02`. | **Native Database Isolation:** MongoDB RBAC natively rejects cross-database user management with Error Code 13 (`Unauthorized`). Zero cross-database blast radius exists. |
+| **Scenario 27 (B38-37)** | **Compromised Provisioner Direct Vault API Path Substitution Attack.** Attacker acquires single-use Vault token bound to `slot_01` and directly calls `GET /v1/secret/data/slots/slot_02` using Vault HTTP API. | Permitted: Read `secret/data/slots/slot_01`. | **PROHIBITED:** Reading `slot_02` or listing slot metadata. | **Native Vault Templated Policy Enforcement:** Vault policy engine evaluates token's bound `slot_id` metadata against request path; returns `HTTP 403 Forbidden`. Attempting secondary read on `slot_01` returns HTTP 403 (token revoked after single use). |
+| **Scenario 28 (B38-38)** | **Compromised Nonce Allocator Sequence Reset Attack.** Compromised allocator executes `db.nonce_allocations.updateOne({}, { $set: { nextBlockStart: 0 } })`. | Permitted: `update` on `nonce_allocations`. | **PROHIBITED:** Undetected counter regression and IV reuse under active key material. | **Emergency Kill-Switch & Epoch Invalidation:** Monotonicity watchdog detects regressed block allocation in audit log, trips emergency halt kill-switch, revoking worker lease blocks. KMS retires active key material and increments `KeyVersionPrefix`, rendering new ciphertexts disjoint from compromised ciphertexts. |
+| **Scenario 29 (B38-39)** | **Teardown Crash Injection & Prerequisite Gating Violation Attack.** Cleanup Executor crashes after Phase 2 (`IDENTITY_REVOKED`); on restart, adversary attempts to skip Phase 3 and issue Phase 4 `dropDatabase`. | Permitted: Execution of canonical sequence. | **PROHIBITED:** Executing `dropDatabase` before all prior phases are durably acknowledged in `cleanup_ledger`. | **Mandatory Prerequisite Gate:** Executor checks `cleanup_ledger`; detects missing `phase3_ops_killed_at`. Command execution is strictly blocked; request transitions to `QUARANTINED`. Normal crash recovery idempotently resumes from Phase 3 without skipping. |
 
 ---
 
@@ -1919,7 +2097,25 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 2. Executor attempts Step 2 (Network Transport Fencing) by dispatching `POST /v1/orchestrator/fence-worker`.
 3. Network Fence Controller is unreachable (network partition or CNI daemon crash).
 4. Executor retries with exponential backoff (1s, 2s, 4s, up to 15s). Fencing cannot be confirmed.
-5. **Fail-Closed Resolution:** The Executor halts teardown immediately. It does NOT proceed to identity revocation or wire drop. It transitions the ledger request to `OUTCOME_UNKNOWN` / `QUARANTINED`, preserving `dropExecutionLock: true` and alerting SRE.
+5. **Fail-Closed Resolution:** The Executor halts teardown immediately. It does NOT proceed to identity revocation or wire drop. It transitions the ledger request to `QUARANTINED`, preserving `dropExecutionLock: true` and alerting SRE.
+
+#### Case F: Partition Slot Vault Token Expiration Prior to Read Completion (Finding B38-37)
+1. Provisioning Service exchanges signed lease JWT at `/v1/auth/jwt/login` for single-use Vault token bound to `slot_01` (TTL: 60s, `num_uses = 1`).
+2. Network timeout occurs between provisioner and Vault during `GET /v1/secret/data/slots/slot_01`.
+3. Provisioner attempts retry; token has expired or was marked used. Vault returns `HTTP 403 Forbidden`.
+4. **Resolution:** Provisioner executes a consistency check on `rs_coord:27019.ownership_locks` to prove its lease on `slot_01` remains active and unexpired. If valid, it requests a fresh signed lease JWT and re-executes token exchange. If the lease expired, the saga aborts and rolls back.
+
+#### Interleaving 18: Nonce Allocator Compromise Race During Counter Exhaustion (Finding B38-38)
+1. Nonce Allocator reaches ceiling $2^{48}$ or is subverted to execute `$set: { nextBlockStart: 0 }`.
+2. Allocator emits a block starting at 0 under `keyVersion = v1`.
+3. Provisioner attempts to encrypt credential envelope using regressed nonce.
+4. **Resolution:** Audit writer and Monotonicity Watchdog detect that leased `blockStart` is less than the historical maximum block boundary recorded in `cleanup_audit_log`. The watchdog immediately activates the emergency halt kill-switch on `rs_coord`. The Provisioning Service rejects the lease, KMS retires `v1`, advances `KeyVersionPrefix` to `v2`, and re-seeds sequence state.
+
+#### Interleaving 19: Crash Immediately Following Scoped Identity Revocation (Finding B38-39)
+1. Executor completes Phase 1 (`NET_FENCED`) and records `phase1_net_fenced_at`.
+2. Provisioner completes Phase 2 (`IDENTITY_REVOKED`) via `dropUser` and `dropRole`; Executor records `phase2_identity_revoked_at`.
+3. Executor process abruptly crashes before initiating Phase 3 (`killOp` / session termination).
+4. **Resolution:** On restart, the recovery coordinator inspects `cleanup_ledger`. It observes `phase1_net_fenced_at != null` and `phase2_identity_revoked_at != null`, but `phase3_ops_killed_at == null`. Because Phase 4 strictly gates on all three prior phases, `dropDatabase` is not executed. The recovery coordinator resumes idempotently at Phase 3, executing `killOp` and `killAllSessionsByPattern`, before proceeding to Phase 4.
 
 ### 16.2 Explicit Statement of Residual Risks
 1. **Quarantined Database Proliferation:** Under frequent network partitions or replica set failovers, ambiguous test databases remain in `QUARANTINED` status and are not automatically reclaimed. In test environments, this is mitigated by unique `runId` UUIDs.
@@ -2157,6 +2353,10 @@ All verification items are **PLANNED** for implementation and execution during P
 | **`D38-33`** | **Real MongoDB 8.0 killop Privilege Scope Verification on Cluster Resource (Finding B38-33)** | Authenticate as `decision_os_destructive_executor` possessing `{ resource: { cluster: true }, actions: ["killop", "inprog"] }`. Dispatch `db.adminCommand({ currentOp: 1 })` and `db.adminCommand({ killOp: 1, op: targetOpId })` against test worker operations $\rightarrow$ successfully terminates operations. Attempt to execute `db.adminCommand({ killOp: 1 })` with role restricted to `{ resource: { db: "admin", collection: "" }, actions: ["killop"] }` $\rightarrow$ assert command fails with Error Code 13, proving that MongoDB 8.0 requires `{ cluster: true }` scope. Assert executor cannot execute `shutdown`, `replSetReconfig`, or `grantRole`. | Phase C1 | PLANNED |
 | **`D38-34`** | **MongoDB Native Privilege Action Audit & Negative findAndModify Verification (Finding B38-34)** | Authenticate as `decision_os_audit_writer` possessing `actions: ["find", "insert", "createIndex"]` on `cleanup_audit_log`. Attempt `db.cleanup_audit_log.findAndModify({ query: {}, update: { $set: { tampered: true } } })` $\rightarrow$ natively rejected by MongoDB RBAC with Error Code 13. Attempt `findAndModify` with `{ remove: true }` $\rightarrow$ rejected with Error Code 13. Connect as `decision_os_provisioner` on `ownership_locks`; verify `findAndModify` succeeds because underlying actions `find`, `update`, `insert`, and `remove` are explicitly granted. Verify that `findAndModify` is nowhere defined as a privilege action name. | Phase C1 | PLANNED |
 | **`D38-35`** | **Network Transport Fencing Verification & Multi-Layer Revocation Enforcement (Finding B38-35)** | Authenticate worker container with active TCP connection pool. Trigger teardown request. Verify Step 2 invokes `POST /v1/orchestrator/fence-worker`. Assert Network Fence Controller programs Linux netfilter / Kubernetes NetworkPolicy drop rules for worker IP targeting ports 27018 and 27019. Verify controller queries data plane (`iptables -C`) before returning HTTP 200. With drop rules active, assert all wire packets from worker container are dropped at layer 3/4 (zero TCP ACK). Simulate network controller unavailability during teardown; assert executor halts teardown, transitions request to `QUARANTINED`, and retains execution lock. Assert `dropDatabase` is never executed without verified network fencing. | Phase C1 / C3 | PLANNED |
+| **`D38-36`** | **Scoped Partition Administrator Cross-Database Isolation & Broker Elimination Test (Finding B38-36)** | Authenticate as `decision_os_db_admin_slot_01` on `rs_test:27018`. Attempt `db.getSiblingDB("decision_os_test_slot_02").createUser(...)` and `db.getSiblingDB("decision_os_test_slot_02").createRole(...)` $\rightarrow$ natively rejected by MongoDB RBAC with Error Code 13 (`Unauthorized`). Verify that no active runtime service on the worker data path possesses `{ db: "", collection: "" }` userAdmin rights. Attempt to access a non-existent database without leasing a pre-allocated partition slot $\rightarrow$ assert request fails closed with `UnallocatedDatabaseException`. Verify optional dynamic broker is disabled in production via `DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`. | Phase C1 | PLANNED |
+| **`D38-37`** | **Partition Slot Vault Direct API Path Substitution & Single-Use Token Test (Finding B38-37)** | Provisioner acquires valid lease token for `slot_01` and logs into HashiCorp Vault at `/v1/auth/jwt/login`. Verify Vault issues a token with templated policy `secret/data/slots/slot_01` and `num_uses = 1`. Using direct HTTP client, attempt `GET /v1/secret/data/slots/slot_02` $\rightarrow$ assert Vault policy engine natively returns `HTTP 403 Forbidden`. Attempt `GET /v1/secret/data/slots/slot_01` $\rightarrow$ assert HTTP 200 returns credentials; immediately attempt secondary `GET /v1/secret/data/slots/slot_01` $\rightarrow$ assert `HTTP 403 Forbidden` (token revoked after single use). Attempt directory listing on `secret/metadata/slots` $\rightarrow$ assert `HTTP 403 Forbidden`. | Phase C4 | PLANNED |
+| **`D38-38`** | **Nonce Allocator Root of Trust Compromise, Emergency Kill-Switch & Epoch Invalidation Test (Finding B38-38)** | Connect to `rs_coord:27019` using `decision_os_nonce_allocator` credentials. Simulate allocator compromise by executing `db.nonce_allocations.updateOne({ _id: "nonce_seq_v1" }, { $set: { nextBlockStart: 0 } })`. Lease block and submit credential envelope. Assert Monotonicity Watchdog detects regression against `cleanup_audit_log` high-water mark and trips emergency halt kill-switch (`rs_coord.emergency_halt = true`). Verify all worker encryption leases are immediately rejected. Trigger KMS DEK epoch invalidation; verify KMS increments `KeyVersionPrefix` (e.g. `0x0001` $\rightarrow$ `0x0002`). Re-seed sequence document under `_id: "nonce_seq_v2"`. Encrypt payloads under new epoch; assert nonces are provably disjoint from old epoch nonces. | Phase C2 | PLANNED |
+| **`D38-39`** | **Canonical 5-Phase Revocation Execution State Machine & Crash Recovery Invariant Test (Finding B38-39)** | Initiate teardown for active worker on `decision_os_test_slot_01`. Verify exact execution ordering across phases: Phase 1 Network Transport Fencing $\rightarrow$ Phase 2 Scoped Identity Revocation $\rightarrow$ Phase 3 Operation & Session Cancellation $\rightarrow$ Phase 4 Database Storage Deletion $\rightarrow$ Phase 5 Audit Finalization. Inject process kill after Phase 1, Phase 2, and Phase 3; assert recovery coordinator resumes idempotently at the exact incomplete phase without skipping or reordering. Tamper with `cleanup_ledger` by zeroing `phase2_identity_revoked_at` while in `CLAIMED`; attempt to dispatch Phase 4 `dropDatabase` $\rightarrow$ assert prerequisite gate aborts drop, raises `SecurityException`, and transitions to `QUARANTINED`. | Phase C1 / C3 | PLANNED |
 
 ---
 
@@ -2201,32 +2401,41 @@ All verification items are **PLANNED** for implementation and execution during P
    The mathematical uniqueness claim ($P(\text{collision}) = 0$) is conditional on: (1) KMS/Vault key custody integrity; (2) MongoDB journaled majority write consensus linearizability (`w: "majority", j: true`); (3) Nonce Allocation Service code integrity enforcing monotonic `$inc` without `$set`; (4) Disaster recovery compliance mandating KMS epoch bumping on cold restores. Unconditional certainty cannot be claimed if allocator state or key custody is compromised.
 9. **Network Transport Fencing Controller Availability (B38-35):**
    If the Network Fence Controller is partitioned or slow, teardown halts and requests enter `QUARANTINED`. High network policy churn in large CI clusters could introduce latency in CNI programming; caching and netfilter rule batching must be evaluated during Phase C benchmarking.
-10. **Compromise Boundary of the Ephemeral Credential Broker (B38-31):**
-    While the Credential Broker possesses `{ db: "", collection: "" }` role- and user-management privileges on `rs_test`, its blast radius is bounded by: enclave network isolation (zero coordination routes/creds), signed ownership claim verification against the Provisioner's public key, strict database naming regex enforcement, and complete absence of destructive drop rights or system database access.
-
+10. **Elimination of the Runtime Credential Broker & Blast Radius (Finding B38-36):**
+    In MongoDB RBAC, granting `{ db: "", collection: "" }` user- and role-management actions confers wildcard authority over every non-system database. Application-level regex validation and signed claims cannot provide native database isolation against a compromised broker authenticating directly to MongoDB. To eliminate this cross-database blast radius, the runtime broker is **completely removed from the active worker execution path**. Standard workloads execute exclusively against pre-allocated partition slots where each administrator is strictly scoped to its single slot. Dynamic database creation is designated as an offline control-plane root of trust (`deploy/init-mongo-test.sh`), and the dynamic broker is disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
+11. **Partition Slot Vault Exact Lease-to-Secret Binding (Finding B38-37):**
+    By utilizing HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}"`) and a single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease. Direct path guessing or path substitution attacks (`slot_02` using a `slot_01` token) are natively rejected by Vault with HTTP 403 Forbidden.
+12. **Nonce Allocator as an Explicit Cryptographic Root of Trust (Finding B38-38):**
+    Because MongoDB RBAC cannot enforce monotonic arithmetic against an identity possessing `update` privileges, the Nonce Allocator is formally identified as a Cryptographic Root of Trust. Allocator compromise cannot be prevented at the database authorization layer. Safety degrades to detection by an external Monotonicity Watchdog, followed by an emergency kill-switch, KMS Data Encryption Key (DEK) epoch retirement, `KeyVersionPrefix` incrementation (rendering new ciphertexts provably disjoint from compromised ciphertexts), and envelope quarantine/re-encryption under clearly defined trust assumptions.
+13. **Canonical 5-Phase Revocation Execution & Prerequisite Gating (Finding B38-39):**
+    The revocation protocol strictly follows a 5-phase execution state machine: Phase 1 Network Transport Fencing $\rightarrow$ Phase 2 Scoped Identity Revocation $\rightarrow$ Phase 3 Operation & Session Cancellation $\rightarrow$ Phase 4 Database Storage Deletion $\rightarrow$ Phase 5 Audit Finalization. Database deletion (`dropDatabase`) is strictly gated on verified durable acknowledgements for Phases 1, 2, and 3 in `cleanup_ledger`; if any prior phase is missing or unverified, teardown immediately fails closed into `QUARANTINED`.
 ---
 
 ## Gate B Completion Sign-Off Checklist
 
-- [x] Baseline and commit verified: `fix/batch4-replica-set-transactional-recovery` at baseline commit `992a4cd326fe39865a723c29e974ba0f31707e8a` (parent `5ef95550c0709fdc99186bf42e5352f3aa846b4e`)
-- [x] Document version upgraded to 1.7.0 (Phase B.7 Privileged Broker Isolation, Nonce Allocator Hardening & Revocation Enforcement)
-- [x] Phase A destructive inventory (`CS-01` to `CS-17`) thoroughly inspected and addressed
-- [x] B38-01 resolved: MongoDB RBAC wildcards removed; Dedicated Isolated Test Deployment established
-- [x] B38-02 remediated (Phase B.2): Worker role additive privilege defect corrected; exact per-database scoped roles eliminate coordination write access
-- [x] B38-03 remediated (Phase B.2): Worker write access to `cleanup_ledger` blocked natively by MongoDB RBAC
-- [x] B38-04 resolved: Self-referential hash eliminated; RFC 8785 JCS + deterministic test vector established
-- [x] B38-05 resolved: Asymmetric Ed25519 standard selected; caller identities bound to registered public keys
-- [x] B38-06 remediated (Phase B.2): Administrative `forceRedispatch` removed; point-in-time checks rejected as proof; terminal `QUARANTINED` state introduced
-- [x] B38-07 remediated (Phase B.2): All redispatch paths prohibited after `DISPATCHING`; Case D updated
-- [x] B38-08 resolved: Local containerless runner labeled as Development-Only Weaker Mode; disabled in CI
-- [x] B38-09 resolved: Network identities defined for all 4 caller categories; network reachability decoupled from authn
-- [x] B38-10 resolved: Absolute claims replaced with precise guarantees and explicit residual risks
-- [x] B38-11 remediated (Phase B.3): Shared MongoDB user defect eliminated; discrete per-worker principals, ephemeral in-memory credentials, and exact dynamic roles prevent cross-worker database leakage
-- [x] B38-12 remediated (Phase B.3): Direct system collection CRUD and `userAdmin` superuser grants eliminated; non-superuser role administration established
-- [x] B38-13 remediated (Phase B.3): Authoritative MongoDB 8.0 replica-set oplog evidence protocol formulated with correlation comments, majority commitment checks, and fail-closed quarantine
-- [x] B38-14 remediated (Phase B.3): Role lifecycle and concurrency interleavings analyzed; active connection invalidation established
-- [x] B38-15 remediated (Phase B.4): Real MongoDB session invalidation (`killAllSessionsByPattern`, `killSessions`) on `{ cluster: true }` replaces unsupported commands; distinguishes logical sessions, operations, cursors, TCP sockets, and driver pools; addresses prepared transaction limitations
-- [x] B38-16 remediated (Phase B.4): Technically supportable MongoDB 8.0 replica-set oplog evidence protocol using `optimes.lastCommittedOpTime.ts/.t`; explicitly documents that `local` ignores read concerns; requires live proof of comment preservation before any automated confirmation
+- [x] Document version upgraded to **1.8.0**
+- [x] Baseline commit: `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956`
+- [x] Parent baseline commit: `992a4cd326fe39865a723c29e974ba0f31707e8a`
+- [x] Phase A destructive call-site inventory cross-checked: all 13 sites correctly mapped to safe replacements
+- [x] Independent Cleanup Executor process boundary established: distinct OS process, dedicated binary/container, zero shared memory, zero application framework sharing
+- [x] Dedicated Cleanup Executor MongoDB user defined: `decision_os_destructive_executor` with zero write access to business collections and zero access to `mongodb-coord:27019`
+- [x] Dedicated Coordination MongoDB user defined: `decision_os_provisioner` with zero drop privileges
+- [x] Real MongoDB privilege scoping: wildcard DB names replaced with discrete per-database dynamic application roles on `rs_test` and multi-deployment boundary separating test and coordination clusters
+- [x] Request payload hash: includes all semantic fields, excludes `payloadHash` itself; test vector verified
+- [x] Request signing: Asymmetric Ed25519 signing with public key registry and replay protection (UUID v4 + timestamp + window)
+- [x] State machine: 5 primary states (`REQUESTED`, `CLAIMED`, `DISPATCHING`, `CLEANED`, `OUTCOME_UNKNOWN`, `QUARANTINED`), zero redispatch after `DISPATCHING`
+- [x] Ambiguous drop handling: Catalog absence observed is non-authoritative; authoritative oplog evidence required for `CONFIRM_CLEANED`; `QUARANTINED` preserves execution locks permanently
+- [x] Administrative reconciliation: strictly requires signed SRE request with authorization token and ticket ID; contains zero direct drop capability; redispatch permanently eliminated
+- [x] B38-02 remediated (Phase B.2): Worker base role stripped of `{ db: "", collection: "" }` write privileges; dynamic per-database roles provisioned on `POST /v1/ownership/claim`
+- [x] B38-03 remediated (Phase B.2): Worker base role stripped of `{ db: "", collection: "" }` write privileges; worker cannot write to `cleanup_ledger`
+- [x] B38-06 remediated (Phase B.2): `forceRedispatch` administrative outcome eliminated; fail-closed safety preserved via `QUARANTINED`
+- [x] B38-07 remediated (Phase B.2): Wire dispatch race acknowledged; administrative redispatch eliminated; `QUARANTINED` preserves locks indefinitely
+- [x] B38-11 remediated (Phase B.3): Shared MongoDB worker user eliminated; unique per-worker principals with ephemeral credentials provisioned
+- [x] B38-12 remediated (Phase B.3): Unsafe role-management privileges on `admin` eliminated; dynamic roles scoped natively to test namespaces
+- [x] B38-13 remediated (Phase B.3): Authoritative oplog evidence protocol formalized with structured correlation tokens and replica-set majority verification
+- [x] B38-14 remediated (Phase B.3): Role lifecycle and provisioning concurrency analyzed; dynamic roles generated with random suffix; generation-bump invalidation
+- [x] B38-15 remediated (Phase B.4): Corrected MongoDB session invalidation; engine limitations of `killAllSessionsByPattern` documented; prepared transactions and unsessioned operations handled; permanent revocation enforced
+- [x] B38-16 remediated (Phase B.4): Oplog evidence protocol made supportable; fallback to `QUARANTINED` when oplog comments absent or uncommitted; fail-closed policy preserved
 - [x] B38-17 remediated (Phase B.4 / B.5): Crash-safe ephemeral credential recovery via caller-bound encrypted envelopes (`ownership_locks.credentialEnvelope`) utilizing AES-256-GCM with deterministic 96-bit nonces, versioned keys, dual-key rotation, and strict durable majority acknowledgement ordering before envelope destruction
 - [x] B38-18 remediated (Phase B.4 / B.5): False provisioning atomicity claims replaced with a durable idempotent saga model spanning exactly 12 formalized states with crash/restart recovery at every transition, failed-compensation retry, and strict orphan reaper verification proof
 - [x] B38-19 remediated (Phase B.4 / B.5): Audit ledger made genuinely tamper-evident by separating audit privileges from coordination CRUD; enforcing append-only via MongoDB RBAC (`find`, `insert`, `createIndex` only); independently protected external Ed25519-signed checkpoints; 60s cadence; detection of deletion, truncation, reordering, substitution, and rewriting
@@ -2236,11 +2445,15 @@ All verification items are **PLANNED** for implementation and execution during P
 - [x] **B38-26 remediated (Phase B.6):** Cross-database provisioning authority eliminated; Database-Scoped Provisioning Delegation Model formulated; dynamic DB bootstrap mediated via pre-allocated partition pools and isolated brokers; role-definition vs management/user/grant authorization scopes distinguished; negative authorization cases NC-1–NC-8 defined
 - [x] **B38-27 remediated (Phase B.6):** Revocation service responsibilities reconciled; 2-phase durable coordination protocol established between Cleanup Executor and Scoped Provisioner; all 8 operations fully allocated; client API responses and connection closure rejected as proof
 - [x] **B38-28 remediated (Phase B.6):** Cryptographic AES-256-GCM nonce uniqueness formulated via NIST SP 800-38D §8.2.1 deterministic counter block reservation on `rs_coord:27019.nonce_allocations`; crash/restart discard, rollback protection, key-version separation, backup restore epoch bumping, and fail-closed availability halt defined
-- [ ] **B38-31 remediated (Phase B.7):** Bootstrap broker explicit security boundary established; broker MongoDB privileges scoped; slot vault path-based ACL prevents bulk enumeration; offline bootstrap credential destruction and recovery protocol defined (Pending Independent Review)
-- [ ] **B38-32 remediated (Phase B.7):** Nonce allocation authority decoupled into dedicated Nonce Allocation Service (`apps/nonce-allocator`, `decision_os_nonce_allocator`); `$set` reset prevented; 96-bit nonce encoding formally specified; mathematical uniqueness qualified with explicit trust assumptions (Pending Independent Review)
-- [ ] **B38-33 remediated (Phase B.7):** MongoDB `killOp` privilege scope corrected to `{ resource: { cluster: true }, actions: ["killop", "inprog"] }`; lowercase action spelling verified; command database (`admin.$cmd`) distinguished from cluster authorization resource (Pending Independent Review)
-- [ ] **B38-34 remediated (Phase B.7):** `findAndModify` removed from privilege action lists; all MongoDB RBAC actions audited against engine documentation; underlying `update`/`remove` denial verified to prevent `findAndModify` write mutations (Pending Independent Review)
-- [ ] **B38-35 remediated (Phase B.7):** Network Transport Fencing integrated into durable revocation protocol as Step 2; exact CNI/netfilter controller identity, API, and retry/fail-closed semantics defined; 6 isolation layers formally distinguished; `dropDatabase` never represented as network fencing (Pending Independent Review)
-- [x] Expanded verification plan (`D38-01` through `D38-35`, including `D38-31`, `D38-32`, `D38-33`, `D38-34`, `D38-35`) categorized and explicitly marked as PLANNED
+- [x] **B38-31 remediated (Phase B.7):** Bootstrap broker explicit security boundary established; broker MongoDB privileges scoped; slot vault path-based ACL prevents bulk enumeration; offline bootstrap credential destruction and recovery protocol defined
+- [x] **B38-32 remediated (Phase B.7):** Nonce allocation authority decoupled into dedicated Nonce Allocation Service (`apps/nonce-allocator`, `decision_os_nonce_allocator`); `$set` reset prevented; 96-bit nonce encoding formally specified; mathematical uniqueness qualified with explicit trust assumptions
+- [x] **B38-33 remediated (Phase B.7):** MongoDB `killOp` privilege scope corrected to `{ resource: { cluster: true }, actions: ["killop", "inprog"] }`; lowercase action spelling verified; command database (`admin.$cmd`) distinguished from cluster authorization resource
+- [x] **B38-34 remediated (Phase B.7):** `findAndModify` removed from privilege action lists; all MongoDB RBAC actions audited against engine documentation; underlying `update`/`remove` denial verified to prevent `findAndModify` write mutations
+- [x] **B38-35 remediated (Phase B.7):** Network Transport Fencing integrated into durable revocation protocol as Step 2; exact CNI/netfilter controller identity, API, and retry/fail-closed semantics defined; 6 isolation layers formally distinguished; `dropDatabase` never represented as network fencing
+- [ ] **B38-36 remediated (Phase B.8):** Broker cross-database authority eliminated from active worker path; Pre-Provisioned Partition Pool selected as canonical runtime architecture; scoped slot admins (`decision_os_db_admin_slot_${k}`) natively isolated by MongoDB RBAC; dynamic broker classified as control-plane root of trust disabled in production (Pending Independent Review)
+- [ ] **B38-37 remediated (Phase B.8):** Partition Slot Vault exact lease-to-secret binding formally specified; templated policy `secret/data/slots/{{identity.entity.metadata.slot_id}}`; single-use JWT exchange (`num_uses = 1`, `ttl = 60s`, `renewable = false`); direct path guessing and substitution rejected with HTTP 403 Forbidden (Pending Independent Review)
+- [ ] **B38-38 remediated (Phase B.8):** Nonce Allocator formally defined as an explicit Cryptographic Root of Trust; 3 compromise classes distinguished; MongoDB RBAC inability to restrict `$inc` vs `$set` documented; emergency kill-switch, KMS DEK epoch retirement, `KeyVersionPrefix` increment, and envelope quarantine response protocol defined; conditional trust assumptions stated (Pending Independent Review)
+- [ ] **B38-39 remediated (Phase B.8):** Revocation execution ordering normalized into canonical 5-Phase Ordered Revocation State Machine; `Execution Phase` column added to operation matrix; Phase 4 `dropDatabase` strictly gated on durable verification of Phases 1, 2, and 3; idempotent crash recovery protocol specified for all 5 phases (Pending Independent Review)
+- [x] Expanded verification plan (`D38-01` through `D38-39`, including `D38-36`, `D38-37`, `D38-38`, `D38-39`) categorized and explicitly marked as PLANNED
 - [x] Zero application, test, configuration, or infrastructure files modified; architecture design revision only
-- [x] **STOP gate observed:** Phase B.7 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
+- [x] **STOP gate observed:** Phase B.8 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
