@@ -1,16 +1,16 @@
 # DECISION OS — BATCH 4 V3.8 ARCHITECTURE DECISION
 ## Independent Cleanup Executor, Real MongoDB Privilege Separation & Concurrency Safety
 
-**Document Version:** 2.0.0 (Phase B.10 Self-Credential Privilege Correction, Gateway Ingress Enforcement & WORM Plaintext Integrity)
+**Document Version:** 2.1.0 (Phase B.11 Vault Gateway Boundary, Durable JWT State Machine & WORM Evidence Remediation)
 **Repository:** `AmiTtiwari43/Decision-OS`
 **Branch:** `fix/batch4-replica-set-transactional-recovery`
-**Current Baseline Commit:** `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (`docs: harden lease credentials, JWT redemption and nonce incident recovery (v1.9.0)`)
-**Parent Baseline Commit:** `16eb385a5c73b307ff5331a769711dd55854db91` (`docs: eliminate broker cross-database authority, harden vault binding and revocation ordering (v1.8.0)`)
-**Prior Lineage Commits:** `2c4d989dc3b52c5f11ec368afaedab1d63e07b52`, `16eb385a5c73b307ff5331a769711dd55854db91`, `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956`, `992a4cd326fe39865a723c29e974ba0f31707e8a`, `5ef95550c0709fdc99186bf42e5352f3aa846b4e`, `f0fbfc1b6d04ad947f85277435d0803282cd03cd`, `949ca35a7154f4c4db308dd73badf85221a98c9f`, `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
-**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (Phase B.10 Deliverable)
+**Current Baseline Commit:** `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` (`docs: correct self-credential privilege, enforce vault ingress boundary and define WORM evidence (v2.0.0)`)
+**Parent Baseline Commit:** `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (`docs: harden lease credentials, JWT redemption and nonce incident recovery (v1.9.0)`)
+**Prior Lineage Commits:** `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9`, `2c4d989dc3b52c5f11ec368afaedab1d63e07b52`, `16eb385a5c73b307ff5331a769711dd55854db91`, `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956`, `992a4cd326fe39865a723c29e974ba0f31707e8a`, `5ef95550c0709fdc99186bf42e5352f3aa846b4e`, `f0fbfc1b6d04ad947f85277435d0803282cd03cd`, `949ca35a7154f4c4db308dd73badf85221a98c9f`, `724f1076284b186f42759677ab9e480d27531b69`, `943a8e7a433ce1b98804a83c6be403b2fca52e96`, `161e59e85bb7183c21926f0b04f788eb43312394`, `bbaf9bee29ef40f80bb8b958569c7ebbb437b427`, `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb`
+**Document Revision:** Working tree revision on `fix/batch4-replica-set-transactional-recovery` against baseline `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` (Phase B.11 Deliverable)
 **Phase A Artifact:** `BATCH_4_V38_DESTRUCTIVE_CALLSITE_INVENTORY.md`
 **Date:** 2026-11-10
-**Status:** ARCHITECTURE DESIGN (Phase B.10 Deliverable — Pending Independent Review & Formal Gate B Approval)
+**Status:** ARCHITECTURE DESIGN (Phase B.11 Deliverable — Pending Independent Review & Formal Gate B Approval)
 
 ---
 
@@ -92,7 +92,7 @@ Independent architectural review of baseline commit `3dc53fccb1ade7f6206fdf98372
    - *Remediation:* Explicitly acknowledged that `{ db: "", collection: "" }` is a cross-database administrative authority that cannot be constrained natively by application logic. Selected the **Pre-Provisioned Per-Target Administrative Principals Architecture** as the canonical runtime architecture: standard test execution leases strictly from pre-allocated partition slots (`decision_os_test_slot_000` through `slot_255`), where each slot $k$ has its own scoped database admin (`decision_os_db_admin_slot_${k}`) scoped strictly to `{ db: "decision_os_test_slot_" + k, collection: "" }`. Eliminated the central runtime broker holding broad shared credentials. Dynamic database creation is identified as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`), disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`). Requests targeting non-existent databases are rejected with `UnallocatedDatabaseException`. Added negative authorization verification item **`D38-36`**.
 2. **Partition Slot Vault Exact Lease-to-Secret Binding (Finding B38-37):**
    - *Defect:* The v1.7.0 Partition Slot Vault specification lacked an exact policy and identity model to bind a signed lease claim to exactly one secret path, leaving open the risk of path guessing or substitution attacks by a compromised provisioner.
-   - *Remediation:* Formally specified HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied). Implemented a single-use JWT exchange model: coordination authority issues an Ed25519-signed JWT containing the leased `slot_id`, which the provisioner exchanges at `/v1/auth/jwt/login` for a single-use (`num_uses = 1`, `ttl = 60s`, `renewable = false`) client token. Direct path substitution (`slot_02` using a `slot_01` token) is rejected natively with HTTP 403 Forbidden. Added adversarial verification item **`D38-37`**.
+   - *Remediation:* Formally specified HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied). Implemented a single-use JWT exchange model: coordination authority issues an Ed25519-signed JWT containing the leased `slot_id`, which the provisioner exchanges at `/v1/auth/jwt/login` for a single-use (`num_uses = 1`, `ttl = 60s`, `renewable = false`) client token. Direct path substitution (`slot_02` using a `slot_01` token) is rejected natively with HTTP 403 Forbidden. Added adversarial verification item **`D38-37`**.
 3. **Nonce Allocator as an Explicit Cryptographic Root of Trust (Finding B38-38):**
    - *Defect:* v1.7.0 claimed unconditional mathematical certainty of nonce uniqueness without recognizing that MongoDB RBAC cannot enforce monotonic `$inc` semantics against an authorized identity holding `update` privileges, and lacked a formal compromise response protocol.
    - *Remediation:* Clearly distinguished provisioner compromise (prevented by RBAC), allocator compromise (cryptographic root of trust; detected and recoverable, but NOT preventable at the MongoDB RBAC layer), and coordination replica set compromise. Formally documented why MongoDB 8.0 RBAC actions cannot distinguish `$inc` from `$set` and why `$jsonSchema` cannot enforce inter-update temporal monotonicity. Defined an emergency **Allocator-Compromise Response Protocol**: immediate encryption kill-switch, KMS Data Encryption Key (DEK) epoch retirement and `KeyVersionPrefix` increment (rendering new ciphertexts disjoint from compromised ciphertexts), envelope quarantine and re-encryption, sequence re-seeding, and audit forensic verification. Explicitly stated that the zero-collision claim ($P(\text{collision}) = 0$) is conditional on clearly stated trust assumptions. Added adversarial verification item **`D38-38`**.
@@ -118,6 +118,23 @@ Independent review of v1.9.0 baseline commit `2c4d989dc3b52c5f11ec368afaedab1d63
    - *Confirmed Gap:* v1.9.0 required plaintext hashes to match independent WORM audit checkpoints, but lacked a concrete evidence schema binding trusted plaintext digests to specific Decision OS object versions, canonicalization standards, pre-incident timestamps, and external signing keys.
    - *Remediation:* Formally specified the **Canonical WORM Plaintext Evidence Record** (`CanonicalWormPlaintextEvidenceRecord`) containing 13 mandatory semantic fields: `objectId`, `objectType`, `objectVersion`, `revisionId`, `canonicalizationSpec` (RFC 8785 JCS v1.0), `digestAlgorithm` (SHA-256), `plaintextDigest`, `keyVersionPrefix`, `allocatorEpoch`, `evidenceCreatedAtISO`, `checkpointId`, `signingAlgorithm` (Ed25519), and `signingKeyId` (external compliance HSM key). Enforced 8 strict recovery rules: evidence creation must predate the compromise ($t_{\text{evidence}} < t_{\text{compromise}}$), candidate plaintexts must be canonicalized and digest-verified, signatures must validate against pinned keys, and dual-party SRE Lead and Security Officer sign-off is mandatory prior to unquarantining. Revised test specification **`D38-42`**.
 4. **Comprehensive Traceability & Lineage Audit:** Added an exhaustive Finding-to-Design-to-Test Traceability Matrix (Section 20.3) covering all 42 architecture findings (B38-01 through B38-42). Preserved all accepted boundaries; Gate B remains **PENDING INDEPENDENT REVIEW** (Phase C not started).
+
+
+### Phase B.11 Vault Gateway Boundary, Durable JWT State Machine & WORM Evidence Remediation
+Independent architectural review of baseline commit `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` (v2.0.0) identified remaining security, topological, and state-machine defects across findings B38-41 and B38-42:
+1. **Contradictory Vault Access Topology & NetworkPolicy Realism (Finding B38-41):**
+   - *Defect:* v2.0.0 restricted Vault network access to the JWT redemption gateway on TCP port 8200, but sequence diagrams and operational flows still showed the Provisioner making direct Vault API calls to read `secret/data/slots/slot_01` and write rotated credentials back to Vault. Furthermore, Kubernetes NetworkPolicy operates strictly at Layer 3/Layer 4 and cannot filter Vault API URL paths on the same TCP port.
+   - *Remediation:* Reconciled the architecture around **one coherent topology: All Vault API interactions pass strictly through the Dedicated Vault Gateway (`apps/vault-gateway`, service account `decision_os_vault_gateway`)**. Provisioners and workers have **zero direct network route** to Vault TCP port 8200. The Provisioner authenticates to the Gateway via mTLS presenting a verified SPIFFE workload identity (`spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`) and signed lease JWT. The Gateway validates caller authorization, claims `jti` durably, executes Vault operations, and returns only minimal database credentials (`username`, `password`). **The Provisioner never receives a Vault client token.** Credential rotation writes also pass strictly through the Gateway (`POST /v1/vault-gateway/slots/:slot_id/rotate`). Kubernetes NetworkPolicy fences Vault port 8200 strictly to Gateway pods, backed by mandatory Kubernetes RBAC and Admission Control rules preventing untrusted pods from claiming Gateway labels.
+2. **Durable JWT Redemption State Machine & Conservative Fail-Closed Handling (Finding B38-41):**
+   - *Defect:* v2.0.0 claimed crash recovery for JWT redemptions, but relied on a naive `insertOne` + HTTP 409 pattern that could not distinguish a crash before Vault request dispatch from a crash during or after Vault token issuance. Furthermore, the MongoDB privilege matrix granted the Gateway `insert` but denied `update`, creating a contradiction with state machine transitions.
+   - *Remediation:* Formalized an explicit **7-state durable redemption state machine**: `CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` (terminal success) / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` (terminal lock) / `RECONCILED` / `EXPIRED`. Explicitly granted Gateway `find`, `insert`, `update`, `createIndex` on `rs_coord:27019.jwt_redemptions` scoped strictly to that collection. Formulated atomic CAS updates with `fencing_generation` and `owner_instance_id`. Analyzed all 7 crash and concurrency points; enforced conservative fail-closed quarantine (`OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`) when Vault issuance outcome cannot be mathematically proven. Retries of quarantined `jti`s are strictly blocked.
+3. **Correction of Stale Vault Identity Metadata References (Finding B38-41):**
+   - *Defect:* v2.0.0 corrected templated policies to Entity Alias Metadata in some sections, but left stale `identity.entity.metadata.slot_id` references in Sections 1, 3.3.4, 4.1.2, 7.5.4, 14, 15, and 21.
+   - *Remediation:* Globally reconciled all occurrences to `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id`. Documented the exact HashiCorp Vault relationship: the JWT auth engine mounts under accessor `auth_jwt_9f8e7d6c` and populates Entity Alias Metadata via `claim_mappings`, which must be referenced via the alias path.
+4. **Hardening of Canonical WORM Plaintext Evidence Record & Independent Proof (Finding B38-42):**
+   - *Defect:* v2.0.0 had a 1-year timestamp mismatch between `evidenceCreatedAtISO` (2026) and `evidenceCreatedAtEpochMs` (2025); the schema field count was inconsistent across sections; exact Ed25519 signature payload semantics were undefined; signer-controlled timestamps were erroneously described as proof against backdating without independent trust; and the illustrative SHA-256 digest was the empty-string hash.
+   - *Remediation:* Reconciled timestamp ISO and epoch milliseconds to the exact same instant (`2026-11-10T10:00:00.000Z` $\leftrightarrow$ `1794304800000`) and added validation rule `evidenceCreatedAtEpochMs === Date.parse(evidenceCreatedAtISO)`. Reconciled the definitive **19-field inventory** across all sections. Formalized byte-exact Ed25519 signature semantics using RFC 8785 JSON Canonicalization Scheme (JCS) with domain separation prefix `DECISION_OS_WORM_EVIDENCE_V2:`, strictly excluding the `signature` field itself. Established an independent trust mechanism combining **RFC 3161 Timestamp Tokens (TST)** and **independently verifiable Merkle audit tree checkpoint inclusion proof** (`checkpointHeight` and Merkle audit path). Replaced the empty-input hash placeholder with the concrete computed SHA-256 digest (`3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307`) of an explicit candidate decision payload.
+
 ---
 
 ## 2. Baseline and Inspected Source References
@@ -125,9 +142,10 @@ Independent review of v1.9.0 baseline commit `2c4d989dc3b52c5f11ec368afaedab1d63
 ### 2.1 Git Baseline & Provenance Verification
 - **Target Repository:** `AmiTtiwari43/Decision-OS`
 - **Active Branch:** `fix/batch4-replica-set-transactional-recovery`
-- **Current Baseline Commit:** `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (`docs: harden lease credentials, JWT redemption and nonce incident recovery (v1.9.0)`)
-- **Parent Baseline Commit:** `16eb385a5c73b307ff5331a769711dd55854db91` (`docs: eliminate broker cross-database authority, harden vault binding and revocation ordering (v1.8.0)`)
+- **Current Baseline Commit:** `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` (`docs: correct self-credential privilege, enforce vault ingress boundary and define WORM evidence (v2.0.0)`)
+- **Parent Baseline Commit:** `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (`docs: harden lease credentials, JWT redemption and nonce incident recovery (v1.9.0)`)
 - **Prior Lineage Commits:**
+  - `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` (`docs: correct self-credential privilege, enforce vault ingress boundary and define WORM evidence (v2.0.0)`)
   - `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` (`docs: harden lease credentials, JWT redemption and nonce incident recovery (v1.9.0)`)
   - `16eb385a5c73b307ff5331a769711dd55854db91` (`docs: eliminate broker cross-database authority, harden vault binding and revocation ordering (v1.8.0)`)
   - `3dc53fccb1ade7f6206fdf98372ef4c1aaad9956` (`docs: harden bootstrap broker boundary, nonce allocator authority, and network revocation (v1.7.0)`)
@@ -140,7 +158,7 @@ Independent review of v1.9.0 baseline commit `2c4d989dc3b52c5f11ec368afaedab1d63
   - `161e59e85bb7183c21926f0b04f788eb43312394` (`refactor: add architecture decision record for batch 4 v3.8 cleanup executor`)
   - `bbaf9bee29ef40f80bb8b958569c7ebbb437b427` (`docs: add batch 4 v3.8 destructive call-site inventory document`)
   - `2e276058c119c36ef4d8e5d665bd6c029b2cc6bb` (`fix(batch4): isolate destructive cleanup behind supervised executor v3.7`)
-- **Verification Note:** The repository working tree and GitHub remote branch `fix/batch4-replica-set-transactional-recovery` were independently inspected. Baseline commit `2c4d989dc3b52c5f11ec368afaedab1d63e07b52` is verified as the branch HEAD, descending directly from parent `16eb385a5c73b307ff5331a769711dd55854db91`.
+- **Verification Note:** The repository working tree and GitHub remote branch `fix/batch4-replica-set-transactional-recovery` were independently inspected. Baseline commit `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9` is verified as the branch HEAD, descending directly from parent `2c4d989dc3b52c5f11ec368afaedab1d63e07b52`.
 - **Target Database Engines:**
   - **Coordination & Audit Deployment:** MongoDB 8.0 (Replica Set `rs_coord`, port 27019).
   - **Ephemeral Test Database Deployment:** MongoDB 8.0 (Replica Set `rs_test`, port 27018).
@@ -295,43 +313,96 @@ To resolve the critical vulnerability where Vault token expiry leaves a reusable
    - *Fencing & Session Invalidation:* Existing authenticated sessions and operations are terminated in Phase 3 via `killOp` and `killAllSessionsByPattern`. In accordance with Mandatory Invariant 8, killing sessions alone does NOT invalidate a retained credential; server-side `updateUser` with `changeOwnPassword` is the definitive cryptographic and authentication invalidation boundary.
    - *Production Mandate:* Option B with `changeOwnPassword` self-rotation is the unambiguous canonical production path. Static credentials, unscoped broker identities, and unverified revocation paths are permanently disabled.
 
-### 3.7 Evaluation of JWT Redemption Replay-Prevention & Vault Ingress Boundary Models (Finding B38-41)
-To ensure that signed JWTs cannot be replayed within their validity window and that Vault policy templating binds correctly to the authenticated identity, two architectural options were evaluated:
+### 3.7 Evaluation of Vault Access Topology, Gateway Ingress Boundaries & Durable JWT Redemption (Finding B38-41)
+To ensure that signed JWTs cannot be replayed, that Vault policy templating binds correctly to the authenticated identity, that network fencing is mathematically consistent, and that crash recovery does not risk duplicate token issuance, the Vault access topology was systematically evaluated and redesigned:
 
-1. **Option A — Dedicated JWT Redemption Gateway with Network-Fenced Vault Ingress (SELECTED CANONICAL ARCHITECTURE):**
-   - *Architecture:* All JWT redemptions are mediated by a dedicated microservice: the **JWT Redemption Gateway** (`apps/jwt-redemption-gateway`), running under identity `decision_os_jwt_redemption_gateway`.
-   - *Durable Replay Prevention:* The gateway validates the signed JWT and executes an atomic insert into `rs_coord:27019.decision_os_coordination.jwt_redemptions` under `_id: jti` with `{ w: "majority", j: true }`. Duplicate submissions fail immediately with Code 11000 (`JwtReplayException` $\rightarrow$ HTTP 409).
-   - *Vault Ingress Network Policy (The Enforced Boundary):*
-     - Vault's `/v1/auth/jwt/login` listener is strictly restricted at Layer 4 by Kubernetes `NetworkPolicy` and netfilter iptables rules.
-     - Ingress is permitted **EXCLUSIVELY from the JWT Redemption Gateway's dedicated IP and mTLS certificate**.
-     - Worker pods (`apps/worker`), provisioners (`apps/provisioner`), and external clients have **zero network route** to `/v1/auth/jwt/login`.
-     - Direct bypass attempts from worker networks are dropped by packet filters, natively returning `Connection Refused` or `Connection Timed Out`.
-   - *Vault Entity Alias Metadata Binding:* Vault's JWT auth engine stores mapped claims strictly in **Entity Alias Metadata** (`identity.entity.aliases.<accessor>.metadata.<key>`). The policy template dynamically binds the token strictly to the alias claim:
+1. **Resolution of the Contradictory Vault Access Topology:**
+   - *Topological Inconsistency in v2.0.0:* The v2.0.0 specification placed Vault's TCP port 8200 behind a NetworkPolicy allowing ingress exclusively from the JWT Redemption Gateway, but the sequence diagram and operational descriptions simultaneously showed the Scoped Provisioning Service making direct HTTP calls to Vault to read slot secrets (`GET /v1/secret/data/slots/slot_01`) and write rotated passwords (`PUT /v1/secret/data/slots/slot_01`). Because NetworkPolicy operates at Layer 3/Layer 4 (IP/port) and cannot selectively permit JWT login while blocking secret reads on the same port, direct provisioner calls directly contradicted the network boundary.
+   - *Selected Architecture — Dedicated Vault Gateway Mediating All Vault API Interactions:*
+     All Vault interactions (JWT exchange, slot credential retrieval, and slot password rotation updates) pass **strictly through the Dedicated Vault Gateway (`apps/vault-gateway` / `apps/jwt-redemption-gateway`, service account `decision_os_vault_gateway`)**.
+     - **No Direct Provisioner Route:** Direct network routes between the Provisioning Service (`apps/provisioner`) or Worker pods (`apps/worker`) and Vault TCP port 8200 are **completely eliminated**.
+     - **Workload Authentication:** The Provisioner authenticates to the Gateway over mutual TLS (mTLS) presenting an authorized SPIFFE workload identity (`spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`) and an Ed25519-signed lease JWT issued by the Coordination Authority.
+     - **Gateway Mediation & Zero Client Token Leakage:** The Gateway cryptographically validates the caller identity and JWT claims, executes an atomic CAS claim in MongoDB across a durable 7-state machine, performs the Vault operation using its own scoped Vault credentials, and returns **only the minimal required database credential payload** (`{ username: "decision_os_db_admin_slot_01", password: P_gen1 }`). **The Provisioner never receives a Vault client token.**
+     - **Rotated Credential Persistence:** When a slot administrator rotates its password during Phase 2 Revocation (`updateUser`), the Provisioner calls Gateway endpoint `POST /v1/vault-gateway/slots/:slot_id/rotate` over mTLS presenting the signed revocation order. The Gateway validates authorization, updates Vault KV-v2 at `secret/data/slots/:slot_id`, increments the secret generation, and returns HTTP 200 `{ ok: 1, generation: nextGen }`.
+     - **Response Confidentiality & Bounded Blast Radius:** Gateway responses are strictly scoped to the leased slot. Gateway endpoints enforce strict URI schema validation, preventing arbitrary path traversal, directory listing, or cross-slot credential retrieval.
+
+2. **NetworkPolicy L3/L4 Realism & Workload Identity Model:**
+   - *L3/L4 Boundary Realism:* Kubernetes `NetworkPolicy` operates exclusively at the transport layer (TCP/IP). It cannot inspect HTTP request lines, headers, or URL paths. Therefore, the architecture explicitly rejects any claim that NetworkPolicy selectively allows `/v1/auth/jwt/login` while denying `/v1/secret/data/*` on the same port.
+   - *Exact Fencing Rule:* NetworkPolicy restricts ingress to Vault's port 8200 listener **exclusively to pods matching the Gateway selector** within the `decision-os-system` namespace (`podSelector: { matchLabels: { app.kubernetes.io/name: vault-gateway } }`). All TCP SYN packets originating from workers, provisioners, or external networks are dropped by Linux netfilter in the data plane.
+   - *Workload Identity Limitations of Pod Labels:* Pod labels (`app.kubernetes.io/name: vault-gateway`) are control-plane metadata, NOT cryptographic workload identities. An attacker with Kubernetes pod-creation privileges in the namespace could spoof this label.
+   - *Mandatory Security Assumptions:*
+     1. Strict Kubernetes RBAC: Ordinary workers and provisioners have zero `pods/create`, `pods/update`, or `pods/patch` permissions in `decision-os-system`.
+     2. Admission Control Enforcement: A ValidatingAdmissionWebhook (or OPA Gatekeeper / Kyverno policy) strictly enforces that the `app.kubernetes.io/name: vault-gateway` label can ONLY be applied to pods running the verified Gateway container image with service account `decision_os_vault_gateway`.
+     3. Service Mesh Workload Identity (Defense-in-Depth): In production, mutual TLS with cryptographic SPIFFE X.509 certificates (Istio/Linkerd) provides Layer 7 cryptographic authentication between Gateway and Vault.
+
+3. **Gateway MongoDB Privileges & Durable State Machine Operations:**
+   - *Privilege Reconciliation:* In v2.0.0, the Gateway was granted `find`, `insert`, `createIndex`, but denied `update` on `jwt_redemptions`. This directly contradicted the requirement to advance redemption state during recovery and execution.
+   - *Reconciled Privilege Definition:* The Gateway identity (`decision_os_vault_gateway`) is explicitly granted:
+     `actions: ["find", "insert", "update", "createIndex"]` strictly on `{ db: "decision_os_coordination", collection: "jwt_redemptions" }`.
+     Actions `remove`, `dropCollection`, `dropDatabase`, and all access to other coordination collections are **strictly prohibited**.
+   - *Durable 7-State Redemption State Machine:*
+     To eliminate naive insert-and-409 recovery claims and prevent duplicate token issuance across crashes, redemptions transition across 7 formalized states:
+     `CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` (terminal success) / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` (terminal lock) / `RECONCILED` / `EXPIRED`.
+     Every transition is mediated by atomic compare-and-set (`fencing_generation`). If an outcome is ambiguous (Vault timeout), the state transitions to `OUTCOME_UNKNOWN` and immediately fails closed into `QUARANTINED`. Blind retries of the same `jti` are strictly rejected.
+
+4. **Vault Entity Alias Metadata Templating Syntax (Correction of Stale References):**
+   - *Mount Accessor Architecture:* In HashiCorp Vault, when a JWT auth engine is enabled at `auth/jwt/`, Vault assigns an immutable internal mount accessor identifier (e.g. `auth_jwt_9f8e7d6c`).
+   - When a caller authenticates via JWT, Vault creates an **Entity Alias** under that accessor and maps claims specified in `claim_mappings` into **Entity Alias Metadata** (`identity.entity.aliases.<accessor>.metadata.<key>`), NOT top-level Entity Metadata.
+   - *Corrected Canonical Policy Template:*
      ```hcl
+     # Corrected Templated Policy: slot-lease-reader
      path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" {
        capabilities = ["read"]
      }
+     path "secret/data/slots/*" {
+       capabilities = ["deny"]
+     }
+     path "secret/metadata/*" {
+       capabilities = ["deny"]
+     }
      ```
-2. **Option B — Vault-Side Custom Authentication Plugin (REJECTED):**
-   - *Concept:* Developing an in-tree or external Vault authentication plugin that connects directly to `rs_coord:27019` to verify and consume the `jti` during the `/v1/auth/jwt/login` call.
-   - *Flaw:* Standard HashiCorp Vault does not support arbitrary MongoDB CAS callbacks inside the builtin JWT auth engine. Relying on custom compiled Vault plugins introduces high maintenance overhead, requires Vault to hold write credentials to `rs_coord`, and complicates enterprise Vault upgrades. Option A provides superior boundary isolation using standard Vault KV-v2, standard JWT auth, and standard CNI network policies.
+   - All references across the entire document are strictly reconciled to reference Entity Alias Metadata.
 
-### 3.8 Evaluation of Cryptographic Incident Response Models for Nonce Reuse (Finding B38-42)
-AES-256-GCM nonce reuse under the same Data Encryption Key (DEK) destroys cryptographic security:
-- **Confidentiality:** XOR of plaintexts is revealed: $C_1 \oplus C_2 = P_1 \oplus P_2$.
-- **Authenticity & Integrity:** The GHASH authentication key $H = \text{AES}_K(0^{128})$ can be algebraically solved from two collision tags, enabling an attacker to forge arbitrary authentication tags under key $K$ without knowing $K$.
+5. **Mandatory Invariants for Vault Gateway & JWT Redemption (Invariants 1–8):**
+   1. *Single Ingress Boundary:* Vault TCP port 8200 must accept connections exclusively from the authorized Gateway workload.
+   2. *Zero Client Token Propagation:* Vault client tokens must never be emitted to Provisioners, Workers, or external callers; the Gateway terminates token custody.
+   3. *Atomic Pre-Consumption CAS:* A signed lease JWT must be committed to `rs_coord:27019.jwt_redemptions` under `status: "CLAIMED"` with majority durability before any Vault request is dispatched.
+   4. *Conservative Ambiguous Outcome Quarantine:* If communication with Vault times out or returns an ambiguous response after dispatch, the redemption transitions to `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. Blind retry is strictly prohibited.
+   5. *Workload Identity Parity:* Ingress authorization to the Gateway requires mTLS with verified SPIFFE identity; pod labels alone are explicitly rejected as a sufficient security boundary without admission control.
+   6. *Bounded Operation Allocation:* The Gateway exposes only discrete slot credential retrieval and rotation endpoints; arbitrary path traversal or raw Vault pass-through is strictly denied.
+   7. *Replay Rejection:* Any submission of an already claimed, issued, quarantined, or expired `jti` must fail immediately with `HTTP 409 Conflict` (or `HTTP 403 Forbidden`) without contacting Vault.
+   8. *Single Active Generation:* State transitions must enforce monotonic `fencing_generation` CAS checks; stale gateway instances must not overwrite newer claims.
 
-Two response and integrity models were evaluated:
-1. **Naive Key Rotation & In-Band Re-Encryption (REJECTED — B38-42 Defect):**
-   - *Flaw:* The v1.8.0 specification claimed that retiring the key and re-encrypting quarantined envelopes repaired the compromise. This is cryptographically false:
-     - Key rotation prevents *future* collisions; it cannot reverse past plaintext exposure.
-     - Successful decryption under AES-GCM does NOT prove ciphertext integrity if $H$ was compromised, because an attacker can forge valid authentication tags.
-     - Re-encrypting unverified ciphertext merely re-encrypts tampered or forged data under a new key.
-2. **Formal Cryptographic Incident Response & Canonical WORM Plaintext Evidence Protocol (SELECTED):**
-   - Nonce reuse or allocator compromise is classified as an emergency Cryptographic Incident.
-   - Governed by a 5-phase state machine: (1) Immediate Kill-Switch & Containment; (2) Trust Assessment & Exposure Analysis; (3) Key Retirement & Epoch Advance with provably disjoint `KeyVersionPrefix`; (4) Integrity Validation against **Canonical WORM Plaintext Evidence Records**; (5) Dual-Party SRE/Security Authorization before unquarantining data.
-   - *Concrete Evidence Standard:* Plaintext authenticity is proven strictly by matching the SHA-256 digest of RFC 8785 canonicalized candidate plaintext against an independently signed, immutable WORM evidence record created prior to the compromise timestamp ($t_{\text{evidence}} < t_{\text{compromise}}$).
-   - If independent WORM evidence is absent, mismatched, or post-incident, the data is unrecoverable and must be restored from an external cold backup or discarded. Re-encryption is authorized only after explicit cryptographic integrity verification and dual-party sign-off.
+### 3.8 Evaluation of AES-256-GCM Cryptographic Nonce Reuse Realities & Data-Trust Recovery Boundaries (Finding B38-42)
+AES-256-GCM is an authenticated encryption with associated data (AEAD) algorithm that utilizes Counter (CTR) mode for encryption and Galois Hash (GHASH) for authentication. The security properties and recovery boundaries of AES-256-GCM under nonce reuse were rigorously re-evaluated:
+
+1. **The Irreversible Mathematical Reality of Nonce Reuse:**
+   - **Confidentiality Loss ($P_1 \oplus P_2$):** When two messages are encrypted with the same key $K$ and initialization vector (IV / nonce), their keystreams $S$ are identical. The XOR of the ciphertexts reveals the XOR of the plaintexts:
+     $$C_1 \oplus C_2 = (P_1 \oplus S) \oplus (P_2 \oplus S) = P_1 \oplus P_2$$
+     If partial plaintext is known or follows a predictable JSON/BSON schema, the remaining plaintext is trivially reconstructed.
+   - **Authentication Compromise (GHASH Key $H$ Recovery):** For identical $(K, \text{IV})$, the difference between authentication tags $T_1, T_2$ reveals the linear GHASH evaluation:
+     $$T_1 \oplus T_2 = g_H(A_1, C_1) \oplus g_H(A_2, C_2)$$
+     Solving this polynomial over $\text{GF}(2^{128})$ reveals the GHASH authentication subkey $H = \text{AES}_K(0^{128})$. Once $H$ is known, an adversary can forge valid authentication tags for **arbitrary modified ciphertexts** under that key.
+
+2. **Mandatory Architectural Tenets (Eliminating Naive Re-Encryption Claims):**
+   - **Key rotation DOES NOT repair historical confidentiality loss:** Rotating the KMS Data Encryption Key (DEK) prevents future collisions, but plaintexts exposed via $P_1 \oplus P_2$ remain exposed permanently.
+   - **Re-encryption DOES NOT repair historical authentication compromise:** If $H$ was exposed, an attacker could have tampered with ciphertexts while computing valid tags. Decrypting and re-encrypting tampered ciphertexts merely blesses forged data under the new key epoch.
+   - **AES-GCM decryption success DOES NOT prove authenticity:** A ciphertext with a forged tag passes standard `decrypt()` verification natively.
+   - **A watchdog CANNOT reverse compromise:** The Monotonicity Watchdog is a circuit-breaker that detects regressions and trips an emergency halt; it cannot retroactively undo wire exposure.
+   - **Sequence reseeding ALONE does not restore trust:** Reseeding counters provides forward isolation, but historical ciphertexts remain untrusted.
+
+3. **Independent Trust Architecture for Plaintext Recovery:**
+   - Because ciphertexts in the affected epoch are cryptographically suspect, recovery cannot rely on internal ciphertext validation.
+   - Trust can be re-established ONLY if candidate plaintexts match an **independently verifiable, pre-incident Canonical WORM Plaintext Evidence Record** committed prior to the compromise timestamp ($t_{\text{evidence}} < t_{\text{compromise}}$).
+   - **Independent Trust Sources:** A signer-controlled timestamp alone does not prevent backdating by a compromised allocator or operator. The evidence record must be bound to:
+     1. An **RFC 3161 Timestamp Token (TST)** issued by an external, independent Timestamp Authority (TSA); and/or
+     2. An **Immutable Merkle Audit Tree Checkpoint** with verifiable `checkpointHeight` and cryptographic Merkle inclusion path anchored to cold write-once storage (AWS S3 Object Lock in COMPLIANCE mode / GCS Bucket Lock) with retention exceeding 7 years.
+   - **Timestamp Consistency & Validation:** The evidence record embeds both ISO 8601 UTC and epoch millisecond representations. The validation engine strictly requires:
+     `evidenceCreatedAtEpochMs === Date.parse(evidenceCreatedAtISO)`.
+     Any mismatch, timezone offset other than `Z`, or fractional precision discrepancy causes immediate fail-closed rejection.
+   - **Byte-Exact Signature Semantics:** Canonicalization is performed using RFC 8785 JSON Canonicalization Scheme (JCS). The signature covers a domain-separated payload (`"DECISION_OS_WORM_EVIDENCE_V2:" || JCS(signedFieldsBody)`) signed by an offline compliance HSM Ed25519 key, strictly excluding the `signature` field.
+   - **Concrete Plaintext Digest:** The illustrative digest in documentation must represent a real, verifiable SHA-256 hash of a specified candidate payload, eliminating empty-input placeholders.
+   - **Dual-Party Cryptographic Sign-Off:** Unquarantining and re-encrypting validated plaintexts under a new key epoch requires independent, signed authorization tokens from both the **SRE Lead** and the **Security Officer**.
 
 ---
 
@@ -346,7 +417,7 @@ The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated 
 2. **Decoupled Roles & Database-Scoped Provisioning Delegation (B38-24, B38-26, B38-31, B38-32, B38-36, B38-37, B38-38):**
    - **Provisioning Service (`apps/provisioner`):** Identity `decision_os_provisioner`. Manages ownership leases and durable sagas on `mongodb-coord:27019`. Stripped of `{ db: "", collection: "" }` user/role administration rights on `rs_test` and stripped of write access to `nonce_allocations`.
    - **Nonce Allocation Service (`apps/nonce-allocator`):** Identity `decision_os_nonce_allocator`. Cryptographic Root of Trust holding exclusive write authority on `decision_os_coordination.nonce_allocations` on `rs_coord:27019` (`find`, `insert`, `update`, `createIndex` only; zero `findAndModify`). Leases non-overlapping counter blocks via atomic `$inc`. Governed by the Allocator-Compromise Response Protocol (emergency kill-switch, KMS DEK epoch retirement, envelope re-encryption).
-   - **Partition Slot Vault (`apps/slot-vault`):** Enforces exact lease-to-secret binding via HashiCorp Vault templated policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }`) and single-use JWT exchange (`num_uses = 1`, `ttl = 60s`, `renewable = false`). Path guessing and path substitution are rejected natively with HTTP 403 Forbidden.
+   - **Dedicated Vault Gateway (`apps/vault-gateway`) & Partition Slot Vault (`apps/slot-vault`):** All Vault interactions (JWT authentication, slot credential retrieval, credential rotation writes) pass strictly through the Dedicated Vault Gateway (`apps/vault-gateway`, service account `decision_os_vault_gateway`). Direct network routes to Vault port 8200 are fenced via Kubernetes `NetworkPolicy` exclusively to Gateway pods. Enforces exact lease-to-secret binding via Vault templated policies (`path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" { capabilities = ["read"] }`). Provisioners authenticate to Gateway via mTLS SPIFFE; provisioners never receive a Vault client token. Gateway returns only minimal DB credentials.
    - **Scoped Partition Database Administrators (`decision_os_db_admin_slot_${k}`):** Discrete per-database administrative principals pre-created during offline bootstrap on `rs_test:27018`. Authorization scope is strictly `{ db: "decision_os_test_slot_" + k, collection: "" }`. Creates and drops worker principals directly on that single database. Possesses zero privileges on other databases and zero destructive drop authority.
    - **Elimination of Runtime Credential Broker (Finding B38-36):** No central service with wildcard `{ db: "", collection: "" }` user/role administration runs on the active worker path. Dynamic database creation is designated as an **Offline / Control-Plane Root of Trust** (`deploy/init-mongo-test.sh`). Dynamic broker is disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`). Requests targeting non-existent databases fail closed with `UnallocatedDatabaseException`.
    - **Destructive Cleanup Executor (`apps/cleanup-executor`):** Identity `decision_os_destructive_executor`. Possesses `{ resource: { db: "", collection: "" }, actions: ["dropDatabase", "dropCollection", "listCollections", "find"] }` and `{ resource: { cluster: true }, actions: ["killop", "inprog", "killAnySession", "impersonate", "checkCursorSanity"] }` strictly on `mongodb-test:27018`. Possesses zero role-management privileges and zero user-creation/drop privileges (`createUser`, `createRole`, `dropUser`, `dropRole` are strictly forbidden). Zero access to `mongodb-coord:27019`.
@@ -374,8 +445,8 @@ The selected architecture for Decision OS Batch 4 V3.8 is **Option B: Dedicated 
    By physically isolating the coordination and audit collections on a separate MongoDB deployment (`mongodb-coord:27019`) to which the destructive executor has no network connectivity or credentials, the system eliminates reliance on application-level regex validation. Even if the cleanup executor is fully compromised and attempts `db.getSiblingDB("decision_os_coordination").dropDatabase()`, the command is executed against the test instance where the database does not exist, leaving production coordination and audit records completely untouched.
 2. **Elimination of Cross-Database Privilege Escalation & Broker Blast Radius (B38-24, B38-26, B38-31, B38-36):**
    By eliminating the central credential broker from the active runtime path and provisioning standard workloads exclusively through pre-allocated partition slot databases (`decision_os_test_slot_000` through `slot_255`), MongoDB's RBAC engine natively enforces database isolation. Each partition slot possesses its own scoped administrator (`decision_os_db_admin_slot_${k}`) whose authorization scope is strictly `{ db: "decision_os_test_slot_" + k, collection: "" }`. Because no runtime service holds wildcard `{ db: "", collection: "" }` userAdmin credentials on `rs_test`, cross-database principal manipulation is physically and natively rejected by MongoDB RBAC with Error Code 13. Dynamic pool scaling is isolated to an offline control-plane root of trust (`deploy/init-mongo-test.sh`).
-3. **Partition Slot Vault Exact Lease-to-Secret Binding (B38-37):**
-   By pairing HashiCorp Vault templated policies (`secret/data/slots/{{identity.entity.metadata.slot_id}}`) with a signed single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease. Direct path guessing or path substitution attacks are natively rejected by Vault with HTTP 403 Forbidden.
+3. **Dedicated Vault Gateway & Exact Lease-to-Secret Binding (B38-37, B38-41):**
+   All Vault interactions pass exclusively through the Dedicated Vault Gateway. By pairing HashiCorp Vault templated policies (`secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}`) with a signed single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease through the Gateway. The provisioner never receives a Vault client token. Direct path guessing, bypass, or cross-slot substitution attacks are natively rejected with HTTP 403 Forbidden or dropped at the network boundary.
 4. **Nonce Allocator as an Explicit Cryptographic Root of Trust (B38-32, B38-38):**
    Decoupling nonce allocation into an independent service running identity `decision_os_nonce_allocator` protects counter state from unauthorized reset by the general provisioner. Because MongoDB RBAC cannot enforce monotonic arithmetic against an identity possessing `update` privileges, the Nonce Allocator is formally identified as a Cryptographic Root of Trust. Allocator compromise is mitigated via an emergency Kill-Switch, KMS Data Encryption Key (DEK) epoch retirement, `KeyVersionPrefix` incrementation (rendering new ciphertexts disjoint from compromised ciphertexts), and envelope quarantine/re-encryption under clearly defined trust assumptions.
 5. **Canonical 5-Phase Ordered Revocation & Crash Safety (B38-27, B38-33, B38-35, B38-39):**
@@ -430,18 +501,19 @@ Identity: decision_os_offline_bootstrap
 - Pre-provisions Slots (slot_000 to slot_255)
 - Mints Scoped Admins: decision_os_db_admin_slot_k (changeOwnPassword self-rotation only — B38-40)
 - Zeroizes credentials from tmpfs (shred -u)"]
-        JwtGateway["JWT Redemption Gateway (apps/jwt-redemption-gateway)
-(Identity: decision_os_jwt_redemption_gateway)
-- Validates Ed25519 Signed JWT Claims
-- Atomically claims jti in rs_coord:27019.jwt_redemptions (w: majority, j: true)
-- Exclusive authorized proxy to Vault /v1/auth/jwt/login
+        JwtGateway["Dedicated Vault Gateway (apps/vault-gateway)
+(Identity: decision_os_vault_gateway)
+- Validates Caller mTLS SPIFFE Workload Identity
+- Atomically claims jti in rs_coord:27019.jwt_redemptions across durable 7-state machine
+- Mediates all Vault interactions (JWT Auth, KV Reads, Rotation Writes)
+- Returns ONLY minimal DB credentials to Provisioner (Zero Vault token exposure)
 - Layer 4 NetworkPolicy Ingress Fence Enforced (B38-41)"]
 
         SlotVault["Partition Slot Vault (apps/slot-vault / HashiCorp Vault)
 - Policy: secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}
 - Single-Use Client Token (num_uses=1, TTL=60s, non-renewable)
 - Native HTTP 403 on Path Substitution
-- NetworkPolicy restricts /v1/auth/jwt/login ingress EXCLUSIVELY to JwtGateway
+- NetworkPolicy restricts TCP port 8200 ingress EXCLUSIVELY to JwtGateway
 - Direct worker/provisioner routes blocked at Layer 4 (Packet Drop)"]
 
         WormStore["Canonical WORM Plaintext Evidence Store
@@ -466,7 +538,10 @@ Identity: decision_os_offline_bootstrap
         SagaManager --> ProvisionerPoolCoord["Provisioner Coord Pool
 (Identity: decision_os_provisioner)
 *Zero Write to nonce_allocations!*"]
-        ScopedRoleEngine -->|Single-Use JWT Exchange| SlotVault
+        ScopedRoleEngine -->|mTLS SPIFFE: POST /v1/vault-gateway/slots/:slot_id/claim| JwtGateway
+        JwtGateway -->|Vault Auth & KV Read/Write (Port 8200)| SlotVault
+        JwtGateway -->|Durable 7-State CAS: find, insert, update| CoordDB
+        ScopedRoleEngine -.->|BLOCKED BY L3/L4 NetworkPolicy: No Route to Vault 8200| SlotVault
     end
 
     subgraph NonceAllocatorSpace["Dedicated Nonce Allocation Service Boundary (apps/nonce-allocator)"]
@@ -591,6 +666,7 @@ sequenceDiagram
     participant Client as CleanupExecutorClient
     participant Provisioner as Provisioning Service (apps/provisioner)
     participant NonceService as Nonce Allocator (apps/nonce-allocator [Root of Trust])
+    participant Gateway as Dedicated Vault Gateway (apps/vault-gateway)
     participant Vault as Partition Slot Vault (apps/slot-vault)
     participant NetFence as Network Fence Controller
     participant Executor as Destructive Cleanup Executor (apps/cleanup-executor)
@@ -605,8 +681,10 @@ sequenceDiagram
     CoordDB-->>WorkerA: Connection Refused (Network Policy / Firewall Blocked)
     WorkerA->>Vault: POST /v1/auth/jwt/login (Attempt direct Vault JWT auth bypass — B38-41)
     Vault--xWorkerA: TCP SYN Dropped (Layer 4 NetworkPolicy: Ingress allowed ONLY from Gateway)
+    Provisioner->>Vault: Direct HTTP Request to Port 8200 (Bypass Attempt)
+    Vault--xProvisioner: TCP SYN Dropped (Layer 4 NetworkPolicy: Provisioner has zero route to Vault)
 
-    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA WITH NONCE & EXACT VAULT BINDING (B38-24, B38-26, B38-36, B38-37, B38-38)
+    Note over WorkerA,TestDB: PHASE 2: CONSTRAINED PROVISIONING SAGA WITH NONCE & GATEWAY MEDIATION (B38-24, B38-26, B38-36, B38-37, B38-38, B38-41)
     WorkerA->>Client: claimTestDatabaseOwnership("decision_os_test_slot_01", "runA", "wA")
     Client->>Client: Sign claim payload using Worker A Ed25519 Private Key
     Client->>Provisioner: POST /v1/ownership/claim (Payload + Ed25519 Signature)
@@ -619,25 +697,29 @@ sequenceDiagram
     CoordDB-->>NonceService: Nonce Block Range Leased [blockStart, blockEnd)
     NonceService-->>Provisioner: Leased Block Range { blockStart, blockSize, keyVersion }
 
-    Note over Provisioner,Gateway: Exact Lease Binding via Dedicated JWT Redemption Gateway (B38-37, B38-41)
-    Provisioner->>Gateway: POST /v1/redeem-token { jwt: signed_lease_jwt_for_slot_01 }
-    Gateway->>Gateway: Cryptographically Validate Signature, exp, nbf, aud, iss & jti
-    Gateway->>CoordDB: db.jwt_redemptions.insertOne({ _id: jti, lease_id, slot_id, status: "CLAIMED" }) (w: majority, j: true)
+    Note over Provisioner,Gateway: Exact Lease Binding & Credential Retrieval via Dedicated Vault Gateway (B38-37, B38-41)
+    Provisioner->>Gateway: POST /v1/vault-gateway/slots/slot_01/claim (mTLS SPIFFE + Signed Lease JWT)
+    Gateway->>Gateway: Cryptographically Validate Caller SPIFFE ID, JWT Signature, exp, nbf, aud, iss & jti
+    Gateway->>CoordDB: db.jwt_redemptions.insertOne({ _id: jti, lease_id, slot_id, status: "CLAIMED", fencing_generation: 1 }) (w: majority, j: true)
     CoordDB-->>Gateway: { ok: 1 } (jti claimed durably; duplicate jti throws Code 11000)
-    Gateway->>Vault: POST /v1/auth/jwt/login { jwt } (Authorized Network Route)
+    Gateway->>CoordDB: db.jwt_redemptions.updateOne({ _id: jti, status: "CLAIMED" }, { $set: { status: "VAULT_REQUEST_SENT" } })
+    Gateway->>Vault: POST /v1/auth/jwt/login { jwt } (Authorized Network Route on Port 8200)
     Vault->>Vault: Map Claims to Entity Alias Metadata (identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id="slot_01")
     Vault-->>Gateway: Ephemeral Client Token (TTL: 60s, num_uses: 1)
-    Gateway-->>Provisioner: Ephemeral Vault Token
-    Provisioner->>Vault: GET /v1/secret/data/slots/slot_01 (Authorized by Templated Policy)
-    Vault-->>Provisioner: Scoped Credentials: decision_os_db_admin_slot_01 (Single-use token revoked)
+    Gateway->>Vault: GET /v1/secret/data/slots/slot_01 (Authorized by Templated Policy)
+    Vault-->>Gateway: Scoped Credentials: { username: "decision_os_db_admin_slot_01", password: P_gen1 }
+    Gateway->>CoordDB: db.jwt_redemptions.updateOne({ _id: jti, status: "VAULT_REQUEST_SENT" }, { $set: { status: "ISSUED" } })
+    Gateway-->>Provisioner: HTTP 200 OK { username: "decision_os_db_admin_slot_01", password: P_gen1 }
+    Note over Provisioner: Provisioner receives ONLY minimal DB credentials. ZERO Vault token exposed!
+
     Note over WorkerA,Gateway: Direct Replay Attempt via Gateway Rejected Atomically
-    WorkerA->>Gateway: POST /v1/redeem-token { replayed_jwt }
+    WorkerA->>Gateway: POST /v1/vault-gateway/slots/slot_01/claim { replayed_jwt }
     Gateway->>CoordDB: db.jwt_redemptions.insertOne({ _id: jti })
     CoordDB-->>Gateway: MongoServerError: DuplicateKey error (Code 11000)
-    Gateway-->>WorkerA: HTTP 409 Conflict (JwtReplayException: Token already redeemed)
-    Note over Provisioner,Vault: Direct Path Substitution Rejected Natively
-    Provisioner->>Vault: GET /v1/secret/data/slots/slot_02 (Path Substitution Attempt)
-    Vault-->>Provisioner: HTTP 403 Forbidden (Blocked by path "secret/data/slots/*" deny)
+    Gateway-->>WorkerA: HTTP 409 Conflict (JwtReplayException: Token already claimed/redeemed)
+    Note over Provisioner,Gateway: Path Mismatch Rejected Natively by Gateway & Vault
+    Provisioner->>Gateway: POST /v1/vault-gateway/slots/slot_02/claim { jwt_for_slot_01 }
+    Gateway-->>Provisioner: HTTP 403 Forbidden (Slot Claim Mismatch: JWT binds slot_01 != requested slot_02)
 
     Note over Provisioner,TestDB: Connect using Scoped DB Admin (decision_os_db_admin_slot_01) scoped strictly to slot_01:
     Provisioner->>TestDB: db.getSiblingDB("decision_os_test_slot_01").createRole({ role: "workerRole", privileges: [CRUD on self] })
@@ -647,19 +729,14 @@ sequenceDiagram
     Provisioner-->>Client: HTTP 200 OK { user, pwdA, authSource: "decision_os_test_slot_01" }
 
     Note over WorkerA,CoordDB: PHASE 3: DURABLE ACKNOWLEDGEMENT ORDERING (B38-17)
-    Client->>TestDB: Connect PoolA & execute { ping: 1 } (Authentication Verified)
-    TestDB-->>Client: { ok: 1 }
-    Client->>Provisioner: POST /v1/ownership/activate (Signed activation handshake)
-    Provisioner->>CoordDB: Commit state ACTIVATED (w: majority, j: true)
-    Provisioner->>CoordDB: Atomic $unset: { credentialEnvelope: 1 } (w: majority)
-    Provisioner-->>Client: HTTP 200 OK { status: 'ACTIVATED' }
+    Client->>TestDB: Connect PoolA & execute { ping: 1 } (Confirm Worker SCRAM-SHA-256 Auth)
+    TestDB-->>Client: { ok: 1 } (Worker operational)
+    Client->>Provisioner: POST /v1/ownership/activate (Worker Activation Confirmed)
+    Provisioner->>CoordDB: Mark ACTIVE, destroy envelope in ownership_locks (w: majority, j: true)
+    Provisioner-->>Client: HTTP 200 OK (Activation Sealed)
+    WorkerA->>TestDB: Execute isolated test CRUD workloads on decision_os_test_slot_01
 
-    Note over WorkerA,TestDB: PHASE 4: CROSS-DATABASE ISOLATION NATIVELY ENFORCED (B38-11, B38-26, B38-36)
-    WorkerA->>TestDB: PoolA.db("decision_os_test_slot_02").collection("data").find()
-    TestDB-->>WorkerA: MongoServerError: not authorized on decision_os_test_slot_02 (Code 13)
-
-    Note over WorkerA,TestDB: PHASE 5: CANONICAL 5-PHASE ORDERED REVOCATION EXECUTION (B38-25, B38-27, B38-35, B38-39)
-    WorkerA->>Client: cleanupTestDatabase("decision_os_test_slot_01", "runA", "wA")
+    Note over WorkerA,AuditService: PHASE 4: CANONICAL 5-PHASE ORDERED REVOCATION (B38-25, B38-27, B38-35, B38-39, B38-40, B38-41)
     Client->>Executor: POST /v1/cleanup/request (Signed Cleanup Order)
     Executor->>CoordDB: Verify Ownership Lease, Mark CLAIMED in cleanup_ledger (w: majority)
     
@@ -677,8 +754,11 @@ sequenceDiagram
     Provisioner->>TestDB: db.runCommand({ updateUser: "decision_os_db_admin_slot_01", pwd: P_gen2, writeConcern: { w: "majority", j: true } })
     Note over Provisioner,TestDB: Slot Admin Self-Rotation: requires actions: ["changeOwnPassword"] (B38-40). Broader changePassword excluded.
     TestDB-->>Provisioner: { ok: 1 } (P_gen1 permanently invalid on server; majority acknowledged)
-    Provisioner->>Vault: PUT /v1/secret/data/slots/slot_01 { password: P_gen2, generation: 2 }
-    Vault-->>Provisioner: HTTP 200 OK (Slot Vault updated with fresh credential)
+    Provisioner->>Gateway: POST /v1/vault-gateway/slots/slot_01/rotate (mTLS SPIFFE + Signed Revocation Order + P_gen2)
+    Gateway->>Gateway: Authenticate Caller & Revocation Signature
+    Gateway->>Vault: PUT /v1/secret/data/slots/slot_01 { data: { password: P_gen2, generation: 2 } }
+    Vault-->>Gateway: HTTP 200 OK
+    Gateway-->>Provisioner: HTTP 200 OK { ok: 1, generation: 2 } (Vault KV updated via Gateway)
     Provisioner->>CoordDB: Mark ownership_locks.state = 'REVOKED', credential_generation = 2 (w: majority)
     Provisioner-->>Executor: HTTP 200 OK { userDropped: true, roleDropped: true, slotRotated: true }
     Executor->>CoordDB: Record phase2_identity_revoked_at, credential_generation in cleanup_ledger (w: majority)
@@ -874,7 +954,51 @@ To satisfy least-privilege isolation without granting central unrestricted datab
      - If an attacker calls `GET /v1/secret/data/slots/slot_02`, Vault matches against `path "secret/data/slots/*"` (`deny`) and returns `HTTP 403 Forbidden`.
      - If `slot_id` metadata is absent or malformed, the path template evaluates to empty string and falls closed to `deny`.
 
-5. **Durable JWT Redemption Protocol & Vault Ingress Network Policy (Finding B38-41):**
+5. **Dedicated Vault Gateway, Ingress Fencing & Durable Redemption Architecture (Finding B38-41):**
+   - **Resolution of Contradictory Topology:** All Vault API operations (JWT exchange, slot credential retrieval, credential rotation writes) pass **strictly through the Dedicated Vault Gateway (`apps/vault-gateway` / `apps/jwt-redemption-gateway`)**. Direct network communication between Provisioners (`apps/provisioner`) or Workers (`apps/worker`) and Vault TCP port 8200 is completely eliminated.
+   - **Workload Identity Contract & Authentication:**
+     - Provisioners authenticate to the Gateway exclusively over mutual TLS (mTLS) with SPIFFE workload identities issued by the cluster trust domain:
+       `spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`
+     - Calls must present both the verified SPIFFE client certificate and an Ed25519-signed lease JWT issued by the Coordination Authority.
+     - Unauthenticated requests, requests from unauthorized SPIFFE identities, or requests lacking signed JWT claims are rejected with `HTTP 401 Unauthorized` or `HTTP 403 Forbidden` at the TLS termination layer.
+   - **Gateway Operation & Confidentiality Rules:**
+     - **Endpoint 1: `POST /v1/vault-gateway/slots/:slot_id/claim`:** Exchanges the signed lease JWT for minimal database credentials. The Gateway validates caller identity, verifies the JWT signature, executes atomic CAS claim on `rs_coord:27019.jwt_redemptions` across the 7-state machine, calls Vault `/v1/auth/jwt/login`, reads `secret/data/slots/:slot_id`, terminates the single-use Vault token, and returns **only** `{ username: "decision_os_db_admin_slot_" + k, password: P_gen }`. **The Provisioner never receives a Vault client token.**
+     - **Endpoint 2: `POST /v1/vault-gateway/slots/:slot_id/rotate`:** Receives the signed revocation order and newly rotated password $P_{N+1}$ from the Provisioner following server-side `updateUser` acknowledgement. Gateway validates authorization, updates Vault KV-v2 at `secret/data/slots/:slot_id`, increments secret generation, and returns `HTTP 200 { ok: 1, generation: nextGen }`.
+     - **Strict Path Isolation:** Gateway endpoints strictly parse `:slot_id` against the canonical pattern `^slot_([0-1][0-9]{2}|2[0-4][0-9]|25[0-5])$`. Arbitrary path traversal, directory listing, and raw Vault API pass-through are strictly blocked.
+     - **Secret Redaction & Logging:** Gateway logs record strictly structural metadata (`jti`, `slot_id`, `lease_id`, caller SPIFFE ID, latency, outcome). Plaintext passwords, private keys, and Vault client tokens are strictly redacted from logs, traces, and metrics.
+   - **Kubernetes NetworkPolicy L3/L4 Transport Fencing:**
+     - Acknowledging that Kubernetes `NetworkPolicy` operates exclusively at Layer 3/Layer 4 (IP/port) and cannot filter URL paths, the policy restricts all ingress to Vault TCP port 8200 strictly to pods matching the Gateway label:
+     ```yaml
+     # Kubernetes NetworkPolicy: vault-gateway-ingress-fence
+     apiVersion: networking.k8s.io/v1
+     kind: NetworkPolicy
+     metadata:
+       name: vault-gateway-ingress-fence
+       namespace: decision-os-system
+     spec:
+       podSelector:
+         matchLabels:
+           app.kubernetes.io/name: slot-vault
+       policyTypes:
+       - Ingress
+       ingress:
+       # Vault TCP port 8200 restricted EXCLUSIVELY to Dedicated Vault Gateway
+       - from:
+         - podSelector:
+             matchLabels:
+               app.kubernetes.io/name: vault-gateway
+         ports:
+         - protocol: TCP
+           port: 8200
+     ```
+   - **Workload Identity Integrity & Admission Control:**
+     - Because Kubernetes pod labels are control-plane metadata that could be spoofed if cluster RBAC is misconfigured, the following mandatory controls are enforced:
+       1. *Kubernetes RBAC Boundary:* Worker and Provisioner service accounts possess zero `pods/create`, `pods/update`, or `pods/patch` privileges in the `decision-os-system` namespace.
+       2. *Admission Controller Validation:* A ValidatingAdmissionWebhook (or OPA Gatekeeper / Kyverno policy) verifies container image cryptographic digest and service account binding before allowing any pod to be scheduled with `app.kubernetes.io/name: vault-gateway`.
+       3. *Service Mesh mTLS:* Gateway-to-Vault communication is authenticated at Layer 7 using SPIFFE X.509 certificates (Istio/Linkerd).
+   - **Gateway Compromise Containment:**
+     - The Gateway has zero network route and zero credentials to `rs_test:27018`. It cannot execute `dropDatabase`, `createUser`, or `dropUser`.
+     - Gateway permissions on `rs_coord:27019` are strictly limited to `{ db: "decision_os_coordination", collection: "jwt_redemptions" }` (`find`, `insert`, `update`, `createIndex`). Access to `ownership_locks`, `cleanup_ledger`, `nonce_allocations`, or `cleanup_audit_log` is denied.
    - **Mandatory Invariants for JWT Redemption:**
      1. A signed JWT cannot be redeemed directly outside the authorized redemption boundary.
      2. One `jti` can authorize at most one successful redemption and produce at most one Vault client token.
@@ -884,55 +1008,10 @@ To satisfy least-privilege isolation without granting central unrestricted datab
      6. Ambiguous Vault responses cannot cause a second independent token issuance.
      7. Vault's `token_num_uses = 1` must not be described as JWT replay prevention (it bounds token use, not JWT re-submission).
      8. Network policy must enforce the architecture, not merely document an intended call sequence.
-   - **Dedicated JWT Redemption Gateway (`apps/jwt-redemption-gateway`):**
-     - Runs as a dedicated service under identity `decision_os_jwt_redemption_gateway` on `rs_coord:27019`.
-     - Exposes endpoint: `POST /v1/redeem-token` over mTLS.
-     - Performs cryptographic validation: Ed25519 signature against coordination authority public key, verification of `iss`, `aud`, `nbf`, `exp`, and presence of UUID v4 `jti`.
-     - Enforces durable atomic CAS before contacting Vault:
-       ```javascript
-       // Executed on rs_coord:27019.decision_os_coordination.jwt_redemptions
-       await db.collection('jwt_redemptions').insertOne({
-         _id: claims.jti,
-         lease_id: claims.lease_id,
-         slot_id: claims.slot_id,
-         redeemed_by: callerIdentity,
-         redeemed_at: new Date(),
-         expiresAt: new Date(claims.exp * 1000 + 86400000), // TTL = exp + 24 hours
-         status: "CLAIMED"
-       }, { writeConcern: { w: "majority", j: true } });
-       ```
-       If a duplicate `jti` is presented, MongoDB raises Error Code 11000 (`DuplicateKey`), and the gateway immediately returns `HTTP 409 Conflict` with `JwtReplayException`. Zero Vault tokens are minted.
-   - **Vault Ingress Network Policy Fencing (Layer 4 Ingress Restriction):**
-     To prevent attackers or compromised workers from bypassing the gateway and calling Vault's `/v1/auth/jwt/login` directly:
-     ```yaml
-     # Kubernetes NetworkPolicy: vault-jwt-auth-ingress-fence
-     apiVersion: networking.k8s.io/v1
-     kind: NetworkPolicy
-     metadata:
-       name: vault-jwt-auth-ingress-fence
-       namespace: decision-os-system
-     spec:
-       podSelector:
-         matchLabels:
-           app: slot-vault
-       policyTypes:
-       - Ingress
-       ingress:
-       # Allow /v1/auth/jwt/login exclusively from JWT Redemption Gateway
-       - from:
-         - podSelector:
-             matchLabels:
-               app: jwt-redemption-gateway
-         ports:
-         - protocol: TCP
-           port: 8200
-     ```
-     Netfilter / iptables rule equivalent:
-     ```bash
-     iptables -A INPUT -p tcp --dport 8200 -s 10.244.2.42 -m comment --comment "Allow JWT Gateway" -j ACCEPT
-     iptables -A INPUT -p tcp --dport 8200 -m comment --comment "Drop all other JWT auth ingress" -j DROP
-     ```
-     Worker pods (`apps/worker`) and provisioner pods (`apps/provisioner`) have zero network ingress clearance to Vault's port 8200 auth endpoint. Direct bypass attempts fail natively with TCP packet drop or connection refused.
+   - **Gateway MongoDB Privilege Reconciliation:**
+     - In v2.0.0, the Gateway was granted `insert` but denied `update`. To advance the durable 7-state redemption state machine (`CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` / `RECONCILED` / `EXPIRED`), the Gateway principal `decision_os_vault_gateway` is explicitly granted:
+       `actions: ["find", "insert", "update", "createIndex"]` on `rs_coord:27019.decision_os_coordination.jwt_redemptions`.
+       Destructive actions (`remove`, `dropCollection`, `dropDatabase`) remain strictly prohibited.
 
 6. **MongoDB-Enforced Credential Lifecycle & Slot Rotation Protocol (Finding B38-40):**
    - **Mandatory Credential Lifecycle Invariants:**
@@ -965,7 +1044,7 @@ To satisfy least-privilege isolation without granting central unrestricted datab
          LEASED --> ROTATING: Teardown initiated (Phase 2 Revocation)
          ROTATING --> ROTATED: updateUser confirmed by MongoDB server (w: majority, j: true)
          ROTATING --> QUARANTINED: Timeout / Network severance / Ambiguous result
-         ROTATED --> VAULT_SYNCHRONIZED: Vault KV-v2 updated under Generation N+1
+         ROTATED --> VAULT_SYNCHRONIZED: Vault KV-v2 updated via Gateway (POST /v1/vault-gateway/slots/:slot_id/rotate)
          VAULT_SYNCHRONIZED --> TEARDOWN_COMPLETED: Phases 3, 4, 5 complete (state: CLEANED)
          TEARDOWN_COMPLETED --> AVAILABLE: Slot Reassignment Gate verified
          QUARANTINED --> [*]: Permanent lock retention; requires SRE reconciliation
@@ -1022,9 +1101,11 @@ MongoDB RBAC and HashiCorp Vault natively enforce the following negative authori
 8. **Provisioner Bulk Slot Enumeration Attempt (NC-8):**
    - Compromised `decision_os_provisioner` attempts `vault.list("secret/metadata/slots")`
    - *Result:* `VaultError: 403 permission denied (path-based ACL denies list capability)`.
-9. **Compromised Provisioner Direct Vault API Path Substitution Attack (NC-9 - B38-37):**
-   - Attacker compromises provisioner, acquires single-use Vault token bound to `slot_01`, and directly issues `GET /v1/secret/data/slots/slot_02` using Vault HTTP API.
-   - *Result:* `HTTP 403 Forbidden` (`{"errors":["1 error occurred: * permission denied"]}`). Templated policy restricts access strictly to bound `slot_01`.
+9. **Compromised Provisioner Direct Vault API Path Substitution Attack (NC-9 - B38-37, B38-41):**
+   - Attacker compromises provisioner and attempts to issue `GET /v1/secret/data/slots/slot_02` directly against Vault's HTTP API.
+   - *Result:* TCP SYN dropped by Layer 4 NetworkPolicy; provisioner network has zero route to Vault port 8200.
+   - Attacker then calls Gateway `POST /v1/vault-gateway/slots/slot_02/claim` presenting a signed JWT bound to `slot_01`.
+   - *Result:* `HTTP 403 Forbidden: Slot claim mismatch`. Gateway verifies that `claims.slot_id === requestedSlot`. Furthermore, even if forwarded, Vault's templated policy against Entity Alias Metadata matches `secret/data/slots/*` (`deny`) and returns `HTTP 403 Forbidden`.
 10. **Scoped Partition Admin Cross-Database Wire Attack (NC-10 - B38-36):**
     - Attacker connects directly to `rs_test:27018` using `decision_os_db_admin_slot_01` credentials and attempts `db.getSiblingDB("decision_os_test_slot_02").createUser(...)`.
     - *Result:* `MongoServerError: not authorized on decision_os_test_slot_02 to execute command { createUser: ... }` (Error Code 13). Cross-database administration is natively rejected by MongoDB RBAC.
@@ -1032,20 +1113,21 @@ MongoDB RBAC and HashiCorp Vault natively enforce the following negative authori
     - Attacker retains password $P_N$ for `decision_os_db_admin_slot_01` after lease $N$ terminates. Slot completes Phase 2 Revocation where password rotates to $P_{N+1}$ via `updateUser` (`changeOwnPassword`) with majority ack. Attacker attempts SCRAM authentication with $P_N$.
     - *Result:* `MongoServerError: Authentication failed` (Error Code 18). Server-side authorization cache was invalidated upon majority write; retained password $P_N$ is permanently dead.
 12. **Sequential or Concurrent JWT Redemption Replay via Gateway (NC-12 - B38-41):**
-    - Attacker intercepts valid signed JWT for `slot_01` and submits it a second time to `POST /v1/redeem-token` on the JWT Redemption Gateway.
-    - *Result:* `HTTP 409 Conflict` with `JwtReplayException: JWT jti already redeemed`. MongoDB atomic insert into `rs_coord:27019.jwt_redemptions` rejected with DuplicateKey (Error Code 11000). Zero Vault tokens issued.
-13. **Direct Vault Network Ingress Bypass Attempt by Worker (NC-13 - B38-41):**
-    - Compromised worker pod in `apps/worker` attempts to call Vault directly: `curl -X POST http://slot-vault.decision-os-system:8200/v1/auth/jwt/login -d '{"jwt":"..."}'`.
-    - *Result:* Connection timed out or connection refused. Kubernetes `NetworkPolicy` (`vault-jwt-auth-ingress-fence`) drops TCP SYN packets at the data plane because caller does not match `app: jwt-redemption-gateway`.
+    - Attacker intercepts valid signed JWT for `slot_01` and submits it a second time to `POST /v1/vault-gateway/slots/slot_01/claim` on the Dedicated Vault Gateway.
+    - *Result:* `HTTP 409 Conflict` with `JwtReplayException: JWT jti already claimed or redeemed`. MongoDB atomic CAS insert into `rs_coord:27019.jwt_redemptions` is rejected with DuplicateKey (Error Code 11000). Gateway does not contact Vault. Zero Vault tokens issued.
+13. **Direct Vault Network Ingress Bypass Attempt by Worker or Provisioner (NC-13 - B38-41):**
+    - Compromised worker pod in `apps/worker` or provisioner pod in `apps/provisioner` attempts to call Vault directly: `curl -X POST http://slot-vault.decision-os-system:8200/v1/auth/jwt/login -d '{"jwt":"..."}'` or `curl http://slot-vault.decision-os-system:8200/v1/secret/data/slots/slot_01`.
+    - *Result:* Connection timed out or connection refused. Kubernetes `NetworkPolicy` (`vault-gateway-ingress-fence`) drops TCP SYN packets at the Linux netfilter data plane because caller does not match `app.kubernetes.io/name: vault-gateway`. Direct routes to Vault port 8200 are physically blocked.
 14. **Slot Admin Self-Rotation Attempt with changePassword Only (NC-14 - B38-40):**
     - Role misconfiguration test: `decision_os_db_admin_slot_01` is granted action `changePassword` but NOT `changeOwnPassword`. It attempts `db.runCommand({ updateUser: "decision_os_db_admin_slot_01", pwd: "..." })`.
     - *Result:* `MongoServerError: not authorized on decision_os_test_slot_01 to execute command { updateUser: "decision_os_db_admin_slot_01", ... }` (Error Code 13). MongoDB RBAC strictly requires `changeOwnPassword` for self-password modification.
 15. **Plaintext Unquarantine Attempt with Mismatched or Post-Incident WORM Evidence (NC-15 - B38-42):**
     - Attacker or recovery script attempts to unquarantine an AES-GCM envelope presenting an audit checkpoint created after the compromise timestamp ($t_{\text{checkpoint}} \ge t_{\text{compromise}}$) or with mismatched SHA-256 digest.
     - *Result:* `SecurityException: WormEvidenceValidationFailed`. Candidate plaintext digest does not match pre-incident WORM signature. Envelope remains permanently in `QUARANTINED`.
-16. **Direct Path Guessing on Partition Slot Vault (NC-16 - B38-37):**
-    - Provisioner holding a token minted for `slot_01` calls `GET /v1/secret/data/slots/slot_02`.
-    - *Result:* `HTTP 403 Forbidden: permission denied`. Vault evaluates templated path policy against Entity Alias Metadata `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id`; matches `secret/data/slots/*` (`deny`).
+16. **Direct Path Guessing on Partition Slot Vault (NC-16 - B38-37, B38-41):**
+    - Provisioner attempts direct path guessing against Vault: dropped at netfilter (NetworkPolicy).
+    - Provisioner calls Gateway requesting `slot_02` while presenting token minted for `slot_01`:
+    - *Result:* `HTTP 403 Forbidden: Slot claim mismatch`. Gateway verifies that `claims.slot_id === requestedSlot`. In addition, Vault evaluates templated path policy against Entity Alias Metadata `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id` and denies access with `HTTP 403 Forbidden`.
 
 ### 7.6 Exact Privilege Matrix by Identity & Deployment
 
@@ -1076,7 +1158,7 @@ The following matrix formally specifies permissions for every principal across b
 | **`decision_os_db_admin_slot_${k}`** | **`rs_test` (`:27018`)** | `{ db: "decision_os_test_slot_${k}", collection: "" }` | `createRole`, `dropRole`, `createUser`, `dropUser`, `grantRole`, `revokeRole`, `changeOwnPassword`, `getRole`, `getUser` (includes `updateUser` for self-rotation) | `changePassword` (modifying other users' passwords), `dropDatabase`, `dropCollection`, any command on other databases | Scoped Partition Slot DB Admin. Natively constrained to slot $k$ by MongoDB RBAC (Code 13 on all other DBs). Governed by Option B Credential Rotation (B38-40). Granted `changeOwnPassword` strictly; broader `changePassword` is explicitly prohibited. |
 | **`decision_os_db_admin_slot_${k}`** | **`rs_test` (`:27018`)** | Other databases & cluster | **NONE** | All commands on databases other than slot $k$ or `{ cluster: true }` | MongoDB RBAC engine on `rs_test` (Code 13). |
 | **`decision_os_db_admin_slot_${k}`** | **`rs_coord` (`:27019`)** | **ALL RESOURCES** | **NONE (Zero Access)** | **ALL COMMANDS** | Zero network route and zero credentials. |
-| **`decision_os_jwt_redemption_gateway`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.jwt_redemptions` | `find`, `insert`, `createIndex` (Atomic `jti` reservation) | `remove`, `update`, `dropCollection`, `dropDatabase` | Dedicated JWT Gateway identity. Enforces durable replay prevention before calling Vault (B38-41). |
+| **`decision_os_vault_gateway`** (`decision_os_jwt_redemption_gateway`) | **`rs_coord` (`:27019`)** | `decision_os_coordination.jwt_redemptions` | `find`, `insert`, `update`, `createIndex` (Durable 7-state CAS redemption state machine) | `remove`, `dropCollection`, `dropDatabase`, and all access to other coordination collections | Dedicated Vault Gateway identity. Mediates all Vault operations. Enforces durable 7-state redemption state machine (`CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` / `RECONCILED` / `EXPIRED`) via atomic CAS. `update` privilege is strictly required to advance state transitions (B38-41). |
 | **`decision_os_network_fence_controller`** | **Infrastructure Plane** | Worker pod/container veth interfaces | Program netfilter/iptables egress drops to ports 27018/27019 | ALL MongoDB wire commands | CNI / Linux netfilter engine; zero DB credentials. Phase 1 fence execution. |
 | **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | `decision_os_coordination.cleanup_audit_log` | `find`, `insert`, `createIndex` (Append-Only) | `update`, `remove`, `dropCollection`, `dropDatabase` | MongoDB RBAC engine on `rs_coord` (Code 13; prevents `findAndModify` write ops). |
 | **`decision_os_audit_writer`** | **`rs_coord` (`:27019`)** | All other collections | **NONE** | All CRUD and DDL commands | MongoDB RBAC engine on `rs_coord` (Code 13). |
@@ -1158,7 +1240,7 @@ The following matrix establishes the **canonical 5-phase execution order**, assi
 | **Phase 2: Identity Revocation** | **2. Server-Side Identity Deletion (`dropUser`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_slot_${k}` via mTLS handoff | `actions: ["dropUser"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `UserNotFound` Code 11); recorded as `phase2_identity_revoked_at` in `cleanup_ledger` | Idempotent; retried on network partition; orphan reaper sweeps if stalled | Executor strictly blocks Phase 3 and Phase 4 until `dropUser` majority ack is verified. If unreachable, lease expires $\rightarrow$ `QUARANTINED`. |
 | **Phase 2: Identity Revocation** | **3. Server-Side Role Deletion (`dropRole`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_slot_${k}` via mTLS handoff | `actions: ["dropRole"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` (or `RoleNotFound` Code 31) | Idempotent; retried on restart; orphan reaper sweeps if stalled | If unconfirmed, recorded in saga with `compensationPending: true`; background reaper completes. |
 | **Phase 2: Identity Revocation** | **3a. Slot Admin Credential Self-Rotation (`updateUser`)** | Scoped Provisioning Service (`apps/provisioner`) | `decision_os_db_admin_slot_${k}` (Self) | `actions: ["changeOwnPassword"]` on `{ db: targetTestDb, collection: "" }` | `rs_test:27018` (`targetTestDb.$cmd`) | `{ ok: 1 }` with `w: "majority", j: true` for `updateUser`; new generation committed | Retried on timeout; if outcome unknown $\rightarrow$ fail closed to `QUARANTINED` | Mandatory Invariant: Previous password permanently invalid on MongoDB server before slot reassignment. Granted `changeOwnPassword`; broader `changePassword` excluded (B38-40). |
-| **Phase 2: Identity Revocation** | **3b. Partition Vault Secret Update** | Scoped Provisioning Service (`apps/provisioner`) | Provisioner Vault Token (scoped KV write) | `create/update` on `secret/data/slots/${slot_id}` | HashiCorp Vault API | HTTP 200/204 with version increment; generation recorded in `cleanup_ledger` | Retried with backoff; if unconfirmed $\rightarrow$ slot quarantined | Slot reassignment strictly refused until Vault and MongoDB both acknowledge rotation. |
+| **Phase 2: Identity Revocation** | **3b. Partition Vault Secret Update** | Scoped Provisioning Service via Dedicated Vault Gateway | SPIFFE Workload Identity (`spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`) + signed revocation order | `create/update` on `secret/data/slots/${slot_id}` mediated by Gateway (`decision_os_vault_gateway`) | mTLS REST to Gateway (`POST /v1/vault-gateway/slots/:slot_id/rotate`) $\rightarrow$ Gateway internal Vault client (Port 8200) | HTTP 200 `{ ok: 1, generation: nextGen }` confirmed; recorded in `cleanup_ledger` | Retried with backoff; if unconfirmed $\rightarrow$ slot quarantined. Provisioner never holds a Vault token or direct route to Vault (B38-41). | Slot reassignment strictly refused until Vault and MongoDB both acknowledge rotation. |
 | **Phase 3: Op Cancellation** | **4. Prepared Transaction Resolution** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["inprog"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `currentOp` returns 0 matching operations with `preparedTransaction: true` | Rescan `currentOp` on restart; coordinate abort with transaction coordinator | If prepared transaction cannot be aborted within 30s, halt teardown; transition to `QUARANTINED`. Never proceed to Phase 4 while prepared transactions remain. |
 | **Phase 3: Op Cancellation** | **5. In-Flight Operation Cancellation (`killOp`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killop"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned for all active worker `opid`s; active query count reaches 0 | Query active ops; re-issue `killOp` until active count is 0 | If `killOp` fails repeatedly, halt; transition to `QUARANTINED`. Never dispatch Phase 4 wire drop while worker ops are executing. |
 | **Phase 3: Op Cancellation** | **6. Logical Session Termination (`killAllSessionsByPattern`)** | Destructive Cleanup Executor (`apps/cleanup-executor`) | `decision_os_destructive_executor` | `actions: ["killAnySession", "impersonate"]` on `{ cluster: true }` | `rs_test:27018` (`admin.$cmd`) | `{ ok: 1 }` returned from `killAllSessionsByPattern`; recorded as `phase3_ops_killed_at` in `cleanup_ledger` | Idempotent command; re-execute on process restart or network timeout | If command fails, retry 3 times with exponential backoff (1s, 2s, 4s); if persistent failure, mark `QUARANTINED`. |
@@ -1212,7 +1294,7 @@ To guarantee strict execution ordering, eliminate concurrency races, and ensure 
      ```
    - The Provisioning Service verifies the signature, binds to `decision_os_db_admin_slot_01`, dispatches `dropUser` and `dropRole` with `{ writeConcern: { w: "majority", j: true } }`.
    - **Slot Admin Self-Rotation (Finding B38-40):** Provisioner executes `updateUser("decision_os_db_admin_slot_" + k, { pwd: P_{new} })` on `rs_test:27018` under write concern `{ w: "majority", j: true }`. In MongoDB RBAC, self-rotation of one's own password strictly requires **`changeOwnPassword`** on `{ db: targetTestDb, collection: "" }`. Broader `changePassword` is prohibited.
-   - Provisioner updates Partition Slot Vault KV-v2 at `secret/data/slots/${slot_id}` with the new password.
+   - Provisioner calls Dedicated Vault Gateway endpoint `POST /v1/vault-gateway/slots/${slot_id}/rotate` over mTLS presenting the signed revocation order; Gateway validates authorization and updates Vault KV-v2 at `secret/data/slots/${slot_id}` with the new password.
    - Provisioner marks `ownership_locks.state = 'REVOKED'`, `credential_generation = nextGen` on `rs_coord:27019`, and responds with HTTP 200 `{ ok: 1, userDropped: true, roleDropped: true, slotRotated: true }`.
    - The Executor writes `{ phase2_identity_revoked_at: new Date(), credential_generation: nextGen }` to `cleanup_ledger` with `w: "majority"`.
    - *Failure & Retry:* If Provisioner or MongoDB is unreachable, or if password rotation times out with an unknown outcome, the teardown **fails closed** and the slot transitions to `QUARANTINED`. The previous password is treated as potentially unrotated; slot reassignment is strictly blocked until confirmed. **The Executor NEVER attempts to execute `dropUser` itself.**
@@ -1367,45 +1449,97 @@ To provide genuine mathematical proof of plaintext authenticity independent of t
 ```json
 {
   "$schema": "https://specs.decision-os.internal/schemas/v2/worm-evidence.json",
-  "evidenceSchemaVersion": "2.0.0",
-  "evidenceId": "worm-ev-9a8b7c6d-5e4f-3a2b-1c0d-e9f8a7b6c5d4",
-  "objectId": "decision_envelope_slot_01_lease_10928",
-  "objectType": "DECISION_PAYLOAD_ENVELOPE",
-  "objectVersion": 1,
-  "revisionId": "rev-00042",
-  "canonicalizationSpec": "RFC-8785-JCS-v1.0",
-  "digestAlgorithm": "SHA-256",
-  "plaintextDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-  "keyVersionPrefix": "0x0001",
-  "allocatorEpoch": "epoch_2026_11_10_001",
+  "evidenceRecordId": "worm-ev-9a8b7c6d-5e4f-3a2b-1c0d-e9f8a7b6c5d4",
+  "evidenceSchemaVersion": "2.1.0",
+  "decisionPayloadSha256": "3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307",
+  "decisionId": "dec-2026-11-10-001",
+  "slotId": "slot_01",
+  "fencingGeneration": 1,
+  "workerIdentity": "decision_os_worker_runA_wA",
+  "leaseId": "lease_10928",
+  "kmsKeyVersion": "0x0001",
+  "nonceValue": "000100000000000000000001",
+  "plaintextByteLength": 115,
   "evidenceCreatedAtISO": "2026-11-10T10:00:00.000Z",
-  "evidenceCreatedAtEpochMs": 1762768800000,
-  "checkpointId": "worm-chk-height-00008421",
-  "checkpointHeight": 8421,
-  "signingAlgorithm": "Ed25519",
-  "signingKeyId": "key-audit-hsm-2026-q4-ed25519-primary",
-  "signature": "MC4CAQACBQDY...<base64_encoded_ed25519_signature>",
-  "wormStorage": {
-    "provider": "S3_OBJECT_LOCK_COMPLIANCE",
-    "bucketUri": "s3://decision-os-audit-worm-prod/checkpoints/2026-11-10/worm-chk-height-00008421.json",
-    "wormRetentionUntil": "2036-11-10T10:00:00.000Z",
-    "legalHold": true,
-    "sha256Digest": "7f83b1657ff1fc53b92dc18148a1d65dfc2d4b1fa3d677284addd200126d9069"
-  }
+  "evidenceCreatedAtEpochMs": 1794304800000,
+  "tsaTimestampToken": "MIIEPgYJKoZIhvcNAQcCoIIE...<base64_encoded_rfc3161_tst>",
+  "merkleTreeCheckpointHeight": 8421,
+  "merkleInclusionProof": [
+    "0x9f8e7d6c5b4a3928170f1e2d3c4b5a69788796a5b4c3d2e1f0e9d8c7b6a59483",
+    "0x1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b"
+  ],
+  "complianceOfficerSignature": "MC4CAQACBQDY...<base64_signature>",
+  "sreLeadSignature": "MD4CAQACBQDX...<base64_signature>",
+  "signature": "MEQCID1...<base64_encoded_ed25519_signature>"
 }
 ```
 
+**Illustrative Candidate Decision Payload & Concrete Digest:**
+The illustrative SHA-256 digest `3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307` is the mathematically verified SHA-256 hash of the canonical RFC 8785 JSON representation of the following candidate decision payload:
+```json
+{
+  "action": "EXECUTE_TRANSACTION",
+  "amount": 10000,
+  "currency": "USD",
+  "decisionId": "dec-2026-11-10-001",
+  "slotId": "slot_01"
+}
+```
+Under RFC 8785 JCS, the key order is strictly lexicographical and whitespace is eliminated, producing the exact byte stream:
+`{"action":"EXECUTE_TRANSACTION","amount":10000,"currency":"USD","decisionId":"dec-2026-11-10-001","slotId":"slot_01"}`
+whose SHA-256 digest is `3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307`. The empty-input hash placeholder (`e3b0c442...`) is permanently eliminated.
+
+**Definitive 19-Field Inventory:**
+1. `evidenceRecordId`: Unique UUID v4 identifying this evidence record.
+2. `evidenceSchemaVersion`: Semantic schema version (`"2.1.0"`).
+3. `decisionPayloadSha256`: SHA-256 digest of RFC 8785 canonicalized candidate decision plaintext.
+4. `decisionId`: Discrete decision transaction identifier.
+5. `slotId`: Pre-allocated partition slot database identifier (`slot_000` through `slot_255`).
+6. `fencingGeneration`: Monotonic fencing generation at time of evidence creation.
+7. `workerIdentity`: Discrete authenticated worker principal.
+8. `leaseId`: Active ownership lease identifier.
+9. `kmsKeyVersion`: Active KMS Data Encryption Key version prefix (`0x0001`).
+10. `nonceValue`: Exact 96-bit hexadecimal initialization vector assigned to this payload.
+11. `plaintextByteLength`: Exact byte length of unencrypted plaintext.
+12. `evidenceCreatedAtISO`: ISO 8601 UTC timestamp (`"2026-11-10T10:00:00.000Z"`).
+13. `evidenceCreatedAtEpochMs`: UTC milliseconds matching ISO representation exactly (`1794304800000`).
+14. `tsaTimestampToken`: Base64-encoded RFC 3161 Timestamp Token from external, independent Timestamp Authority.
+15. `merkleTreeCheckpointHeight`: Sequence height in immutable Merkle audit tree.
+16. `merkleInclusionProof`: Cryptographic Merkle audit path to anchored root.
+17. `complianceOfficerSignature`: Independent digital signature of Compliance Officer.
+18 `sreLeadSignature`: Independent digital signature of SRE Lead.
+19. `signature`: Ed25519 signature of the Compliance HSM covering canonicalized fields 1–18.
+
+**Byte-Exact Ed25519 Signature Semantics:**
+- **Canonicalization:** RFC 8785 JSON Canonicalization Scheme (JCS).
+- **Domain Separation Prefix:** `"DECISION_OS_WORM_EVIDENCE_V2:"`.
+- **Signed Payload Formulation:**
+  $$\text{SignedBytes} = \text{UTF8}(\text{"DECISION_OS_WORM_EVIDENCE_V2:"}) \parallel \text{JCS}(\text{recordWithoutSignature})$$
+  The `signature` field is **strictly excluded** from the signed payload body before JCS serialization.
+- **Key Custody:** Signed by an offline Hardware Security Module (HSM) Ed25519 private key (`signingKeyId: "key-audit-hsm-2026-q4-ed25519-primary"`). The corresponding public key is pinned offline in compliance policy bundles.
+
+**Independent Creation Proof & Immutability:**
+- A signer-controlled timestamp alone does NOT prove that a record was created prior to a compromise timestamp if the signing allocator or operator is suspect.
+- Proof of creation time is established independently by:
+  1. An **RFC 3161 Timestamp Token (TST)** issued by an external, trusted Timestamp Authority (TSA) binding `decisionPayloadSha256` and `evidenceRecordId` to an auditable public clock; and
+  2. Anchoring the record's Merkle root to write-once storage (AWS S3 Object Lock in COMPLIANCE mode / GCS Bucket Lock) with a 10-year legal hold.
+
 **Mandatory Plaintext Integrity Recovery Rules:**
-1. **Pre-Incident Timestamp Requirement:** The evidence record creation timestamp must strictly predate the incident compromise timestamp:
+1. **Timestamp Consistency Requirement:** The evidence record timestamp representations must be strictly identical:
+   `evidenceCreatedAtEpochMs === Date.parse(evidenceCreatedAtISO)`.
+   Any timezone other than `Z` or fractional precision difference causes immediate validation failure.
+2. **Pre-Incident Timestamp Requirement:** The evidence record creation timestamp and independent TSA token must strictly predate the incident compromise timestamp:
    $$t_{\text{evidenceCreatedAtEpochMs}} < t_{\text{compromiseEpochMs}}$$
-   Any evidence record generated after $t_{\text{compromise}}$ is untrusted and rejected.
-2. **Canonical Serialization:** The recovered candidate plaintext must be serialized using RFC 8785 JSON Canonicalization Scheme (JCS).
-3. **Cryptographic Digest Match:** The SHA-256 digest of the canonicalized candidate plaintext must match `plaintextDigest` byte-for-byte.
-4. **Signature & Provenance Verification:** The record's Ed25519 signature must verify against the pinned public key for `signingKeyId` retrieved from an offline, hardware-backed Security Compliance Authority registry.
-5. **Key Independence:** The audit signing key `signingKeyId` must reside in a dedicated external compliance HSM, completely separate from the active Vault KMS and distinct from any worker or provisioner identity.
-6. **Immutable WORM Custody:** The record must be stored on physical WORM media (e.g. AWS S3 Object Lock in COMPLIANCE mode, GCS Bucket Lock, or write-once optical/tape media) with retention period exceeding 7 years.
-7. **Fail-Closed Default:** If WORM evidence is missing, signature verification fails, or digest mismatches, candidate plaintext must be discarded. Re-encryption of unverified data is strictly prohibited.
-8. **Dual-Party Unquarantine Gate:** Even with verified WORM evidence, transition from `QUARANTINED` to `RE_ENCRYPTION_AUTHORIZED` requires independent signed authorization tokens from both the SRE Lead and Security Officer.##### 3. Exact 96-Bit Nonce Encoding & Bit Layout
+   Any evidence record generated at or after $t_{\text{compromise}}$ is untrusted and rejected.
+3. **Canonical Serialization:** The recovered candidate plaintext must be serialized using RFC 8785 JSON Canonicalization Scheme (JCS).
+4. **Cryptographic Digest Match:** The SHA-256 digest of the canonicalized candidate plaintext must match `decisionPayloadSha256` byte-for-byte.
+5. **Signature & Provenance Verification:** The record's Ed25519 signature must verify against the pinned public key for `signingKeyId` retrieved from an offline, hardware-backed Security Compliance Authority registry.
+6. **Key Independence:** The audit signing key `signingKeyId` must reside in a dedicated external compliance HSM, completely separate from the active Vault KMS and distinct from any worker or provisioner identity.
+7. **Immutable WORM Custody:** The record must be stored on physical WORM media (e.g. AWS S3 Object Lock in COMPLIANCE mode, GCS Bucket Lock, or write-once optical/tape media) with retention period exceeding 7 years.
+8. **Fail-Closed Default:** If WORM evidence is missing, signature verification fails, or digest mismatches, candidate plaintext must be discarded. Re-encryption of unverified data is strictly prohibited.
+9. **Dual-Party Unquarantine Gate:** Even with verified WORM evidence, transition from `QUARANTINED` to `RE_ENCRYPTION_AUTHORIZED` requires independent signed authorization tokens from both the SRE Lead (`sreLeadSignature`) and Security Officer (`complianceOfficerSignature`).
+
+##### 3. Exact 96-Bit Nonce Encoding & Bit Layout
 The 96-bit (12-byte) initialization vector is structured as follows:
 $$\text{IV} = \text{KeyVersionPrefix}_{16\text{-bit}} \parallel \text{AllocatedRangeBlock}_{32\text{-bit}} \parallel \text{MonotonicCounter}_{48\text{-bit}} = 96\text{ bits (12 bytes)}$$
 
@@ -1612,9 +1746,9 @@ To ensure durable replay prevention, unambiguous Vault entity alias binding, and
 - **Header:** `{"alg":"EdDSA","typ":"JWT"}`
 - **Canonical Payload:** `{"aud":"vault.decision-os.internal","exp":1762770060,"iat":1762770000,"iss":"decision_os_coordination_authority","jti":"550e8400-e29b-41d4-a716-446655440000","lease_id":"lease_8a7d3b2e_41d4","nbf":1762770000,"slot_id":"slot_01","sub":"decision_os_provisioner"}`
 - **Serialized JCS Hash:** `sha256:d8a2f4e910b8c634791e8432a76f251d1e4c9b3a0e68d5f7129c54b6381a91e5`
-- **Gateway Redemption Flow:** Presented to `POST /v1/redeem-token` on `apps/jwt-redemption-gateway`. The gateway claims `jti` in `rs_coord:27019.jwt_redemptions` before forwarding to Vault over dedicated network route.
+- **Gateway Redemption Flow:** Presented to `POST /v1/vault-gateway/slots/slot_01/claim` on `apps/vault-gateway` over mTLS presenting verified SPIFFE workload identity (`spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`). The Gateway validates caller identity, transitions the record across the durable 7-state machine in `rs_coord:27019.jwt_redemptions` (`CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED`), retrieves slot credentials from Vault over its dedicated internal route, and returns `{ username: "decision_os_db_admin_slot_01", password: P_gen1 }`. **The Provisioner never receives a Vault client token.**
 - **Expected Vault Auth Mapping:** Populates `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id = "slot_01"` and `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.lease_id = "lease_8a7d3b2e_41d4"`.
-- **Durable Claim Record:** Created in `rs_coord:27019.jwt_redemptions` under `_id: "550e8400-e29b-41d4-a716-446655440000"`. Duplicate submission with identical `jti` raises Error Code 11000 and is rejected natively. Direct worker access to `/v1/auth/jwt/login` is blocked by NetworkPolicy.
+- **Durable Claim Record:** Created in `rs_coord:27019.jwt_redemptions` under `_id: "550e8400-e29b-41d4-a716-446655440000"`. Duplicate submission with identical `jti` raises Error Code 11000 and is rejected natively with `HTTP 409 Conflict` without contacting Vault. Direct worker and provisioner access to Vault port 8200 is blocked by Layer 4 NetworkPolicy.
 
 ---
 
@@ -1755,6 +1889,180 @@ stateDiagram-v2
 | **`OUTCOME_UNKNOWN`** | Signed SRE Reconciliation Order (`action: "QUARANTINE"`) | `QUARANTINED` | Admin Operator (Signed) | SRE reviews incident, verifies evidence, signs quarantine order. **NO redispatch drop is issued!** | `$set: { state: 'QUARANTINED', quarantinedAt: now, quarantinedBy: opId, ticketId, dropExecutionLock: true }`. |
 | **`OUTCOME_UNKNOWN`** | Authoritative Oplog Proof (`action: "CONFIRM_CLEANED"`) | `CLEANED` | Admin Operator (Signed) | Demonstrable server oplog record satisfies Section 10.4 (majority commit, comment correlation). | `$set: { state: 'CLEANED', reconciledAt: now, proofType: 'OPLOG_VERIFIED', dropExecutionLock: false, phase4_storage_dropped_at: now }`. |
 
+
+
+### 9.4 Durable JWT Redemption State Machine & Crash Recovery Analysis (Finding B38-41)
+To eliminate naive insert-and-409 recovery assumptions, prevent token leakage across crashes, and establish a mathematically sound boundary between the Gateway and Vault, all JWT redemptions transition through an authoritative **7-state durable redemption state machine** persisted on `rs_coord:27019.decision_os_coordination.jwt_redemptions`:
+
+```mermaid
+stateDiagram-v2
+    [*] --> CLAIMED: POST /v1/vault-gateway/slots/:slot_id/claim (Atomic insertOne, w: majority, j: true)
+    CLAIMED --> VAULT_REQUEST_SENT: CAS updateOne (status: CLAIMED -> VAULT_REQUEST_SENT, gen bump)
+    CLAIMED --> EXPIRED: Lease TTL exceeded before dispatch
+
+    VAULT_REQUEST_SENT --> ISSUED: Vault success & credentials retrieved (status: ISSUED, terminal success)
+    VAULT_REQUEST_SENT --> OUTCOME_UNKNOWN: Timeout / 5xx / Network partition during Vault call
+    
+    OUTCOME_UNKNOWN --> QUARANTINED: Immediate Fail-Closed Lock (status: QUARANTINED, terminal lock)
+    
+    QUARANTINED --> RECONCILED: Supervised Administrative SRE Audit (Vault token confirmed dead/never issued)
+    QUARANTINED --> [*]: Quarantined jti permanently blocked; blind retries rejected
+
+    ISSUED --> [*]: Minimal DB credentials emitted to Provisioner (Zero Vault token leakage)
+    EXPIRED --> [*]: Terminal expired state
+```
+
+#### 1. Formal Redemption State Definitions
+1. **`CLAIMED`**: The signed lease JWT has been cryptographically validated, and the `jti` has been durably committed to MongoDB with majority journaling. Vault has NOT yet been contacted.
+2. **`VAULT_REQUEST_SENT`**: The gateway has successfully executed an atomic CAS advance recording that an HTTP request is in-flight to Vault's TCP port 8200 listener.
+3. **`ISSUED`**: Terminal success state. Vault successfully authenticated the JWT, issued a single-use token, the gateway retrieved the slot database credentials, and confirmed state update before returning credentials to the provisioner.
+4. **`OUTCOME_UNKNOWN`**: Ambiguous execution state. The gateway dispatched an HTTP request to Vault, but the connection timed out, was severed, or returned an indeterminate 5xx response. It is mathematically unknown whether Vault issued a token.
+5. **`QUARANTINED`**: Terminal locked state. Automatically entered from `OUTCOME_UNKNOWN` under the mandatory fail-closed policy. Submissions presenting this `jti` are permanently rejected with `HTTP 409 Conflict` / `HTTP 423 Locked`.
+6. **`RECONCILED`**: Administrative transition from `QUARANTINED` authorized strictly after offline audit proves whether Vault minted a token and guarantees that any minted token is expired or revoked.
+7. **`EXPIRED`**: Terminal state entered if the lease TTL expires before the redemption process completes.
+
+#### 2. Authoritative Transition Matrix
+| Current State | Event / Trigger | Next State | Permitted Actor | CAS Guard & Preconditions | Durable Mutations Recorded |
+|---|---|---|---|---|---|
+| **(None)** | `POST /v1/vault-gateway/slots/:slot_id/claim` | `CLAIMED` | Dedicated Vault Gateway (`decision_os_vault_gateway`) | Caller mTLS SPIFFE verified; JWT signature valid; `nbf <= now < exp`; `slot_id` matches URL; `_id: jti` unique. | `insertOne({ _id: jti, lease_id, slot_id, status: "CLAIMED", fencing_generation: 1, owner_instance_id, created_at: now, expires_at: exp + 24h })` (`w: "majority", j: true`). |
+| **`CLAIMED`** | Dispatch Request to Vault Port 8200 | `VAULT_REQUEST_SENT` | Dedicated Vault Gateway | Gateway owns active claim; lease unexpired. | `updateOne({ _id: jti, status: "CLAIMED", fencing_generation: 1, owner_instance_id }, { $set: { status: "VAULT_REQUEST_SENT", fencing_generation: 2, dispatched_at: now } })`. |
+| **`CLAIMED`** | Lease TTL Expiry | `EXPIRED` | Gateway / Reaper Service | `expires_at < now` before dispatch. | `updateOne({ _id: jti, status: "CLAIMED", expires_at: { $lt: now } }, { $set: { status: "EXPIRED", expired_at: now } })`. |
+| **`VAULT_REQUEST_SENT`** | Vault Returns 200 & Secret Retrieved | `ISSUED` | Dedicated Vault Gateway | Vault successfully returned credentials; token revoked. | `updateOne({ _id: jti, status: "VAULT_REQUEST_SENT", fencing_generation: 2, owner_instance_id }, { $set: { status: "ISSUED", fencing_generation: 3, issued_at: now } })`. |
+| **`VAULT_REQUEST_SENT`** | Vault Timeout / 5xx / Network Partition | `OUTCOME_UNKNOWN` | Dedicated Vault Gateway | Network timeout ($>5\text{s}$) or TCP reset during Vault interaction. | `updateOne({ _id: jti, status: "VAULT_REQUEST_SENT", fencing_generation: 2, owner_instance_id }, { $set: { status: "OUTCOME_UNKNOWN", fencing_generation: 3, unknown_at: now, error: err.message } })`. |
+| **`OUTCOME_UNKNOWN`** | Automatic Fail-Closed Containment | `QUARANTINED` | Dedicated Vault Gateway / Supervisor | Automatic immediate transition upon ambiguous result. | `updateOne({ _id: jti, status: "OUTCOME_UNKNOWN" }, { $set: { status: "QUARANTINED", quarantined_at: now } })`. |
+| **`QUARANTINED`** | Supervised SRE Audit & Verification | `RECONCILED` | Administrative Operator (Signed SRE Order) | Offline audit of Vault audit logs confirms token was revoked or never minted. | `updateOne({ _id: jti, status: "QUARANTINED" }, { $set: { status: "RECONCILED", reconciled_at: now, reconciled_by: opId, ticketId } })`. |
+
+#### 3. Concrete MongoDB Atomic CAS Update Expressions
+```javascript
+// Step 1: Pre-Consumption Atomic Insertion
+try {
+  await db.collection('jwt_redemptions').insertOne({
+    _id: claims.jti,
+    lease_id: claims.lease_id,
+    slot_id: claims.slot_id,
+    caller_spiffe_id: callerSpiffeId,
+    status: "CLAIMED",
+    fencing_generation: 1,
+    owner_instance_id: process.env.GATEWAY_INSTANCE_ID,
+    created_at: new Date(),
+    expires_at: new Date(claims.exp * 1000 + 86400000) // TTL = exp + 24 hours
+  }, { writeConcern: { w: "majority", j: true } });
+} catch (err) {
+  if (err.code === 11000) {
+    throw new JwtReplayException(`JWT jti ${claims.jti} already claimed or redeemed`);
+  }
+  throw err;
+}
+
+// Step 2: Atomic Advance to VAULT_REQUEST_SENT
+const dispatchRes = await db.collection('jwt_redemptions').updateOne({
+  _id: claims.jti,
+  status: "CLAIMED",
+  fencing_generation: 1,
+  owner_instance_id: process.env.GATEWAY_INSTANCE_ID
+}, {
+  $set: {
+    status: "VAULT_REQUEST_SENT",
+    fencing_generation: 2,
+    vault_dispatched_at: new Date()
+  }
+}, { writeConcern: { w: "majority", j: true } });
+if (dispatchRes.matchedCount === 0) {
+  throw new FencingConflictException("Redemption claim superseded or fence generation mismatch");
+}
+
+// Step 3: Vault Interaction & Advance to ISSUED
+try {
+  const credentials = await executeVaultSecretRetrieval(claims);
+  const issuedRes = await db.collection('jwt_redemptions').updateOne({
+    _id: claims.jti,
+    status: "VAULT_REQUEST_SENT",
+    fencing_generation: 2,
+    owner_instance_id: process.env.GATEWAY_INSTANCE_ID
+  }, {
+    $set: {
+      status: "ISSUED",
+      fencing_generation: 3,
+      issued_at: new Date()
+    }
+  }, { writeConcern: { w: "majority", j: true } });
+  if (issuedRes.matchedCount === 0) {
+    throw new FencingConflictException("Redemption advance to ISSUED failed fencing verification");
+  }
+  return credentials; // Emits { username, password } ONLY. Vault token is never returned.
+} catch (vaultErr) {
+  // Step 4: Fail Closed into OUTCOME_UNKNOWN -> QUARANTINED
+  await db.collection('jwt_redemptions').updateOne({
+    _id: claims.jti,
+    status: "VAULT_REQUEST_SENT",
+    fencing_generation: 2,
+    owner_instance_id: process.env.GATEWAY_INSTANCE_ID
+  }, {
+    $set: {
+      status: "OUTCOME_UNKNOWN",
+      fencing_generation: 3,
+      quarantine_reason: vaultErr.message,
+      unknown_at: new Date()
+    }
+  }, { writeConcern: { w: "majority", j: true } });
+
+  await db.collection('jwt_redemptions').updateOne({
+    _id: claims.jti,
+    status: "OUTCOME_UNKNOWN"
+  }, {
+    $set: {
+      status: "QUARANTINED",
+      quarantined_at: new Date()
+    }
+  }, { writeConcern: { w: "majority", j: true } });
+
+  throw new FailClosedQuarantineException("Vault interaction timed out or returned ambiguous outcome; jti quarantined");
+}
+```
+
+#### 4. Rigorous Crash and Concurrency Failure Analysis (7 Failure Points)
+
+##### Failure Scenario 1: Gateway crashes after `CLAIMED` write but before Vault request dispatch
+- **Detectable State on Recovery:** Record in `rs_coord:27019.jwt_redemptions` is in `status: "CLAIMED"`, `fencing_generation: 1`, `vault_dispatched_at: null`.
+- **Vault State:** Vault TCP port 8200 received zero packets; no token was minted.
+- **Recovery & Retry Policy:** Safe to retry ONLY if caller identity and lease remain valid and active. However, because the crashed instance may be an un-fenced zombie, the supervisory reconciler verifies instance quiescence, bumps `fencing_generation`, or cancels the lease. If the provisioner retries before supervisory resolution, the submission fails with `HTTP 409 Conflict` (or waits on lease lock). The provisioner saga aborts and requests a fresh lease with a newly minted `jti`.
+- **Token Cleanup:** Zero Vault tokens were generated; no Vault cleanup required.
+
+##### Failure Scenario 2: Gateway crashes while Vault request is in-flight
+- **Detectable State on Recovery:** Record is in `status: "VAULT_REQUEST_SENT"`, `fencing_generation: 2`, `issued_at: null`.
+- **Vault State:** Indeterminate. Vault may have received the request and minted a client token, or the packet was dropped in-flight.
+- **Recovery & Retry Policy:** **CONSERVATIVE FAIL-CLOSED.** It is mathematically impossible for the gateway to prove whether a token was minted. On restart, the startup scanner transitions the record from `VAULT_REQUEST_SENT` $\rightarrow$ `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. **Retry with the same `jti` is strictly prohibited.**
+- **Token Cleanup:** If Vault minted an ephemeral token, Vault's engine-enforced `ttl = 60s` guarantees that the token self-expires within 60 seconds. The slot database password was never retrieved or delivered to the provisioner; the provisioner saga aborts and triggers Phase 2 credential rotation before slot reassignment.
+
+##### Failure Scenario 3: Gateway crashes after Vault returns credentials but before `ISSUED` state write
+- **Detectable State on Recovery:** Record remains in `status: "VAULT_REQUEST_SENT"` in MongoDB.
+- **Vault State:** Vault processed the login, returned the single-use token, and the secret was read. The single-use token was consumed or is revoked.
+- **Recovery & Retry Policy:** Because MongoDB does not contain the `ISSUED` acknowledgement, the state machine classifies the outcome as ambiguous: `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. The gateway startup scanner locks the record. The provisioner never received credentials and times out.
+- **Token Cleanup:** The Vault token has already expired or been consumed. The database password remains protected because the gateway process crashed before persisting or transmitting it. The provisioner saga fails closed and triggers slot self-rotation.
+
+##### Failure Scenario 4: Gateway crashes after `ISSUED` write but before HTTP response delivery to provisioner
+- **Detectable State on Recovery:** Record in MongoDB is in `status: "ISSUED"`, `fencing_generation: 3`.
+- **Vault State:** Single-use Vault client token was already consumed and revoked upon secret read.
+- **Recovery & Retry Policy:** The Provisioner experiences a client-side TCP connection drop and retries `POST /v1/vault-gateway/slots/:slot_id/claim` with the same JWT.
+- **Deterministic Rejection:** The Gateway inspects `jwt_redemptions` and finds `status: "ISSUED"`. Because the single-use Vault token is dead and the Gateway **does not store plaintext database credentials** in its database (preserving Mandatory Invariant 2), the Gateway **CANNOT re-issue credentials**. The Gateway returns `HTTP 409 Conflict` with `LeaseAlreadyRedeemedException`. The Provisioner saga aborts, cleans up, and requests a fresh lease.
+
+##### Failure Scenario 5: Vault responds with timeout or 5xx server error
+- **Detectable State on Recovery:** Gateway catches a socket timeout ($>5\text{s}$) or HTTP 500/502/503 from Vault.
+- **Recovery & Retry Policy:** **FAIL-CLOSED QUARANTINE.** The Gateway transitions the record from `VAULT_REQUEST_SENT` $\rightarrow$ `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. The Gateway responds to the Provisioner with `HTTP 504 Gateway Timeout` (or `HTTP 502 Bad Gateway`). Blind retries of the same `jti` are strictly rejected.
+- **Operator Alert:** High-priority metric `vault_gateway_quarantine_total` is incremented, and an SRE alert is emitted.
+
+##### Failure Scenario 6: Network partition between Gateway and Vault
+- **Detectable State on Recovery:** TCP connection establishment fails (packet drops / `ETIMEDOUT` / netfilter block).
+- **Recovery & Retry Policy:** If partition occurs before TCP SYN ack, the state remains `CLAIMED` and fails immediately. If partition occurs after HTTP request bytes were flushed across the socket, the outcome is ambiguous; the Gateway advances to `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. The Provisioner must acquire a fresh lease and distinct `jti`.
+
+##### Failure Scenario 7: Concurrent redemption requests for same `jti` arriving at gateway replicas
+- **Execution Race:** Two concurrent requests presenting the identical signed JWT arrive at Gateway Replica 1 and Gateway Replica 2 simultaneously.
+- **Resolution:** Both replicas attempt `db.collection('jwt_redemptions').insertOne({ _id: claims.jti, ... }, { writeConcern: { w: "majority", j: true } })`.
+- **Guaranteed Outcome:** MongoDB replica set primary serializes the writes on the unique `_id` index. Exactly one replica succeeds and receives acknowledgement. The second replica fails with `MongoServerError: E11000 duplicate key error`.
+- **Caller Response:** Winning replica proceeds through state machine. Losing replica immediately catches Error 11000 and returns `HTTP 409 Conflict` (`JwtReplayException`) to its caller without transmitting any packet to Vault. Zero duplicate tokens or requests reach Vault.
+
+---
+
 ---
 
 
@@ -1799,7 +2107,7 @@ A single point-in-time observation of `listDatabases()` or `currentOp()` **is no
 | **15. Premature slot reassignment attempt (B38-40)** | Attacker attempts to lease slot before revocation confirmation. | `CLAIMED` / `ROTATING` | Coordination Authority CAS rejects lease acquisition (`previous_credential_revoked != true`). | Valid CAS guard in `ownership_locks`. | **FORBIDDEN.** |
 | **16. Previous worker attempts authentication post-reassignment (B38-40)** | Old worker presents password $P_N$ after slot rotated to $P_{N+1}$. | `AVAILABLE` / `CLAIMED` by new worker | MongoDB SCRAM authentication engine throws Error Code 18 (`AuthenticationFailed`). | Wire protocol rejection by MongoDB daemon. | **FORBIDDEN.** |
 | **17. Controller crashes between MongoDB rotation and ledger commit (B38-40)** | MongoDB updated password; `cleanup_ledger` shows incomplete Phase 2. | `CLAIMED` | Recovery coordinator probes MongoDB directly to verify password state, updates ledger or moves to `QUARANTINED`. | Direct server credential probe. | **FORBIDDEN.** Slot never released prematurely. |
-| **18. Direct Vault JWT Auth bypass attempt / Gateway timeout (B38-41)** | Worker attempts direct connection to Vault; or network drops between gateway and Vault. | `CLAIMED` in `jwt_redemptions` | Direct worker call dropped by NetworkPolicy. If gateway timed out, caller retries gateway with same `jti`. Authority inspects record; if token was issued, rejects duplicate minting; else completes. | Kubernetes NetworkPolicy + `_id: jti` record in `jwt_redemptions`. | **FORBIDDEN.** Zero direct Vault access; zero secondary authorizations. |
+| **18. Direct Vault JWT Auth bypass attempt / Gateway timeout (B38-41)** | Worker/Provisioner attempts direct connection to Vault port 8200; or timeout occurs between Gateway and Vault during redemption. | `VAULT_REQUEST_SENT` in `jwt_redemptions` | Direct caller dropped by Layer 4 NetworkPolicy (no route). If timeout occurs during Vault request, Gateway fails closed: marks `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. Blind retry with same `jti` is strictly rejected with HTTP 409 Conflict; provisioner must abort and acquire fresh lease with newly minted `jti`. | Kubernetes NetworkPolicy + durable 7-state machine in `rs_coord:27019.jwt_redemptions` with majority journaling. | **FORBIDDEN.** Zero direct Vault access; zero secondary token minting; blind retry strictly prohibited. |
 | **19. Suspected Nonce Allocator compromise or backup restore (B38-42)** | Watchdog detects regressed sequence; potential nonce collision. | `NORMAL_OPERATION` | **EMERGENCY KILL-SWITCH.** Trip `rs_coord.emergency_halt = true`. Quarantine entire key epoch. Reject from workflows. | SRE incident investigation; WORM checkpoint audit. | **FORBIDDEN.** Naive re-encryption strictly prohibited. |
 | **20. Plaintext candidate presents mismatched or post-incident WORM evidence (B38-42)** | Recovered candidate plaintext fails SHA-256 digest match or evidence creation timestamp $ge t_{\text{compromise}}$. | `QUARANTINED` | **FAIL CLOSED.** Candidate plaintext permanently rejected. Quarantined envelope marked `REJECTED_DISCARDED`. SRE restores from external cold backup or discards. | Pre-incident Canonical WORM Plaintext Evidence Record ($t_{\text{evidence}} < t_{\text{compromise}}$). | **FORBIDDEN.** Re-encryption of unverified data strictly prohibited. |
 
@@ -2230,7 +2538,7 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
 - **Remediation (Phase B.8):**
   1. Specified the exact HashiCorp Vault templated identity policy:
      ```hcl
-     path "secret/data/slots/{{identity.entity.metadata.slot_id}}" {
+     path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" {
        capabilities = ["read"]
      }
      path "secret/data/slots/*" {
@@ -2241,7 +2549,7 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
      }
      ```
   2. Defined the single-use JWT exchange model: coordination authority issues an Ed25519-signed JWT containing the leased `slot_id`. The provisioner exchanges this at `/v1/auth/jwt/login` for an ephemeral Vault token.
-  3. Vault validates the signature against the coordination public key, extracts `slot_id` into entity metadata `identity.entity.metadata.slot_id`, and issues a single-use token (`num_uses = 1`, `ttl = 60s`, `renewable = false`).
+  3. Vault validates the signature against the coordination public key, extracts `slot_id` into entity alias metadata `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id`, and issues a single-use token (`num_uses = 1`, `ttl = 60s`, `renewable = false`).
   4. Natively prevented path guessing and path substitution: direct API calls to `GET /v1/secret/data/slots/slot_02` using a token bound to `slot_01` are rejected by Vault's policy engine with HTTP 403 Forbidden.
   5. Defined token lifecycle: destroyed immediately upon single read; audit logging of caller entity, lease ID, bound slot ID, and client IP.
   6. Added direct Vault API path substitution verification item **`D38-37`**.
@@ -2297,32 +2605,30 @@ Even if dynamic string evaluation (e.g. `db['drop' + 'Database']()`) bypasses pr
   6. Revised test specification **`D38-40`**.
 - **Status:** REMEDIATED (PHASE B.10) — PENDING INDEPENDENT REVIEW.
 
-### B38-41: Enforce Replay Protection at the Vault Authentication Boundary via Dedicated Gateway & Network Policy (Phase B.9 / Refined B.10)
-- **Defect:** In v1.9.0, `rs_coord:27019.jwt_redemptions` tracked `jti`, but Vault's authentication endpoint (`POST /v1/auth/jwt/login`) remained directly accessible on the network. An attacker holding a signed JWT could bypass the coordination authority by submitting the JWT directly to Vault.
-- **Remediation (Phase B.10):**
-  1. Formalized **Option A (Dedicated JWT Redemption Gateway + Vault Ingress Network Policy)** as the canonical architecture.
-  2. Established dedicated microservice **JWT Redemption Gateway** (`apps/jwt-redemption-gateway`, service account `decision_os_jwt_redemption_gateway`).
-  3. Enforced atomic CAS pre-consumption on `rs_coord:27019.jwt_redemptions` (`_id: jti`) with write concern `{ w: "majority", j: true }` before forwarding to Vault. Duplicate `jti`s fail immediately with Code 11000 (`JwtReplayException` $\rightarrow$ HTTP 409).
-  4. Enforced Layer 4 **Vault Ingress Network Policy Fencing**: Kubernetes `NetworkPolicy` and host netfilter rules restrict Vault's port 8200 JWT login listener exclusively to ingress from the JWT Redemption Gateway. Direct worker and provisioner calls to `/v1/auth/jwt/login` are dropped at the packet filter layer.
-  5. Corrected Vault policy template to reference Entity Alias Metadata:
-     `path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" { capabilities = ["read"] }`.
-  6. Established Mandatory JWT Invariants 1–8.
-  7. Revised test specification **`D38-41`**.
-- **Status:** REMEDIATED (PHASE B.10) — PENDING INDEPENDENT REVIEW.
+### B38-41: Enforce Vault Gateway Ingress Boundary, Durable JWT Redemption State Machine & Workload Identity Model (Phase B.9 / Refined B.10 & B.11)
+- **Defect:** In v2.0.0, sequence diagrams contradicted network policy by showing the provisioner making direct Vault API calls to read secrets and write rotated credentials. Furthermore, Kubernetes NetworkPolicy was described as filtering URL paths (impossible at Layer 3/4); the gateway was denied MongoDB `update` privileges despite needing to advance redemption state; the redemption state machine relied on a naive insert-and-409 pattern that could not safely handle crashes during or after Vault token issuance; and stale `identity.entity.metadata.slot_id` references remained.
+- **Remediation (Phase B.11):**
+  1. Reconciled the architecture around **one coherent topology: All Vault API interactions pass strictly through the Dedicated Vault Gateway (`apps/vault-gateway`, service account `decision_os_vault_gateway`)**. Direct network routes to Vault port 8200 from workers or provisioners are completely eliminated.
+  2. The Provisioner authenticates to the Gateway over mTLS presenting verified SPIFFE workload identity (`spiffe://decision-os.internal/ns/decision-os-system/sa/decision-os-provisioner`) and signed lease JWT. The Provisioner never receives a Vault client token; Gateway returns only minimal DB credentials (`username`, `password`). Credential rotation writes also pass through Gateway (`POST /v1/vault-gateway/slots/:slot_id/rotate`).
+  3. Acknowledged Layer 3/Layer 4 realities: Kubernetes `NetworkPolicy` restricts Vault port 8200 ingress strictly to Gateway pods. Enforced mandatory Kubernetes RBAC and Admission Control (ValidatingAdmissionWebhook) to prevent pod label spoofing.
+  4. Explicitly granted Gateway principal `actions: ["find", "insert", "update", "createIndex"]` on `rs_coord:27019.jwt_redemptions`, documenting why `update` is required to advance redemption state.
+  5. Formalized the **7-state durable redemption state machine** (`CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` / `RECONCILED` / `EXPIRED`) with monotonic `fencing_generation` and `owner_instance_id` CAS filters.
+  6. Analyzed all 7 crash and concurrency failure points, enforcing conservative fail-closed quarantine (`OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`) when Vault issuance outcome cannot be proven. Blind retries are strictly rejected.
+  7. Reconciled all occurrences of Vault templating syntax globally to Entity Alias Metadata (`identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id`).
+  8. Revised adversarial test specification **`D38-41`**.
+- **Status:** REMEDIATED (PHASE B.11) — PENDING INDEPENDENT REVIEW.
 
-### B38-42: Concrete Canonical WORM Plaintext Evidence Record & Plaintext Integrity Verification (Phase B.9 / Refined B.10)
-- **Defect:** In v1.8.0, naive re-encryption claimed to repair nonce compromise. In v1.9.0, audit checkpoints were required, but the document lacked a concrete evidence schema binding trusted plaintext digests to specific object versions, canonicalization standards, pre-incident timestamps, and external keys.
-- **Remediation (Phase B.10):**
-  1. Specified the concrete schema of **`CanonicalWormPlaintextEvidenceRecord`** containing 13 mandatory semantic fields: `objectId`, `objectType`, `objectVersion`, `revisionId`, `canonicalizationSpec` (RFC 8785 JCS v1.0), `digestAlgorithm` (SHA-256), `plaintextDigest`, `keyVersionPrefix`, `allocatorEpoch`, `evidenceCreatedAtISO`, `checkpointId`, `signingAlgorithm` (Ed25519), and `signingKeyId` (external compliance HSM key).
-  2. Enforced 8 strict recovery rules:
-     - Evidence creation must strictly predate compromise: $t_{\text{evidence}} < t_{\text{compromise}}$.
-     - Candidate plaintexts must be canonicalized under RFC 8785 JCS and match `plaintextDigest` byte-for-byte.
-     - Signature must validate against pinned external compliance HSM public key.
-     - Missing, invalid, post-incident, or unverified evidence strictly prohibits unquarantine (fail closed).
-     - Dual-party cryptographic sign-off (SRE Lead + Security Officer) is mandatory prior to unquarantining and re-encrypting.
-  3. Re-affirmed mandatory architectural tenets: key rotation does NOT repair past confidentiality loss; re-encryption does NOT repair tag forgery; AES-GCM decryption does NOT prove untampered ciphertext.
-  4. Revised test specification **`D38-42`**.
-- **Status:** REMEDIATED (PHASE B.10) — PENDING INDEPENDENT REVIEW.
+### B38-42: Concrete Canonical WORM Plaintext Evidence Record, Byte-Exact Signature Semantics & Independent Proof (Phase B.9 / Refined B.10 & B.11)
+- **Defect:** In v2.0.0, the WORM evidence schema suffered a 1-year mismatch between ISO and epoch milliseconds (`2026-11-10T10:00:00.000Z` vs `1762768800000`); field inventory was inconsistent across sections; byte-exact Ed25519 signature payload semantics were undefined; signer-controlled timestamps were erroneously described as proof against backdating without independent trust; and the illustrative SHA-256 digest was an empty-string placeholder.
+- **Remediation (Phase B.11):**
+  1. Synchronized timestamp representations to the exact same millisecond: `evidenceCreatedAtISO: "2026-11-10T10:00:00.000Z"` $\leftrightarrow$ `evidenceCreatedAtEpochMs: 1794304800000`, with strict validation rule `evidenceCreatedAtEpochMs === Date.parse(evidenceCreatedAtISO)`.
+  2. Established a definitive **19-field inventory** for `CanonicalWormPlaintextEvidenceRecord` across all sections.
+  3. Defined byte-exact Ed25519 signature semantics: RFC 8785 JSON Canonicalization Scheme (JCS) covering domain-separated payload `"DECISION_OS_WORM_EVIDENCE_V2:" || JCS(recordWithoutSignature)`, with `signature` field strictly excluded.
+  4. Established independent proof of creation time and immutability: RFC 3161 Timestamp Tokens (TST) from external independent TSA and Merkle audit tree checkpoint height with cryptographic inclusion path.
+  5. Replaced empty-input hash with concrete, mathematically verified SHA-256 digest (`3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307`) computed over an explicit candidate decision payload.
+  6. Re-affirmed core tenets: key rotation does NOT repair past confidentiality loss; re-encryption does NOT repair tag forgery; AES-GCM decryption does NOT prove authenticity; dual-party SRE/Security sign-off is mandatory before unquarantine.
+  7. Revised adversarial test specification **`D38-42`**.
+- **Status:** REMEDIATED (PHASE B.11) — PENDING INDEPENDENT REVIEW.
 
 ---
 
@@ -2402,7 +2708,7 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 - **Attacker Profile:** An adversary gains read access or compromises the Provisioning Service attempting to retrieve slot credentials from HashiCorp Vault.
 - **Adversarial Actions Attempted:** Direct path guessing, path substitution (`slot_02` using a `slot_01` token), or bulk directory listing.
 - **Containment & Vault Enforcement (B38-37):**
-  - Partition Slot Vault enforces templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied).
+  - Partition Slot Vault enforces templated identity policies (`path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}" { capabilities = ["read"] }` with `secret/data/slots/*` denied).
   - The provisioner exchanges an Ed25519-signed lease JWT from the coordination authority for a single-use client token (`num_uses = 1`, `ttl = 60s`, `renewable = false`).
   - Attempting to read any other slot's credentials (`GET /v1/secret/data/slots/slot_02` using token bound to `slot_01`) is rejected natively by Vault's policy engine with `HTTP 403 Forbidden`.
   - Bulk enumeration is denied by policy (`list` capability denied).
@@ -2577,9 +2883,9 @@ To establish defense-in-depth, Decision OS analyzes the compromise of five syste
 17. **Interleaving 17: Hostile worker executes writes while network controller is restarting (B38-35):** Hostile worker retains open TCP sockets and sends write operations concurrently with teardown request. Network Fence Controller is delayed. Concurrently, Step 3 (Scoped Identity Revocation) executes `dropUser` on `rs_test` with majority write concern. The MongoDB daemon invalidates its internal authorization cache. The hostile worker's wire write over the open socket fails with Error Code 11/13, preventing data corruption even before transport fencing completes.
 18. **Interleaving 18: Concurrent Old-Worker and New-Worker Access Attempts During Slot Reassignment (B38-40):** Slot $k$ completes teardown for lease $N$. Old worker retains password $P_N$ and continuously sends wire traffic. Slot $k$ rotates password to $P_{N+1}$ via `updateUser` (`changeOwnPassword`) with majority ack, updates Vault, and is assigned to Worker B (lease $N+1$). Old worker's packets fail authentication natively with Code 18 (`AuthenticationFailed`). Worker B authenticates successfully with $P_{N+1}$. Zero cross-lease access or data leakage is possible.
 19. **Interleaving 19: Controller Crash Between MongoDB updateUser and Vault Secret Update (B38-40):** Provisioner rotates password to $P_{N+1}$ on MongoDB server (`w: "majority", j: true`), then crashes before updating Vault. On restart, recovery coordinator detects incomplete Phase 2 in `cleanup_ledger`. Because Vault secret is out of sync with MongoDB, slot transitions to `QUARANTINED`. The slot is excluded from reassignment until reconciliation controller rotates credentials afresh on both MongoDB and Vault.
-20. **Interleaving 20: Concurrent JWT Redemptions Competing for Slot Token at Gateway (B38-41):** Two concurrent worker threads obtain the same signed JWT and call `/v1/redeem-token` simultaneously. Atomic claim in `rs_coord:27019.jwt_redemptions` permits exactly one winner; the loser receives `HTTP 409 Conflict` and zero Vault tokens are issued.
-21. **Interleaving 21: Gateway Crash Between Durable jti Claim and Vault Login (B38-41):** Gateway inserts `_id: jti` into `jwt_redemptions` with status `CLAIMED`, then abruptly crashes before receiving response from Vault. Client retries `/v1/redeem-token` with identical `jti`. Gateway inspects `jwt_redemptions`: sees `status: 'CLAIMED'` with `vault_token_issued_at: null`. It safely resumes the Vault login call without creating a second independent token, completes the exchange, marks `status: 'COMPLETED'`, and returns the client token. Under no circumstances can two distinct Vault tokens be minted for one `jti`.
-22. **Interleaving 22: Worker Attempts Direct Vault Bypass While Gateway is Processing (B38-41):** While Gateway is claiming `jti` in MongoDB, an attacker on the worker network concurrently sends `POST /v1/auth/jwt/login` directly to Vault. Kubernetes `NetworkPolicy` drops the packet immediately at the worker pod veth boundary. The bypass attempt never reaches Vault, and the worker receives zero token material.
+20. **Interleaving 20: Concurrent JWT Redemptions Competing for Slot Token at Gateway (B38-41):** Two concurrent worker or provisioner threads obtain the same signed JWT and call `POST /v1/vault-gateway/slots/:slot_id/claim` simultaneously. Atomic CAS insert in `rs_coord:27019.jwt_redemptions` permits exactly one winner; the loser receives `MongoServerError: E11000 duplicate key error` $\rightarrow$ `HTTP 409 Conflict` and zero Vault tokens or requests are dispatched.
+21. **Interleaving 21: Gateway Crash Between Durable jti Claim and Vault Login (B38-41):** Gateway commits `_id: jti` into `jwt_redemptions` with status `CLAIMED`, advances to `VAULT_REQUEST_SENT`, and crashes while the Vault call is in-flight. On recovery, the startup scanner classifies the outcome as ambiguous: transitions from `VAULT_REQUEST_SENT` $\rightarrow$ `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`. The caller retry is rejected with `HTTP 409 Conflict` / `HTTP 423 Locked`. The provisioner saga aborts, triggers slot self-rotation before reassignment, and acquires a fresh lease with a newly minted `jti`. Vault's ephemeral token (TTL 60s) expires safely. Blind retries of the same `jti` are strictly rejected, and duplicate tokens are never minted.
+22. **Interleaving 22: Worker or Provisioner Attempts Direct Vault Bypass While Gateway is Processing (B38-41):** While Gateway is claiming `jti` in MongoDB, an attacker on the worker network or compromised provisioner concurrently sends direct TCP packets to Vault port 8200. Kubernetes Layer 4 `NetworkPolicy` drops the packet immediately at the Linux netfilter data plane. The bypass attempt never reaches Vault, and caller receives zero token material.
 
 ---
 
@@ -2797,8 +3103,8 @@ All verification items are **PLANNED** for implementation and execution during P
 | **`D38-38`** | **Nonce Allocator Root of Trust Compromise, Emergency Kill-Switch & Epoch Invalidation Test (Finding B38-38)** | Connect to `rs_coord:27019` using `decision_os_nonce_allocator` credentials. Simulate allocator compromise by executing `db.nonce_allocations.updateOne({ _id: "nonce_seq_v1" }, { $set: { nextBlockStart: 0 } })`. Lease block and submit credential envelope. Assert Monotonicity Watchdog detects regression against `cleanup_audit_log` high-water mark and trips emergency halt kill-switch (`rs_coord.emergency_halt = true`). Verify all worker encryption leases are immediately rejected. Trigger KMS DEK epoch invalidation; verify KMS increments `KeyVersionPrefix` (e.g. `0x0001` $\rightarrow$ `0x0002`). Re-seed sequence document under `_id: "nonce_seq_v2"`. Encrypt payloads under new epoch; assert nonces are provably disjoint from old epoch nonces. | Phase C2 | PLANNED |
 | **`D38-39`** | **Canonical 5-Phase Revocation Execution State Machine & Crash Recovery Invariant Test (Finding B38-39)** | Initiate teardown for active worker on `decision_os_test_slot_01`. Verify exact execution ordering across phases: Phase 1 Network Transport Fencing $\rightarrow$ Phase 2 Scoped Identity Revocation $\rightarrow$ Phase 3 Operation & Session Cancellation $\rightarrow$ Phase 4 Database Storage Deletion $\rightarrow$ Phase 5 Audit Finalization. Inject process kill after Phase 1, Phase 2, and Phase 3; assert recovery coordinator resumes idempotently at the exact incomplete phase without skipping or reordering. Tamper with `cleanup_ledger` by zeroing `phase2_identity_revoked_at` while in `CLAIMED`; attempt to dispatch Phase 4 `dropDatabase` $\rightarrow$ assert prerequisite gate aborts drop, raises `SecurityException`, and transitions to `QUARANTINED`. | Phase C1 / C3 | PLANNED |
 | **`D38-40`** | **Slot Credential Self-Rotation, Privilege Enforcement & Reassignment Gating Test Group (Finding B38-40)** | (1) **Self-Rotation with Correct Privilege:** Lease `slot_01` to Worker A; verify scoped admin `decision_os_db_admin_slot_01` has `actions: ["changeOwnPassword"]`. Dispatch `updateUser` self-rotation with `w: "majority", j: true`; assert returns `{ ok: 1 }` and password rotates from $P_N$ to $P_{N+1}$. (2) **Self-Rotation Authorization Failure with changePassword Only:** Create test role with action `changePassword` strictly (missing `changeOwnPassword`); attempt self `updateUser` $\rightarrow$ assert MongoDB RBAC natively rejects with Code 13 (`Unauthorized`). (3) **Old Password Wire Rejection:** Attempt direct SCRAM-SHA-256 wire authentication to `rs_test:27018` using retained password $P_N$ $\rightarrow$ assert natively rejected with Error Code 18 (`AuthenticationFailed`). (4) **New Password Acceptance:** Authenticate using $P_{N+1}$ $\rightarrow$ assert successful SCRAM handshake. (5) **Rotation Timeout / Unknown Outcome:** Inject TCP drop during `updateUser`; assert slot transitions to `QUARANTINED` and execution locks are permanently held. (6) **Primary Stepdown During Rotation:** Inject stepdown mid-command; assert transaction aborts and retry commits to new primary with disjoint generation. (7) **Retained Sockets & Session Behavior:** Open persistent socket with $P_N$; execute `updateUser` and Phase 3 `killOp`; assert subsequent wire commands on existing socket fail with Code 11/13/18. (8) **Premature Reassignment Gate:** Attempt to lease slot before rotation acknowledges $\rightarrow$ assert Coordination Authority rejects claim with `SlotNotAvailableException`. (9) **Privilege Matrix Deployment Parity:** Inspect deployed MongoDB role definition for `decision_os_db_admin_slot_${k}` on `rs_test`; assert exact match with Section 7.6 privilege matrix (`changeOwnPassword` present, `changePassword` absent). | Phase C1 / C4 | PLANNED |
-| **`D38-41`** | **Durable JWT Redemption Gateway, Vault Ingress Network Policy & Replay Prevention Test Group (Finding B38-41)** | (1) **Valid Gateway Redemption:** Generate valid signed JWT for `slot_01`. Call Gateway `POST /v1/redeem-token`; assert atomic insertion into `rs_coord:27019.jwt_redemptions` under `_id: jti`, Vault token minted bound to Entity Alias Metadata `identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id = "slot_01"`, and secret `secret/data/slots/slot_01` read successfully. (2) **Sequential Replay via Gateway:** Submit identical signed JWT a second time to Gateway $\rightarrow$ assert Coordination Authority rejects with Error Code 11000 (`DuplicateKey`), Gateway returns HTTP 409 Conflict, and zero Vault tokens are minted. (3) **Concurrent Replay (10 Threads):** Dispatch 10 concurrent requests presenting identical JWT to Gateway $\rightarrow$ assert exactly 1 succeeds and 9 fail with HTTP 409. (4) **Direct Vault Access from Worker Network (NetworkPolicy Block):** From worker pod, attempt direct HTTP call to `http://slot-vault.decision-os-system:8200/v1/auth/jwt/login` $\rightarrow$ assert packet is dropped by Kubernetes NetworkPolicy; connection times out; zero response from Vault. (5) **Direct Vault Access from Provisioner Network:** From provisioner pod, attempt direct call to Vault auth endpoint $\rightarrow$ assert dropped by NetworkPolicy. (6) **Direct Request from Unauthorized Host Using Stolen JWT:** Attempt direct Vault call from unauthorized external IP $\rightarrow$ assert connection dropped. (7) **Gateway Restart & Failover:** Restart gateway pod and step down `rs_coord` primary; re-attempt replay after failover $\rightarrow$ assert durable replay rejection persists from storage. (8) **Gateway Timeout After Claim:** Inject crash in gateway immediately after `jwt_redemptions` insert before Vault call; retry with same JWT $\rightarrow$ assert gateway resumes without creating a second independent token. (9) **Vault Timeout with Ambiguous Response:** Simulate Vault API timeout; verify retry handles token idempotently. (10) **Claim Validation:** Submit JWT with tampered signature, expired `exp`, wrong audience, or wrong issuer $\rightarrow$ assert Gateway rejects before touching MongoDB or Vault. | Phase C4 | PLANNED |
-| **`D38-42`** | **Cryptographic Nonce Reuse Incident Response, Canonical WORM Evidence & Plaintext Integrity Verification Test Group (Finding B38-42)** | (1) **Emergency Containment:** Simulate allocator regression (`nextBlockStart: 0`); assert Monotonicity Watchdog trips `rs_coord.emergency_halt = true`, workers abort encryption, and all envelopes in epoch `v1` move to `QUARANTINED`. (2) **Workflow Rejection:** Attempt to pass quarantined envelope to authoritative workflow $\rightarrow$ assert rejected with `QuarantinedCiphertextException`. (3) **Valid Pre-Incident WORM Verification:** Provide `CanonicalWormPlaintextEvidenceRecord` with $t_{\text{evidence}} < t_{\text{compromise}}$ signed by external Audit HSM key; canonicalize candidate plaintext via RFC 8785 JCS; assert SHA-256 digest matches `plaintextDigest` and signature validates $\rightarrow$ assert candidate plaintext accepted. (4) **Modified Plaintext Rejection:** Tamper with candidate plaintext byte; assert digest mismatch $\rightarrow$ rejected with `WormIntegrityException`. (5) **Forged Ciphertext Rejection:** Submit forged AES-GCM ciphertext with valid tag computed via recovered GHASH key $H$; attempt recovery without pre-incident WORM evidence $\rightarrow$ assert rejected. (6) **Invalid WORM Signature:** Tamper with WORM signature bytes $\rightarrow$ assert rejected. (7) **Untrusted Signing Key:** Sign WORM record with unknown key ID $\rightarrow$ assert rejected. (8) **Wrong Object ID / Version:** Submit WORM record with mismatched `objectId` or `objectVersion` $\rightarrow$ assert rejected. (9) **Wrong Canonicalization Spec:** Submit WORM record specifying non-standard canonicalization $\rightarrow$ assert rejected. (10) **Post-Incident Checkpoint Rejection:** Submit WORM record with $t_{\text{evidence}} \ge t_{\text{compromise}}$ $\rightarrow$ assert strictly rejected as untrusted. (11) **Missing Checkpoint Fail-Closed:** Simulate envelope lacking WORM checkpoint $\rightarrow$ assert envelope is marked `REJECTED_DISCARDED` and discarded. (12) **Recovery from External Trusted Source:** Restore uncorrupted plaintext from cold offline backup; verify against pre-incident audit signature $\rightarrow$ assert accepted. (13) **Authorized Re-Encryption:** After integrity acceptance, verify KMS advances to `KeyVersionPrefix = 0x0002` and re-encrypts under new epoch. (14) **Dual-Party Unquarantine Gate:** Attempt to unquarantine without SRE Lead signature or without Security Officer signature $\rightarrow$ assert unquarantine blocked until both dual signatures are committed to `cleanup_audit_log`. | Phase C2 / C4 | PLANNED |
+| **`D38-41`** | **Vault Gateway Ingress Boundary, Durable 7-State Redemption Machine & Crash Safety Test Group (Finding B38-41)** | (1) **Layer 4 Network Ingress Fencing:** Execute `curl` to Vault port 8200 from worker and provisioner containers; verify Linux netfilter drops TCP SYN packets (zero TCP ACK). (2) **Admission Control Label Protection:** Attempt to schedule pod with label `app.kubernetes.io/name: vault-gateway` using unverified image $\rightarrow$ ValidatingAdmissionWebhook rejects creation. (3) **mTLS SPIFFE Caller Verification:** Invoke Gateway endpoint with invalid SPIFFE ID or without client certificate $\rightarrow$ assert rejected with HTTP 401/403 at TLS termination. (4) **Pre-Consumption CAS Atomicity:** Dispatch two concurrent requests with identical `jti` to Gateway; assert exactly one succeeds and second returns HTTP 409 Conflict with Code 11000. (5) **Crash Point 1 (Crash after CLAIMED):** Simulate gateway crash before Vault request; verify restart handles unexpired claim safely or fails closed without duplicate issuance. (6) **Crash Point 2 (Crash while in-flight):** Simulate crash during Vault call; verify startup scanner transitions `VAULT_REQUEST_SENT` $\rightarrow$ `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`; verify retries with same `jti` are rejected. (7) **Crash Point 3 (Crash before ISSUED write):** Simulate crash after secret read before state write; assert state moves to `QUARANTINED`, Vault token self-expires in 60s, credentials not leaked. (8) **Crash Point 4 (Crash after ISSUED before HTTP response):** Simulate crash after `ISSUED` commit; client retries $\rightarrow$ Gateway returns HTTP 409 Conflict without re-emitting credentials. (9) **Crash Point 5 (Vault Timeout / 5xx):** Simulate Vault 504 timeout; Gateway marks `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED`, returns HTTP 504; blind retry rejected. (10) **Crash Point 6 (Network Partition):** Sever link to Vault; assert immediate fail-closed quarantine. (11) **Single-Use Token Revocation & Zero Leakage:** Verify Provisioner receives minimal credentials (`username`, `password`) and NEVER receives a Vault client token. (12) **Gateway Rotation Endpoint:** Invoke `POST /v1/vault-gateway/slots/:slot_id/rotate` with signed revocation order; verify Vault KV-v2 update and generation increment. | Phase C4 | PLANNED |
+| **`D38-42`** | **Cryptographic Nonce Reuse Incident Response, Canonical WORM Evidence & Plaintext Integrity Verification Test Group (Finding B38-42)** | (1) **Emergency Containment:** Simulate allocator regression (`nextBlockStart: 0`); assert Monotonicity Watchdog trips `rs_coord.emergency_halt = true`, workers abort encryption, and all envelopes in epoch `v1` move to `QUARANTINED`. (2) **Workflow Rejection:** Attempt to pass quarantined envelope to authoritative workflow $\rightarrow$ assert rejected with `QuarantinedCiphertextException`. (3) **Pre-Incident Timestamp Enforcement:** Verify that evidence records created at or after $t_{\text{compromise}}$ ($t_{\text{evidence}} \ge t_{\text{compromise}}$) are strictly rejected as untrusted. (4) **Timestamp Representation Synchronization:** Provide evidence record with mismatch between ISO and epoch milliseconds $\rightarrow$ assert rejected immediately; verify exact match `1794304800000 === Date.parse("2026-11-10T10:00:00.000Z")` passes. (5) **Definitive 19-Field Inventory Validation:** Verify all 19 mandatory schema fields are present and structurally valid. (6) **RFC 8785 JCS Canonicalization & Digest Match:** Serialize candidate plaintext under RFC 8785 JCS; assert SHA-256 digest matches `decisionPayloadSha256` (`3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307`). Tamper with 1 byte of plaintext $\rightarrow$ assert digest mismatch and fail-closed rejection. (7) **Byte-Exact Ed25519 Signature Verification:** Verify signature covers domain-separated payload `"DECISION_OS_WORM_EVIDENCE_V2:" || JCS(recordWithoutSignature)`; assert `signature` field is excluded from signed payload body. (8) **Independent RFC 3161 TSA Verification:** Verify external Timestamp Token binds record digest to auditable clock independent of signer. (9) **Merkle Tree Inclusion Proof Verification:** Verify cryptographic audit path against anchored Merkle root at `checkpointHeight: 8421`. (10) **Missing Evidence Fail-Closed:** Simulate envelope lacking WORM checkpoint $\rightarrow$ assert envelope is marked `REJECTED_DISCARDED` and discarded. (11) **Dual-Party Unquarantine Gate:** Attempt to unquarantine without SRE Lead signature or without Security Officer signature $\rightarrow$ assert unquarantine blocked until both dual signatures are committed. | Phase C2 / C4 | PLANNED |
 
 ### 20.3 Finding-to-Design-to-Test Traceability Matrix (B38-01 through B38-42)
 
@@ -2838,8 +3144,8 @@ The following matrix establishes strict, end-to-end mathematical and operational
 | **B38-38** | High / B.8 | Nonce Allocator as Cryptographic Root of Trust | Section 3.5, 7.10.2 | Allocator defined as Root of Trust; kill-switch latch (refined in B38-42) | `D38-38` | Verified (Phase B.8) |
 | **B38-39** | High / B.8 | Normalization of 5-phase revocation ordering | Section 7.9, 9.3 | Canonical 5-phase ordered state machine; prerequisite drop gating | `D38-39` | Verified (Phase B.8) |
 | **B38-40** | **Critical / B.10** | **Vault lease expiry leaves reusable credential & self-rotation privilege error** | **Section 3.6, 7.5.6, 7.6, 7.9** | **Option B Slot Credential Rotation; self-rotation strictly requires `changeOwnPassword`; broader `changePassword` excluded; Mandatory Invariants 1–8; Slot Reassignment Gate** | **`D38-40`** | **Remediated (Phase B.10 Deliverable — Pending Review)** |
-| **B38-41** | **High / B.10** | **JWT redemption replay bypass via direct Vault auth & alias metadata binding** | **Section 3.7, 7.5.4, 7.5.5, 8.5** | **Option A Dedicated JWT Redemption Gateway; atomic `_id: jti` claim on `rs_coord:27019.jwt_redemptions`; Layer 4 Vault Ingress NetworkPolicy Fencing; Mandatory JWT Invariants 1–8** | **`D38-41`** | **Remediated (Phase B.10 Deliverable — Pending Review)** |
-| **B38-42** | **High / B.10** | **Naive re-encryption claims post nonce reuse & missing WORM plaintext evidence** | **Section 3.8, 7.10.2** | **5-phase Cryptographic Incident Response; `CanonicalWormPlaintextEvidenceRecord` schema; pre-incident timestamp rule ($t_{\text{evidence}} < t_{\text{compromise}}$); RFC 8785 JCS digest match; dual SRE/Security sign-off** | **`D38-42`** | **Remediated (Phase B.10 Deliverable — Pending Review)** |
+| **B38-41** | **High / B.11** | **Vault gateway topology, durable 7-state JWT machine, L3/L4 NetworkPolicy, stale metadata** | **Section 3.7, 5, 6, 7.5, 7.6, 8.5, 9.4, 10.3** | **Dedicated Vault Gateway mediates all Vault calls; Provisioner never receives Vault token; Layer 4 NetworkPolicy; Gateway `update` privilege; durable 7-state machine; fail-closed quarantine; Entity Alias Metadata** | **`D38-41`** | **Remediated (Phase B.11 Deliverable — Pending Review)** |
+| **B38-42** | **High / B.11** | **Nonce reuse realities, 19-field WORM evidence, timestamp synchronization, RFC 8785 signature, TSA proof** | **Section 3.8, 7.10.3.2.C, 14, 15** | **5-phase Incident State Machine; 19-field inventory; timestamp sync (`1794304800000 === 2026-11-10T10:00:00.000Z`); RFC 8785 JCS Ed25519 signature semantics; independent TSA & Merkle proof; concrete digest `3ebb5052...`** | **`D38-42`** | **Remediated (Phase B.11 Deliverable — Pending Review)** |
 
 ---
 
@@ -2887,17 +3193,19 @@ The following matrix establishes strict, end-to-end mathematical and operational
 10. **Elimination of the Runtime Credential Broker & Blast Radius (Finding B38-36):**
     In MongoDB RBAC, granting `{ db: "", collection: "" }` user- and role-management actions confers wildcard authority over every non-system database. Application-level regex validation and signed claims cannot provide native database isolation against a compromised broker authenticating directly to MongoDB. To eliminate this cross-database blast radius, the runtime broker is **completely removed from the active worker execution path**. Standard workloads execute exclusively against pre-allocated partition slots where each administrator is strictly scoped to its single slot. Dynamic database creation is designated as an offline control-plane root of trust (`deploy/init-mongo-test.sh`), and the dynamic broker is disabled in production (`DECISION_OS_DYNAMIC_PROVISIONING_ENABLED=false`).
 11. **Partition Slot Vault Exact Lease-to-Secret Binding (Finding B38-37):**
-    By utilizing HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.metadata.slot_id}}"`) and a single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease. Direct path guessing or path substitution attacks (`slot_02` using a `slot_01` token) are natively rejected by Vault with HTTP 403 Forbidden.
+    By utilizing HashiCorp Vault templated identity policies (`path "secret/data/slots/{{identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id}}"`) and a single-use JWT exchange model (`num_uses = 1`, `ttl = 60s`, `renewable = false`), the provisioner is physically restricted to reading only the exact slot credential for its active lease. Direct path guessing or path substitution attacks (`slot_02` using a `slot_01` token) are natively rejected by Vault with HTTP 403 Forbidden.
 12. **Nonce Allocator as an Explicit Cryptographic Root of Trust (Finding B38-38):**
     Because MongoDB RBAC cannot enforce monotonic arithmetic against an identity possessing `update` privileges, the Nonce Allocator is formally identified as a Cryptographic Root of Trust. Allocator compromise cannot be prevented at the database authorization layer. Safety degrades to detection by an external Monotonicity Watchdog, followed by an emergency kill-switch, KMS Data Encryption Key (DEK) epoch retirement, `KeyVersionPrefix` incrementation (rendering new ciphertexts provably disjoint from compromised ciphertexts), and envelope quarantine/re-encryption under clearly defined trust assumptions.
 13. **Canonical 5-Phase Revocation Execution & Prerequisite Gating (Finding B38-39):**
     The revocation protocol strictly follows a 5-phase execution state machine: Phase 1 Network Transport Fencing $\rightarrow$ Phase 2 Scoped Identity Revocation $\rightarrow$ Phase 3 Operation & Session Cancellation $\rightarrow$ Phase 4 Database Storage Deletion $\rightarrow$ Phase 5 Audit Finalization. Database deletion (`dropDatabase`) is strictly gated on verified durable acknowledgements for Phases 1, 2, and 3 in `cleanup_ledger`; if any prior phase is missing or unverified, teardown immediately fails closed into `QUARANTINED`.
 14. **MongoDB Server-Side Authorization Cache Invalidation Latency on updateUser (Finding B38-40):**
     While MongoDB documentation specifies that modifying user credentials updates the internal authorization cache on replica set primaries, the exact timing and wire-level behavior across secondary nodes during primary stepdown under heavy load must be benchmarked in Phase C (`D38-40`). The system relies on journaled majority write concern (`w: "majority", j: true`) to ensure cluster-wide commit.
-15. **Kubernetes CNI / NetworkPolicy Enforcement Parity at Vault Ingress (Finding B38-41):**
-    The security architecture relies on Kubernetes `NetworkPolicy` (or host netfilter rules) to strictly restrict port 8200 ingress on Vault to pods matching `app: jwt-redemption-gateway`. The deployment environment must utilize a CNI provider supporting standard NetworkPolicy enforcement (e.g. Cilium, Calico). In dev/docker-compose environments, netfilter iptables rules must be verified. Tested in `D38-41`.
-16. **Canonical WORM Plaintext Evidence Record Immuntability and Retention Standards (Finding B38-42):**
-    In the event of an allocator compromise where the GHASH authentication key $H$ could plausibly be recovered, AES-GCM ciphertext decryption cannot be used to verify data integrity. Integrity validation relies on comparing plaintext hashes against independently signed Canonical WORM Plaintext Evidence Records emitted prior to the compromise timestamp ($t_{\text{evidence}} < t_{\text{compromise}}$). Tested in `D38-42`.
+15. **Kubernetes CNI / NetworkPolicy Enforcement Parity & Workload Identity Model (Finding B38-41):**
+    The Layer 4 NetworkPolicy fencing model operates strictly at Layer 3/Layer 4 (IP/port) and cannot filter HTTP URL paths on the same port. Ingress to Vault TCP port 8200 is restricted exclusively to pods matching the Dedicated Vault Gateway selector (`app.kubernetes.io/name: vault-gateway`).
+    Because Kubernetes pod labels are control-plane metadata, this boundary strictly relies on: (1) strict Kubernetes RBAC preventing unprivileged service accounts from creating or updating pods in `decision-os-system`; (2) Admission Control (ValidatingAdmissionWebhook / OPA Gatekeeper) enforcing container image provenance; and (3) Layer 7 SPIFFE mTLS authentication between Gateway and Vault. Tested in `D38-41`.
+16. **Canonical WORM Plaintext Evidence Record Immutability, Timestamping & Proof Standards (Finding B38-42):**
+    Signer-controlled timestamps alone cannot prove pre-incident creation if the signing system is suspect. The incident recovery protocol assumes that evidence records are bound to independent external proof: (1) an RFC 3161 Timestamp Token (TST) issued by an independent public or enterprise Timestamp Authority; and (2) an immutable Merkle audit tree checkpoint height anchored to write-once storage (S3 Object Lock in COMPLIANCE mode / GCS Bucket Lock) with retention exceeding 7 years.
+    Timestamp representations are strictly synchronized: `evidenceCreatedAtEpochMs === Date.parse(evidenceCreatedAtISO)`. Candidate plaintext validation strictly requires byte-exact RFC 8785 JCS canonicalization and dual-party SRE/Security Officer cryptographic authorization prior to unquarantine. Tested in `D38-42`.
 17. **HashiCorp Vault Entity Alias Metadata Templating Syntax Across Vault Versions (Finding B38-41):**
     Vault documentation confirms that `claim_mappings` populates Entity Alias Metadata under the auth mount accessor. The templated policy syntax `{{identity.entity.aliases.<accessor>.metadata.<key>}}` is supported in Vault 1.9+, but the exact mount accessor identifier must be provisioned dynamically during cluster bootstrap and injected into policy templates. Tested in `D38-41`.
 18. **External Compliance HSM Audit Key Provenance and Offline Custody (Finding B38-42):**
@@ -2907,9 +3215,9 @@ The following matrix establishes strict, end-to-end mathematical and operational
 
 ## Gate B Completion Sign-Off Checklist
 
-- [x] Document version upgraded to **2.0.0**
-- [x] Current Baseline commit: `2c4d989dc3b52c5f11ec368afaedab1d63e07b52`
-- [x] Parent baseline commit: `16eb385a5c73b307ff5331a769711dd55854db91`
+- [x] Document version upgraded to **2.1.0**
+- [x] Current Baseline commit: `1bc3ecd0ee5224aa395c4d472675ae0c4789a1e9`
+- [x] Parent baseline commit: `2c4d989dc3b52c5f11ec368afaedab1d63e07b52`
 - [x] Phase A destructive call-site inventory cross-checked: all 13 sites correctly mapped to safe replacements
 - [x] Independent Cleanup Executor process boundary established: distinct OS process, dedicated binary/container, zero shared memory, zero application framework sharing
 - [x] Dedicated Cleanup Executor MongoDB user defined: `decision_os_destructive_executor` with zero write access to business collections and zero access to `mongodb-coord:27019`
@@ -2949,9 +3257,10 @@ The following matrix establishes strict, end-to-end mathematical and operational
 - [x] **B38-38 remediated (Phase B.8 / Refined B.9 & B.10):** Nonce Allocator formally defined as an explicit Cryptographic Root of Trust; 3 compromise classes distinguished; MongoDB RBAC inability to restrict `$inc` vs `$set` documented; emergency kill-switch, KMS DEK epoch retirement, `KeyVersionPrefix` increment, and formal incident response defined (refined in B38-42)
 - [x] **B38-39 remediated (Phase B.8):** Revocation execution ordering normalized into canonical 5-Phase Ordered Revocation State Machine; `Execution Phase` column added to operation matrix; Phase 4 `dropDatabase` strictly gated on durable verification of Phases 1, 2, and 3; idempotent crash recovery protocol specified for all 5 phases
 - [ ] **B38-40 remediated (Phase B.10):** MongoDB self-credential rotation privilege corrected: `decision_os_db_admin_slot_${k}` granted `actions: ["changeOwnPassword"]` strictly on `{ db: targetTestDb, collection: "" }`; broader `changePassword` explicitly excluded; Option B Slot Credential Rotation confirmed with server-side `updateUser` majority journaled commit before slot reassignment; Option A enforced for worker workload principals; Mandatory Invariants 1–8 established; session termination alone recognized as non-invalidating for retained credentials (Phase B.10 Deliverable — Pending Independent Review)
-- [ ] **B38-41 remediated (Phase B.10):** Durable JWT Redemption Replay-Prevention boundary enforced at network and service layer; Option A Dedicated JWT Redemption Gateway (`apps/jwt-redemption-gateway`, `decision_os_jwt_redemption_gateway`) mediates all redemptions; atomic `_id: jti` reservation on `rs_coord:27019.jwt_redemptions` (`w: "majority", j: true`); Layer 4 Vault Ingress NetworkPolicy Fencing blocks direct worker/provisioner access to Vault port 8200; Vault Entity Alias Metadata templating (`identity.entity.aliases.auth_jwt_9f8e7d6c.metadata.slot_id`) and exact JWT role claim mapping formalized; Mandatory JWT Invariants 1–8 established (Phase B.10 Deliverable — Pending Independent Review)
-- [ ] **B38-42 remediated (Phase B.10):** Nonce reuse and allocator compromise formalized as an emergency Cryptographic Incident with 5-phase Data-Trust State Machine; false claims that key rotation or re-encryption repairs historical confidentiality loss or tag forgery eliminated; concrete `CanonicalWormPlaintextEvidenceRecord` schema specified; pre-incident timestamp rule ($t_{\text{evidence}} < t_{\text{compromise}}$), RFC 8785 JCS canonicalization, SHA-256 digest match, independent external compliance HSM Ed25519 signature verification, and dual-party SRE/Security sign-off strictly required prior to unquarantine (Phase B.10 Deliverable — Pending Independent Review)
+- [ ] **B38-41 remediated (Phase B.11):** Dedicated Vault Gateway mediates all Vault interactions (JWT exchange, slot credential reads, rotation writes); Provisioner never receives Vault client tokens; Layer 4 NetworkPolicy blocks direct worker and provisioner routes to Vault port 8200; Kubernetes RBAC and Admission Control prevent label spoofing; Gateway granted `find`, `insert`, `update`, `createIndex` on `jwt_redemptions`; durable 7-state redemption machine (`CLAIMED` $\rightarrow$ `VAULT_REQUEST_SENT` $\rightarrow$ `ISSUED` / `OUTCOME_UNKNOWN` $\rightarrow$ `QUARANTINED` / `RECONCILED` / `EXPIRED`); conservative fail-closed quarantine on ambiguous Vault timeouts; blind retries rejected; all stale metadata references corrected to Entity Alias Metadata (Phase B.11 Deliverable — Pending Independent Review)
+- [ ] **B38-42 remediated (Phase B.11):** Mathematical realities of AES-256-GCM nonce reuse ($P_1 \oplus P_2$ confidentiality loss and GHASH $H$ forgery) enforced; false claims of repair via key rotation or re-encryption eliminated; definitive 19-field `CanonicalWormPlaintextEvidenceRecord` schema specified; timestamp ISO and epoch representations synchronized (`1794304800000 === Date.parse("2026-11-10T10:00:00.000Z")`); byte-exact RFC 8785 JCS Ed25519 signature semantics with domain prefix `"DECISION_OS_WORM_EVIDENCE_V2:"` (signature excluded); independent RFC 3161 TSA tokens and Merkle audit tree checkpoint inclusion proof; concrete mathematically verified SHA-256 digest `3ebb50525651733616afcdfcca0bc572e973ca4c86e96bda3b3d923f0f348307` of explicit candidate decision payload; dual-party SRE/Security sign-off strictly required prior to unquarantine (Phase B.11 Deliverable — Pending Independent Review)
 - [x] Expanded verification plan (`D38-01` through `D38-42`, including thoroughly revised test specifications `D38-40`, `D38-41`, `D38-42`) categorized and explicitly marked as PLANNED
 - [x] Comprehensive Finding-to-Design-to-Test Traceability Matrix (Section 20.3) established for all findings B38-01 through B38-42
 - [x] Zero application, test, configuration, or infrastructure files modified; architecture design revision only
-- [x] **STOP gate observed:** Phase B.10 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
+- [x] **Gate B status:** NOT APPROVED (Architecture-only remediation; awaiting independent review before Phase C)
+- [x] **STOP gate observed:** Phase B.11 completed; awaiting independent architecture review and formal Gate B approval before Phase C. Do not self-approve Gate B.
