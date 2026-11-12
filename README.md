@@ -115,6 +115,11 @@ Start both backend API (`localhost:3000`) and frontend web app (`localhost:5173`
 npm run dev
 ```
 
+### 4. Presentation & Demo Credentials
+For live demonstrations, use the one-click **"⚡ Fill Presentation Demo Credentials"** button in the sign-in modal, or manually sign in with:
+* **Email**: `lead@decision-os.org`
+* **Password**: `DecisionOS@2026`
+
 ---
 
 ## ⚡ Tech Stack

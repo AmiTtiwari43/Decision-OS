@@ -98,7 +98,9 @@ export function getTestDatabaseUri(
   const uri =
     baseUri ||
     process.env.TEST_MONGODB_URI ||
-    'mongodb://127.0.0.1:27018/decision_os_test?replicaSet=rs0&directConnection=true';
+    (process.env.MONGODB_URI
+      ? process.env.MONGODB_URI.replace(/\/([^/?#]+)(\?.*)?$/, '/decision_os_test$2')
+      : 'mongodb://127.0.0.1:27017/decision_os_test');
 
   const runId = options?.runId || process.env.TEST_RUN_ID;
   const workerId =

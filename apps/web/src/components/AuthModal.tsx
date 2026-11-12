@@ -225,6 +225,21 @@ export const AuthModal: React.FC = () => {
               <span>{authModalMode === 'login' ? 'Sign In' : 'Create Account'}</span>
             )}
           </button>
+
+          {/* Presentation Quick-Fill Demo Credentials */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setEmail('lead@decision-os.org');
+                setPassword('DecisionOS@2026');
+                setName('Lead Decision Architect');
+              }}
+              className="w-full py-1.5 px-3 rounded-lg bg-surface border border-dashed border-border-subtle hover:border-signal/50 text-slate-400 hover:text-signal text-[11px] font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>⚡ Fill Presentation Demo Credentials</span>
+            </button>
+          </div>
         </form>
 
         {/* Footer info note */}
