@@ -50,6 +50,8 @@ export interface DecisionDto {
   currentUserRole?: 'owner' | 'editor' | 'viewer' | 'contributor';
   isContributionRoundLocked?: boolean;
   contributionRoundLockedAt?: string | null;
+  auditIntegrityStatus?: 'healthy' | 'pending_reconciliation' | 'quarantined';
+  isAudited?: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -977,4 +979,62 @@ export interface PresenceHeartbeatPayload {
   status?: 'active' | 'idle';
   currentView?: string;
 }
+
+// ─── Comment & Deliberation Types ──────────────────────────────────────────
+
+export type CommentTargetType = 'decision' | 'option' | 'criterion' | 'cell' | 'contribution';
+
+export interface CommentCellCoordinates {
+  optionId: string;
+  criterionId: string;
+}
+
+export interface CommentDto {
+  id: string;
+  decisionId: string;
+  authorId: string;
+  authorName: string;
+  authorRole: 'owner' | 'editor' | 'contributor' | 'viewer';
+  targetType: CommentTargetType;
+  targetId: string;
+  cellCoordinates?: CommentCellCoordinates | null;
+  content: string;
+  parentCommentId: string | null;
+  isResolved: boolean;
+  resolvedBy?: { id: string; name: string } | null;
+  resolvedAt?: string | null;
+  isDeleted: boolean;
+  deletedAt?: string | null;
+  editedAt?: string | null;
+  replyCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCommentPayload {
+  targetType?: CommentTargetType;
+  targetId?: string;
+  cellCoordinates?: CommentCellCoordinates | null;
+  content: string;
+  parentCommentId?: string | null;
+}
+
+export interface UpdateCommentPayload {
+  content: string;
+}
+
+export interface ResolveCommentPayload {
+  isResolved: boolean;
+}
+
+export interface ListCommentsFilter {
+  targetType?: string;
+  targetId?: string;
+  isResolved?: boolean;
+}
+
+export interface ListCommentsResponseDto {
+  items: CommentDto[];
+}
+
 

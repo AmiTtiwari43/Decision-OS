@@ -34,6 +34,7 @@ import {
   Zap,
   ArrowRight,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -57,6 +58,7 @@ const AnalyticsModal = React.lazy(() => import('./AnalyticsModal.js').then(m => 
 const DisagreementsModal = React.lazy(() => import('./DisagreementsModal.js').then(m => ({ default: m.DisagreementsModal })));
 const ExpertCalibrationModal = React.lazy(() => import('./ExpertCalibrationModal.js').then(m => ({ default: m.ExpertCalibrationModal })));
 const AuditExportModal = React.lazy(() => import('./AuditExportModal.js').then(m => ({ default: m.AuditExportModal })));
+const DeliberationModal = React.lazy(() => import('./DeliberationModal.js').then(m => ({ default: m.DeliberationModal })));
 
 interface InteractiveModalProps {
   isOpen: boolean;
@@ -134,6 +136,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isDisagreementsModalOpen, setIsDisagreementsModalOpen] = useState(false);
   const [isCalibrationModalOpen, setIsCalibrationModalOpen] = useState(false);
   const [isAuditExportModalOpen, setIsAuditExportModalOpen] = useState(false);
+  const [isDeliberationModalOpen, setIsDeliberationModalOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [editTitle, setEditTitle] = useState(dataset.title);
@@ -1404,6 +1407,18 @@ ${criteria
                 </button>
               )}
 
+              {/* Deliberation & Comment Threads Button */}
+              {decisionId && (
+                <button
+                  onClick={() => setIsDeliberationModalOpen(true)}
+                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Open stakeholder deliberation threads"
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-signal" />
+                  <span>Deliberation</span>
+                </button>
+              )}
+
               {/* Phase 8: Evidence & Provenance Button */}
               {decisionId && (
                 <button
@@ -1569,6 +1584,14 @@ ${criteria
             <AuditExportModal
               isOpen={isAuditExportModalOpen}
               onClose={() => setIsAuditExportModalOpen(false)}
+              decision={serverDecision}
+            />
+          )}
+
+          {isDeliberationModalOpen && (
+            <DeliberationModal
+              isOpen={isDeliberationModalOpen}
+              onClose={() => setIsDeliberationModalOpen(false)}
               decision={serverDecision}
             />
           )}

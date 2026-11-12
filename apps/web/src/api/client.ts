@@ -54,6 +54,11 @@ import type {
   ExportFormat,
   PresenceResponseDto,
   PresenceHeartbeatPayload,
+  CommentDto,
+  CreateCommentPayload,
+  UpdateCommentPayload,
+  ListCommentsFilter,
+  ListCommentsResponseDto,
 } from './types.js';
 
 export class ApiClientError extends Error {
@@ -514,6 +519,138 @@ export class DecisionApiClient {
       {
         method: 'POST',
         body: JSON.stringify({ notes }),
+      }
+    );
+  }
+
+  // ─── Deliberation & Comment Threads API ───────────────────────────────────
+
+  /**
+   * GET /api/decisions/:id/comments — List comments for a decision with optional filters.
+   */
+  async getComments(
+    decisionId: string,
+    filter?: ListCommentsFilter
+  ): Promise<ListCommentsResponseDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    const queryParams = new URLSearchParams();
+    if (filter?.targetType) queryParams.set('targetType', filter.targetType);
+    if (filter?.targetId) queryParams.set('targetId', filter.targetId);
+    if (filter?.isResolved !== undefined) queryParams.set('isResolved', String(filter.isResolved));
+
+    const qs = queryParams.toString();
+    const endpoint = `/api/decisions/${encodeURIComponent(cleanId)}/comments${qs ? `?${qs}` : ''}`;
+    return this.request<ListCommentsResponseDto>(endpoint, { method: 'GET' });
+  }
+
+  /**
+   * POST /api/decisions/:id/comments — Create a root comment or reply.
+   */
+  async createComment(
+    decisionId: string,
+    payload: CreateCommentPayload
+  ): Promise<CommentDto> {
+    const cleanId = (decisionId || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<CommentDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/comments`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * PATCH /api/decisions/:id/comments/:commentId — Edit own comment content.
+   */
+  async updateComment(
+    decisionId: string,
+    commentId: string,
+    payload: UpdateCommentPayload
+  ): Promise<CommentDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanCommentId = (commentId || '').trim();
+    if (!cleanId || !cleanCommentId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID and Comment ID are required.',
+      });
+    }
+
+    return this.request<CommentDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/comments/${encodeURIComponent(cleanCommentId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * DELETE /api/decisions/:id/comments/:commentId — Delete or tombstone comment.
+   */
+  async deleteComment(
+    decisionId: string,
+    commentId: string
+  ): Promise<{ success: boolean; isDeleted: boolean; tombstoned: boolean }> {
+    const cleanId = (decisionId || '').trim();
+    const cleanCommentId = (commentId || '').trim();
+    if (!cleanId || !cleanCommentId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID and Comment ID are required.',
+      });
+    }
+
+    return this.request<{ success: boolean; isDeleted: boolean; tombstoned: boolean }>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/comments/${encodeURIComponent(cleanCommentId)}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/comments/:commentId/resolve — Resolve or reopen root thread.
+   */
+  async resolveComment(
+    decisionId: string,
+    commentId: string,
+    isResolved: boolean
+  ): Promise<CommentDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanCommentId = (commentId || '').trim();
+    if (!cleanId || !cleanCommentId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID and Comment ID are required.',
+      });
+    }
+
+    return this.request<CommentDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/comments/${encodeURIComponent(cleanCommentId)}/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ isResolved }),
       }
     );
   }

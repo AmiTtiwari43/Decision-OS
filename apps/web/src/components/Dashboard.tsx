@@ -41,6 +41,7 @@ const AnalyticsModal = React.lazy(() => import('./AnalyticsModal.js').then((m) =
 const DisagreementsModal = React.lazy(() => import('./DisagreementsModal.js').then((m) => ({ default: m.DisagreementsModal })));
 const ExpertCalibrationModal = React.lazy(() => import('./ExpertCalibrationModal.js').then((m) => ({ default: m.ExpertCalibrationModal })));
 const AuditExportModal = React.lazy(() => import('./AuditExportModal.js').then((m) => ({ default: m.AuditExportModal })));
+const DeliberationModal = React.lazy(() => import('./DeliberationModal.js').then((m) => ({ default: m.DeliberationModal })));
 const WorkspaceAnalyticsModal = React.lazy(() => import('./WorkspaceAnalyticsModal.js').then((m) => ({ default: m.WorkspaceAnalyticsModal })));
 
 export type DashboardTab =
@@ -888,6 +889,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {activeFeatureModal.feature === 'audit' && (
               <AuditExportModal
                 key={`audit-${activeFeatureModal.decision._id}`}
+                isOpen={true}
+                onClose={() => setActiveFeatureModal(null)}
+                decision={activeFeatureModal.decision}
+              />
+            )}
+
+            {activeFeatureModal.feature === 'deliberation' && (
+              <DeliberationModal
+                key={`deliberation-${activeFeatureModal.decision._id}`}
                 isOpen={true}
                 onClose={() => setActiveFeatureModal(null)}
                 decision={activeFeatureModal.decision}

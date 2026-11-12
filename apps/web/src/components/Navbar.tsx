@@ -104,6 +104,12 @@ export const Navbar: React.FC<NavbarProps> = ({
               Deep Studio
             </a>
             <a
+              href="#governance-showcase"
+              className="hover:text-slate-100 transition-colors duration-200"
+            >
+              Governance & Audit
+            </a>
+            <a
               href="#how-it-works"
               className="hover:text-slate-100 transition-colors duration-200"
             >

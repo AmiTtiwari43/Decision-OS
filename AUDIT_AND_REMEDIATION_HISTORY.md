@@ -180,7 +180,28 @@ In `OperationJournalRepository.createEntry()`, an offline connection (`readyStat
 
 ---
 
-## 9. Consolidated Repository Document Sitemap
+## 9. Batch 03: Collaboration, AI Advisory & Cryptographic Audit Showcase
+
+### 9.1 Scope & Architecture
+Batch 03 unites the core collaborative, intelligence, and cryptographic audit layers into both the authenticated workspace and the public product walkthrough:
+1. **Stakeholder Deliberation & Threaded Audit**: Full deliberation thread support (`DeliberationModal.tsx`) with 1-level threaded replies, resolving workflows, author role attribution, and full client SDK coverage (`getComments`, `createComment`, `updateComment`, `deleteComment`, `resolveComment`).
+2. **Interactive Governance Showcase**: A dedicated presentation module (`ShowcaseSection.tsx`) embedded directly into the marketing and walkthrough view, highlighting:
+   - *Multi-Expert Collaboration*: Cross-functional persona switching (CTO Elena Rostova, CFO Marcus Vance, CPO Sarah Chen), displaying automatic proportional weight reallocation and consensus alignment metrics (88.4% alignment, $\sigma = 0.08$).
+   - *AI Advisory Analyst*: Executive summary synthesis, cognitive bias detection (anchoring, loss aversion), and analytical counterfactual tipping points with strict mathematical isolation guarantee (Rule #14).
+   - *Cryptographic Audit Chain*: Interactive SHA-256 hash chaining explorer (Genesis $\to$ Head), live one-click chain verification badge, and boardroom defense export formats (JSON proof, CSV matrix, PDF briefing).
+3. **Deep Studio & Dashboard Integration**: Wired Deliberation buttons into `InteractiveModal.tsx` and `DecisionCard.tsx`, and added a direct `Governance & Audit` navigation link into `Navbar.tsx`.
+
+### 9.2 Verification Sign-Off
+- `npm run test:web`: 23 test files passed, 243 tests passed (including all 9 contract and render tests in `src/tests/batch03Showcase.test.tsx`).
+- `npm run test:engine`: 12 test files passed, 98 tests passed.
+- `apps/api/tests/comments.test.ts`: 20 tests passed.
+- `npm run typecheck`: 0 errors across all workspaces.
+- `npm run lint`: 0 errors across all workspaces.
+- `npm run build`: Production bundle compiled cleanly.
+
+---
+
+## 10. Consolidated Repository Document Sitemap
 
 | Document | Category | Scope / Purpose |
 |:---|:---|:---|

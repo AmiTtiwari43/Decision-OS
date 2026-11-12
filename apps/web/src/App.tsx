@@ -5,6 +5,7 @@ import { ProblemSection } from './components/ProblemSection';
 import { HowItWorks } from './components/HowItWorks';
 import { DecisionDemo } from './components/DecisionDemo';
 import { InstrumentsShowcase } from './components/InstrumentsShowcase';
+import { ShowcaseSection } from './components/ShowcaseSection';
 import { DecisionTicket } from './components/DecisionTicket';
 import { DecisionTicker } from './components/DecisionTicker';
 import { CaseStudies } from './components/CaseStudies';
@@ -230,6 +231,14 @@ function AppContent() {
                 evaluations={evaluations}
                 sensitivity={sensitivity}
                 onSelectWeight={(cId, targetWeight) => setCriterionWeight(cId, targetWeight)}
+              />
+            </div>
+
+            {/* Batch 03: Collaboration, AI Advisory & Cryptographic Audit Showcase */}
+            <div id="governance-showcase">
+              <ShowcaseSection
+                onOpenStudio={() => setIsSandboxOpen(true)}
+                onOpenAudit={() => setIsAuditOpen(true)}
               />
             </div>
 

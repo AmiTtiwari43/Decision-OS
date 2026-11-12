@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Award,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 import type { DecisionDto } from '../api/index.js';
 import { getDecisionEvaluationStatus } from '../utils/decisionStatus.js';
@@ -23,6 +24,7 @@ import { getDecisionEvaluationStatus } from '../utils/decisionStatus.js';
 export type FeatureModalType =
   | 'share'
   | 'contributions'
+  | 'deliberation'
   | 'evidence'
   | 'ai'
   | 'analytics'
@@ -271,6 +273,14 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
               aria-label="Expert Deliberation"
             >
               <Users className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => onOpenFeature(decision, 'deliberation')}
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              title="Stakeholder Deliberation Threads"
+              aria-label="Stakeholder Deliberation Threads"
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'evidence')}
