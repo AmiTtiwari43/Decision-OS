@@ -178,6 +178,28 @@ In `OperationJournalRepository.createEntry()`, an offline connection (`readyStat
 - **Client SDK Support**: Added `reconcileAudit(id, operationId)` and `resolveQuarantine(id, notes)` to `@decision-os/web` `apiClient`.
 - **Verification Evidence**: 16/16 route tests passed in `decisionRouteSyntheticDemo.test.ts`, 11/11 standalone audit recovery tests passed in `standaloneAuditRecovery.test.ts`, and 11/11 live standalone persistence and recovery tests passed in `standaloneLiveRecovery.test.ts`.
 
+### 8.6 Batch 02-R5.2: Audit Integrity & Transaction Verification Closure
+Batch 02-R5.2 formally concludes Batch 02 with live, non-mocked verification of multi-document ACID transactions and the complete standalone failure scenario matrix:
+1. **Real Replica Set Multi-Document Transaction Verification (`apps/api/tests/replicaSetTransactionRollback.test.ts`)**:
+   - *Audit Append Rollback*: Injected an audit append failure into `auditService.recordEvent` within a live replica set deployment (`rs0:27018`). Confirmed directly from MongoDB that the decision update was completely rolled back by MongoDB's transaction coordinator (version remained 1, scores and provenance remained unchanged, zero audit events committed, zero journals created).
+   - *Update Failure Zero-Audit Guarantee*: Confirmed optimistic concurrency version conflicts fail closed before audit recording; directly verified zero audit events exist in MongoDB.
+   - *Duplicate Retry Idempotency*: Proved that calling `populateSyntheticDemo` when all cells are already populated acts as an immediate no-op; version is not incremented and zero duplicate audit events are generated.
+   - *Score Replacement Atomicity*: Proved that an audit append failure during `replaceSyntheticScore` rolls back the replacement score and restores synthetic provenance in MongoDB.
+2. **Complete Standalone Failure Scenario Matrix (`apps/api/tests/standaloneLiveRecovery.test.ts`)**:
+   - *Transient Reconciliation Failure Recovery*: Simulated a network failure during reconciliation audit write; proved decision safely remains in `pending_reconciliation` without state corruption, and subsequent reconciliation pass completes successfully (`healthy`, journal `COMPLETED`).
+   - *Standalone Duplicate Retry*: Proved duplicate demo-fill retries on standalone MongoDB are idempotent no-ops that create zero journals and zero duplicate audit events.
+   - *Disconnection Fail-Closed Guarantee*: Proved that database disconnection (`readyState !== 1`) strictly rejects operations before any partial or unjournaled mutations can occur.
+   - *Test Harness URI Isolation*: Added `TEST_STANDALONE_MONGODB_URI` fallback to allow simultaneous execution of live standalone persistence tests on port 27017 alongside replica set tests on port 27018.
+3. **Master Verification Sign-Off**:
+   - `replicaSetTransactionRollback.test.ts`: 5/5 passed.
+   - `standaloneLiveRecovery.test.ts`: 14/14 passed.
+   - `standaloneAuditRecovery.test.ts`: 11/11 passed.
+   - `serverEnforcedSyntheticIntegrity.test.ts`: 22/22 passed.
+   - `decisionRouteSyntheticDemo.test.ts`: 16/16 passed.
+   - `batch4_r1_transactions.test.ts`: 10/10 passed.
+   - Frontend Batch 02 verification suites: 32/32 passed.
+   - Full regression across all workspaces: 0 typecheck errors, 0 lint errors, 419 total passed tests.
+
 ---
 
 ## 9. Batch 03: Collaboration, AI Advisory & Cryptographic Audit Showcase

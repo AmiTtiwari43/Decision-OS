@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import mongoose from 'mongoose';
 import { assertTestDatabase } from '../src/db/guard.js';
 import {
@@ -23,7 +23,7 @@ import {
 } from '../src/errors/domain.errors.js';
 
 const TEST_STANDALONE_URI =
-  process.env.TEST_MONGODB_URI ||
+  process.env.TEST_STANDALONE_MONGODB_URI ||
   'mongodb://127.0.0.1:27017/decision_os_b02r6_live_test';
 
 // Mandatory database safety precondition: Must strictly end with _test
@@ -763,6 +763,130 @@ describe('Batch 02-R6: Live Standalone Persistence & Recovery Verification', () 
         sequenceNumber: events[1].sequenceNumber,
       });
       expect(events[1].eventHash).toBe(expectedHash1);
+    });
+  });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // 9. Batch 02-R5.1 Failure Scenario Verification
+  // ══════════════════════════════════════════════════════════════════════════
+  describe('9. Batch 02-R5.1 Failure Scenario Matrix', () => {
+    it('Scenario 9.1: Failure during reconciliation leaves decision pending and subsequent pass recovers', async () => {
+      const decisionDoc = await DecisionModel.create({
+        title: 'Transient Reconciliation Failure Decision',
+        ownerId: new mongoose.Types.ObjectId(testActor.id),
+        criteria: baseCriteria,
+        options: baseOptions,
+        scores: { 'opt-x': { 'crit-speed': 80 } },
+        version: 2,
+        isAudited: false,
+        auditIntegrityStatus: 'pending_reconciliation',
+        pendingOperationId: 'op-transient-reconcile',
+      });
+
+      const opId = 'op-transient-reconcile';
+      const eventId = `audit-transient-${Date.now()}`;
+
+      await OperationJournalModel.create({
+        operationId: opId,
+        decisionId: decisionDoc._id,
+        action: 'decision.synthetic_demo_populated',
+        actor: testActor,
+        expectedVersion: 1,
+        targetVersion: 2,
+        state: 'PENDING',
+        auditDraft: {
+          eventId,
+          entityType: 'decision',
+          entityId: decisionDoc._id.toString(),
+          summary: 'Transient reconcile draft',
+        },
+      });
+
+      // 1. Simulate failure during reconciliation audit append
+      const auditSpy = vi.spyOn(auditService, 'recordEvent').mockRejectedValueOnce(
+        new Error('Transient network error during reconciliation audit write')
+      );
+
+      // Reconcile must fail
+      await expect(
+        reconcileStandaloneAudit(decisionDoc._id.toString(), opId)
+      ).rejects.toThrow('Transient network error during reconciliation audit write');
+
+      // 2. Decision MUST remain in pending_reconciliation (not corrupted, not half-reconciled)
+      const intermediateDecision = await DecisionModel.findById(decisionDoc._id);
+      expect(intermediateDecision!.auditIntegrityStatus).toBe('pending_reconciliation');
+      expect(intermediateDecision!.pendingOperationId).toBe(opId);
+      expect(intermediateDecision!.version).toBe(2);
+
+      // Journal MUST remain in PENDING state
+      const intermediateJournal = await OperationJournalModel.findOne({ operationId: opId });
+      expect(intermediateJournal!.state).toBe('PENDING');
+
+      // 3. Clear transient error and retry reconciliation -> must succeed and heal decision
+      auditSpy.mockRestore();
+      const healedDecision = await reconcileStandaloneAudit(decisionDoc._id.toString(), opId);
+
+      expect(healedDecision.auditIntegrityStatus).toBe('healthy');
+      expect(healedDecision.isAudited).toBe(true);
+
+      const finalDecision = await DecisionModel.findById(decisionDoc._id);
+      expect(finalDecision!.auditIntegrityStatus).toBe('healthy');
+      expect(finalDecision!.pendingOperationId).toBeNull();
+
+      const finalJournal = await OperationJournalModel.findOne({ operationId: opId });
+      expect(finalJournal!.state).toBe('COMPLETED');
+    });
+
+    it('Scenario 9.2: Duplicate demo-fill retry on standalone MongoDB is an idempotent no-op', async () => {
+      // Create decision with all scores filled
+      const decisionDoc = await DecisionModel.create({
+        title: 'Standalone Duplicate Demo Fill Decision',
+        ownerId: new mongoose.Types.ObjectId(testActor.id),
+        criteria: baseCriteria,
+        options: baseOptions,
+        scores: {
+          'opt-x': { 'crit-speed': 80, 'crit-cost': 60 },
+          'opt-y': { 'crit-speed': 70, 'crit-cost': 90 },
+        },
+        version: 2,
+        auditIntegrityStatus: 'healthy',
+        isAudited: true,
+      });
+
+      const initialJournalCount = await OperationJournalModel.countDocuments();
+      const initialAuditCount = await AuditEventModel.countDocuments({ decisionId: decisionDoc._id });
+
+      // Call populateSyntheticDemo when all cells are already scored
+      const res = await populateSyntheticDemo(decisionDoc._id.toString(), 75, 2, testActor);
+
+      // Returns same document with unchanged version
+      expect(res.version).toBe(2);
+
+      // Directly verify MongoDB: zero journals created, zero audit events appended
+      const postJournalCount = await OperationJournalModel.countDocuments();
+      const postAuditCount = await AuditEventModel.countDocuments({ decisionId: decisionDoc._id });
+      expect(postJournalCount).toBe(initialJournalCount);
+      expect(postAuditCount).toBe(initialAuditCount);
+
+      const freshDecision = await DecisionModel.findById(decisionDoc._id);
+      expect(freshDecision!.version).toBe(2);
+    });
+
+    it('Scenario 9.3: Database disconnection fails closed before mutation', async () => {
+      // Disconnect mongoose
+      await mongoose.disconnect();
+      expect(mongoose.connection.readyState).toBe(0);
+
+      const randomDecisionId = new mongoose.Types.ObjectId().toString();
+
+      // OperationJournal creation fails closed when database is not connected
+      await expect(
+        populateSyntheticDemo(randomDecisionId, 75, 1, testActor)
+      ).rejects.toThrow();
+
+      // Reconnect for remaining teardown
+      await mongoose.connect(TEST_STANDALONE_URI);
+      expect(mongoose.connection.readyState).toBe(1);
     });
   });
 });

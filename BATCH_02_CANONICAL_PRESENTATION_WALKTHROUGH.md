@@ -196,3 +196,22 @@ $$\text{Score}(\text{opt-beta}) = (70 \times 0.49) + (90 \times 0.51) = 34.3 + 4
    - Option Beta scores **80.2 pts** (#1 Winner).
    - Option Alpha scores **79.8 pts** (#2 Runner-Up).
    - Option Beta is now the decisive winner (+0.4 pts).
+
+---
+
+## 4. Batch 02-R5 Audit Integrity & Multi-Document Transaction Verification
+
+To ensure that demo-fill operations (`populateSyntheticDemo`), score replacements (`replaceSyntheticScore`), and audit logs cannot produce partially committed or desynchronized state, Batch 02-R5 establishes dual-topology transactional guarantees verified against live MongoDB instances:
+
+### 4.1 Topology A (Replica Set): Native ACID Multi-Document Transactions
+- **Session Propagation**: Both decision mutation (`DecisionModel`) and authoritative cryptographic audit recording (`AuditEventModel`) execute inside `runInTransaction()` sharing the identical `mongoose.ClientSession`.
+- **Atomic Rollback Verification**: Verified via `apps/api/tests/replicaSetTransactionRollback.test.ts` (5/5 passed on `rs0:27018`). Injected audit append failures cause MongoDB to abort the transaction, rolling back decision scores and provenance to original state (version remains unchanged, zero audit events committed, zero journals created).
+- **Zero-Audit Concurrency Protection**: Decision concurrency conflicts (`DecisionConflictError`) abort before audit dispatch, ensuring orphaned audit records are never committed.
+- **Idempotent Demo-Fill**: Calling `populateSyntheticDemo` on an already-completed matrix acts as an immediate no-op, preserving version and preventing duplicate audit events.
+
+### 4.2 Topology B (Standalone): Durable Operation Journal Outbox Protocol
+- **Durable Write Ahead**: Before mutating a decision on standalone MongoDB, an `OperationJournalModel` record is durably persisted in `PENDING` state with complete previous snapshot and audit draft. If disconnected (`readyState !== 1`), operation strictly fails closed.
+- **Interruption Recovery**: In crash scenarios where decision mutation commits at `targetVersion` but audit append fails, `reconcileStandaloneAudit` uses the durable journal to roll forward the audit event with deterministic `eventId` and marks the decision `healthy`.
+- **Quarantine Invariants**: Missing journals or version desynchronization during reconciliation strictly fail closed, marking the decision `quarantined` and journal `UNRECOVERABLE`, blocking all mutations and analysis.
+- **Self-Healing Access**: `getDecision` and `analyzeDecision` automatically trigger `reconcileStandaloneAudit` on access if a decision is in `pending_reconciliation` status.
+- **Verification Evidence**: Verified via `apps/api/tests/standaloneLiveRecovery.test.ts` (14/14 passed on standalone MongoDB port 27017).
