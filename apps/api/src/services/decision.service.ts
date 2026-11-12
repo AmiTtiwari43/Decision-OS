@@ -1245,9 +1245,21 @@ export async function getDecision(
   if (!mongoose.isValidObjectId(id)) {
     throw new InvalidDecisionIdError(id);
   }
-  const doc = await decisionRepository.findById(id);
+  let doc = await decisionRepository.findById(id);
   if (!doc) {
     throw new DecisionNotFoundError(id);
+  }
+
+  // Self-healing: if an interrupted standalone operation is pending reconciliation, attempt immediate recovery
+  if (doc.auditIntegrityStatus === 'pending_reconciliation' && doc.pendingOperationId) {
+    try {
+      doc = await reconcileStandaloneAudit(id, doc.pendingOperationId);
+    } catch {
+      const refreshed = await decisionRepository.findById(id);
+      if (refreshed) {
+        doc = refreshed;
+      }
+    }
   }
 
   const role = await authorizeDecisionAction(doc, 'read', requester);
@@ -1478,9 +1490,21 @@ export async function analyzeDecision(
     throw new InvalidDecisionIdError(id);
   }
 
-  const doc = await decisionRepository.findById(id);
+  let doc = await decisionRepository.findById(id);
   if (!doc) {
     throw new DecisionNotFoundError(id);
+  }
+
+  // Self-healing: if an interrupted standalone operation is pending reconciliation, attempt immediate recovery
+  if (doc.auditIntegrityStatus === 'pending_reconciliation' && doc.pendingOperationId) {
+    try {
+      doc = await reconcileStandaloneAudit(id, doc.pendingOperationId);
+    } catch {
+      const refreshed = await decisionRepository.findById(id);
+      if (refreshed) {
+        doc = refreshed;
+      }
+    }
   }
 
   if (doc.auditIntegrityStatus === 'quarantined') {

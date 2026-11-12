@@ -172,6 +172,12 @@ In standalone MongoDB environments (where replica-set multi-document transaction
 ### 8.4 Offline Guard Fail-Closed Durability Enforcement
 In `OperationJournalRepository.createEntry()`, an offline connection (`readyState !== 1`) immediately throws a persistence error rather than returning an unsaved in-memory model. This ensures a standalone decision mutation never proceeds without a verified, acknowledged recovery journal in MongoDB.
 
+### 8.5 Batch 02-R5: Audit Integrity Closure & Self-Healing Reconciliation
+- **REST Reconciliation Endpoint**: Exposed `POST /api/decisions/:id/reconcile-audit` (and `/v1/decisions/:id/reconcile-audit`) enabling administrators or clients to explicitly trigger durable audit recovery for decisions with `pendingOperationId`.
+- **Self-Healing Read Path**: `getDecision` and `analyzeDecision` service layers automatically trigger `reconcileStandaloneAudit` on access when a decision is in `pending_reconciliation` state, restoring healthy audited status without manual administrative intervention if the journal entry is valid.
+- **Client SDK Support**: Added `reconcileAudit(id, operationId)` and `resolveQuarantine(id, notes)` to `@decision-os/web` `apiClient`.
+- **Verification Evidence**: 16/16 route tests passed in `decisionRouteSyntheticDemo.test.ts`, 11/11 standalone audit recovery tests passed in `standaloneAuditRecovery.test.ts`, and 11/11 live standalone persistence and recovery tests passed in `standaloneLiveRecovery.test.ts`.
+
 ---
 
 ## 9. Consolidated Repository Document Sitemap

@@ -468,6 +468,56 @@ export class DecisionApiClient {
     );
   }
 
+  /**
+   * POST /api/decisions/:id/reconcile-audit — Triggers standalone audit recovery and reconciliation.
+   */
+  async reconcileAudit(
+    id: string,
+    operationId?: string
+  ): Promise<DecisionDto> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/reconcile-audit`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ operationId }),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/quarantine/resolve — Resolves quarantined state after review.
+   */
+  async resolveQuarantine(
+    id: string,
+    notes?: string
+  ): Promise<DecisionDto> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/quarantine/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ notes }),
+      }
+    );
+  }
+
   // ─── Sharing & Invitation API ──────────────────────────────────────────────
 
   /**

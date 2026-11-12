@@ -16,6 +16,7 @@ vi.spyOn(decisionService, 'clearSyntheticScores');
 vi.spyOn(decisionService, 'updateDecision');
 vi.spyOn(decisionService, 'createDecision');
 vi.spyOn(decisionService, 'analyzeDecision');
+vi.spyOn(decisionService, 'reconcileStandaloneAudit');
 
 describe('Decision Routes — Synthetic Demonstration & Provenance Fastify Route Integration', () => {
   let app: FastifyInstance;
@@ -352,6 +353,41 @@ describe('Decision Routes — Synthetic Demonstration & Provenance Fastify Route
 
       expect(response.statusCode).toBe(400);
       expect(response.json().message).toContain('Client-supplied synthetic score provenance is not permitted on decision creation');
+    });
+  });
+
+  // ─── 7. Standalone Audit Reconciliation Route (Batch 02-R5) ──────────────────
+  describe('POST /api/decisions/:id/reconcile-audit', () => {
+    it('successfully triggers reconcileStandaloneAudit and returns reconciled document', async () => {
+      const mockReconciled = {
+        _id: validDecisionId,
+        version: 2,
+        auditIntegrityStatus: 'healthy',
+        isAudited: true,
+        pendingOperationId: null,
+      };
+      (decisionService.reconcileStandaloneAudit as any).mockResolvedValueOnce(mockReconciled);
+
+      const response = await injectWithAuth({
+        method: 'POST',
+        url: `/api/decisions/${validDecisionId}/reconcile-audit`,
+        body: { operationId: 'op-123' },
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual(mockReconciled);
+      expect(decisionService.reconcileStandaloneAudit).toHaveBeenCalledWith(validDecisionId, 'op-123');
+    });
+
+    it('returns HTTP 400 when invalid decision ID is provided', async () => {
+      const response = await injectWithAuth({
+        method: 'POST',
+        url: '/api/decisions/invalid-id-format/reconcile-audit',
+        body: {},
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().message).toContain('is not a valid decision ID');
     });
   });
 });

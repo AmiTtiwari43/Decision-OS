@@ -15,6 +15,7 @@ import {
   deleteDecision,
   analyzeDecision,
   resolveQuarantine,
+  reconcileStandaloneAudit,
   replaceSyntheticScore,
   clearSyntheticScores,
   populateSyntheticDemo,
@@ -415,4 +416,30 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
   app.post('/decisions/:id/quarantine/resolve', handleQuarantineResolve);
   app.post('/v1/decisions/:id/quarantine/resolve', handleQuarantineResolve);
+
+  // POST /api/decisions/:id/reconcile-audit & /api/v1/decisions/:id/reconcile-audit
+  const handleReconcileAudit = async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+    const body = (request.body as { operationId?: string }) || {};
+    const requestId = (request.id as string) || 'unknown';
+
+    if (!isValidObjectId(id)) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `'${id}' is not a valid decision ID`,
+        requestId,
+      });
+    }
+
+    try {
+      const doc = await reconcileStandaloneAudit(id, body.operationId);
+      return reply.status(200).send(doc);
+    } catch (err) {
+      return handleServiceError(err, request, reply);
+    }
+  };
+
+  app.post('/decisions/:id/reconcile-audit', handleReconcileAudit);
+  app.post('/v1/decisions/:id/reconcile-audit', handleReconcileAudit);
 };
