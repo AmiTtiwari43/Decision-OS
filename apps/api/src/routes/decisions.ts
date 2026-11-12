@@ -1,6 +1,12 @@
 import type { FastifyInstance, FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import mongoose from 'mongoose';
-import { createDecisionSchema, updateDecisionSchema } from '../models/index.js';
+import {
+  createDecisionSchema,
+  updateDecisionSchema,
+  replaceSyntheticScoreSchema,
+  clearSyntheticScoresSchema,
+  populateSyntheticDemoSchema,
+} from '../models/index.js';
 import {
   createDecision,
   getDecision,
@@ -9,13 +15,20 @@ import {
   deleteDecision,
   analyzeDecision,
   resolveQuarantine,
+  replaceSyntheticScore,
+  clearSyntheticScores,
+  populateSyntheticDemo,
 } from '../services/decision.service.js';
 import {
   DecisionNotFoundError,
   InvalidDecisionIdError,
   IncompleteScoresError,
+  SyntheticScoresPresentError,
   EngineValidationError,
   DecisionConflictError,
+  InvalidProvenanceTransitionError,
+  CoordinateNotSyntheticError,
+  InvalidScoreCoordinateError,
 } from '../errors/domain.errors.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -62,6 +75,17 @@ function handleServiceError(
     return;
   }
 
+  if (err instanceof SyntheticScoresPresentError) {
+    reply.status(422).send({
+      statusCode: 422,
+      error: 'Unprocessable Entity',
+      message: err.message,
+      syntheticCoordinates: err.syntheticCoordinates,
+      requestId,
+    });
+    return;
+  }
+
   if (err instanceof EngineValidationError) {
     reply.status(422).send({
       statusCode: 422,
@@ -78,6 +102,26 @@ function handleServiceError(
       error: 'Conflict',
       message: err.message,
       currentVersion: err.currentVersion,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof InvalidProvenanceTransitionError || err instanceof InvalidScoreCoordinateError) {
+    reply.status(400).send({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: err.message,
+      requestId,
+    });
+    return;
+  }
+
+  if (err instanceof CoordinateNotSyntheticError) {
+    reply.status(422).send({
+      statusCode: 422,
+      error: 'Unprocessable Entity',
+      message: err.message,
       requestId,
     });
     return;
@@ -238,6 +282,108 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
 
     try {
       const doc = await analyzeDecision(id, request.user);
+      return reply.status(200).send(doc);
+    } catch (err) {
+      return handleServiceError(err, request, reply);
+    }
+  });
+
+  // POST /api/decisions/:id/replace-synthetic-score — Explicitly replaces a synthetic score coordinate
+  app.post('/decisions/:id/replace-synthetic-score', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+    const requestId = (request.id as string) || 'unknown';
+
+    if (!isValidObjectId(id)) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `'${id}' is not a valid decision ID`,
+        requestId,
+      });
+    }
+
+    const body = request.body as Record<string, unknown>;
+    const parsed = replaceSyntheticScoreSchema.safeParse(body);
+    if (!parsed.success) {
+      const messages = parsed.error.errors.map((e) => e.message).join('; ');
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: messages,
+        requestId,
+      });
+    }
+
+    try {
+      const doc = await replaceSyntheticScore(id, parsed.data, request.user);
+      return reply.status(200).send(doc);
+    } catch (err) {
+      return handleServiceError(err, request, reply);
+    }
+  });
+
+  // POST /api/decisions/:id/clear-synthetic-scores — Atomically clears all synthetic scores
+  app.post('/decisions/:id/clear-synthetic-scores', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+    const requestId = (request.id as string) || 'unknown';
+
+    if (!isValidObjectId(id)) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `'${id}' is not a valid decision ID`,
+        requestId,
+      });
+    }
+
+    const body = (request.body as Record<string, unknown>) || {};
+    const parsed = clearSyntheticScoresSchema.safeParse(body);
+    if (!parsed.success) {
+      const messages = parsed.error.errors.map((e) => e.message).join('; ');
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: messages,
+        requestId,
+      });
+    }
+
+    try {
+      const doc = await clearSyntheticScores(id, parsed.data.expectedVersion, request.user);
+      return reply.status(200).send(doc);
+    } catch (err) {
+      return handleServiceError(err, request, reply);
+    }
+  });
+
+  // POST /api/decisions/:id/populate-synthetic-demo — Authoritative server demo fill
+  app.post('/decisions/:id/populate-synthetic-demo', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { id } = request.params as { id: string };
+    const requestId = (request.id as string) || 'unknown';
+
+    if (!isValidObjectId(id)) {
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: `'${id}' is not a valid decision ID`,
+        requestId,
+      });
+    }
+
+    const body = (request.body as Record<string, unknown>) || {};
+    const parsed = populateSyntheticDemoSchema.safeParse(body);
+    if (!parsed.success) {
+      const messages = parsed.error.errors.map((e) => e.message).join('; ');
+      return reply.status(400).send({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: messages,
+        requestId,
+      });
+    }
+
+    try {
+      const doc = await populateSyntheticDemo(id, parsed.data.defaultValue, parsed.data.expectedVersion, request.user);
       return reply.status(200).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);

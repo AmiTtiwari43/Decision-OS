@@ -410,7 +410,9 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
                                       #1 <Check className="w-3.5 h-3.5" />
                                     </span>
                                   ) : (
-                                    <span className="text-slate-400">#{opt.rank}</span>
+                                    <span className="text-slate-400">
+                                      {opt.rank !== null && opt.rank !== undefined ? `#${opt.rank}` : 'Unranked'}
+                                    </span>
                                   )}
                                 </td>
                                 <td className="py-3 px-3 font-semibold text-white">

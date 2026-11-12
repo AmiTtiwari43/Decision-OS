@@ -559,7 +559,13 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                             </code>
                           </p>
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            Winner: <strong className="text-slate-300">{s.options.find(o => o.id === s.analysis?.winnerId)?.name || (s.analysis?.isTie ? 'Tie' : 'None')}</strong> &bull;{' '}
+                            Winner: <strong className="text-slate-300">{
+                              (s.analysis?.decisionOutcome as string) === 'invalid'
+                                ? 'Invalid'
+                                : (s.analysis?.decisionOutcome as string) === 'incomplete'
+                                ? 'Incomplete'
+                                : s.options.find(o => o.id === s.analysis?.winnerId)?.name || (s.analysis?.isTie ? 'Tie' : 'None')
+                            }</strong> &bull;{' '}
                             {s.criteria.length} criteria, {s.options.length} options &bull;{' '}
                             {new Date(s.createdAt).toLocaleString()}
                           </p>
@@ -595,20 +601,27 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                       <div>
                         <span className="text-slate-500 block">Winner</span>
                         <strong className="text-emerald-400">
-                          {selectedSnapshot.options.find(o => o.id === selectedSnapshot.analysis?.winnerId)?.name ||
-                            (selectedSnapshot.analysis?.isTie ? 'Tie' : 'N/A')}
+                          {(selectedSnapshot.analysis?.decisionOutcome as string) === 'invalid'
+                            ? 'Invalid'
+                            : (selectedSnapshot.analysis?.decisionOutcome as string) === 'incomplete'
+                            ? 'Incomplete'
+                            : selectedSnapshot.options.find(o => o.id === selectedSnapshot.analysis?.winnerId)?.name ||
+                              (selectedSnapshot.analysis?.isTie ? 'Tie' : 'N/A')}
                         </strong>
                       </div>
                       <div>
                         <span className="text-slate-500 block">Score</span>
                         <strong>
-                          {selectedSnapshot.analysis?.evaluations?.find(
-                            e => e.optionId === selectedSnapshot.analysis?.winnerId
-                          )?.weightedScore !== undefined
-                            ? selectedSnapshot.analysis.evaluations
-                                .find(e => e.optionId === selectedSnapshot.analysis?.winnerId)!
-                                .weightedScore.toFixed(2)
-                            : 'N/A'}
+                          {(() => {
+                            const winnerId = selectedSnapshot.analysis?.winnerId;
+                            if (!winnerId) return 'N/A';
+                            const winnerEval = selectedSnapshot.analysis?.evaluations?.find(
+                              e => e.optionId === winnerId
+                            );
+                            return winnerEval && typeof winnerEval.weightedScore === 'number'
+                              ? winnerEval.weightedScore.toFixed(2)
+                              : 'N/A';
+                          })()}
                         </strong>
                       </div>
                       <div>
@@ -634,7 +647,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                             className="flex justify-between p-1.5 bg-slate-900 rounded border border-slate-800"
                           >
                             <span>
-                              #{r.rank} {r.optionName}
+                              {r.rank !== null && r.rank !== undefined ? `#${r.rank}` : 'Unranked'} {r.optionName}
                             </span>
                             <span className="text-slate-400">{r.weightedScore.toFixed(2)} pts</span>
                           </div>

@@ -194,8 +194,16 @@ export class ExportService {
         lines.push(`Decision ID,${sanitizeCsvCell(decision._id.toString())}`);
         lines.push(`Description,${sanitizeCsvCell(decision.description || '')}`);
         lines.push(`Exported At,${sanitizeCsvCell(new Date().toISOString())}`);
-        const winnerOpt = decision.options?.find(o => o.id === decision.analysis?.winnerId);
-        const winnerName = winnerOpt?.name || (decision.analysis?.isTie ? 'Tie' : 'Uncalculated');
+        const analysis = decision.analysis;
+        const isInvalid = (analysis?.decisionOutcome as string) === 'invalid';
+        const isIncomplete = (analysis?.decisionOutcome as string) === 'incomplete';
+        const isTie = Boolean(analysis?.isTie);
+        const winnerOpt = analysis?.winnerId ? decision.options?.find(o => o.id === analysis.winnerId) : null;
+        const winnerName = isInvalid
+          ? 'Invalid Evaluation'
+          : isIncomplete
+          ? 'Incomplete Evaluation'
+          : winnerOpt?.name || (isTie ? 'Tie' : 'Uncalculated');
         lines.push(`MCDA Winner,${sanitizeCsvCell(winnerName)}`);
         lines.push(`Engine Version,${sanitizeCsvCell(decision.analysis?.engineVersion || 'canonical-v1')}`);
         lines.push('');
@@ -237,8 +245,8 @@ export class ExportService {
               sanitizeCsvCell(opt.id),
               sanitizeCsvCell(opt.name),
               ...scoreValues,
-              sanitizeCsvCell(finalScore !== undefined ? Math.round(finalScore * 100) / 100 : ''),
-              sanitizeCsvCell(rank ?? ''),
+              sanitizeCsvCell(typeof finalScore === 'number' && Number.isFinite(finalScore) ? Math.round(finalScore * 100) / 100 : ''),
+              sanitizeCsvCell(rank !== null && rank !== undefined ? rank : 'Unranked'),
             ].join(',')
           );
         }
@@ -281,8 +289,16 @@ export class ExportService {
       }
 
       case 'html': {
-        const htmlWinnerOpt = decision.options?.find(o => o.id === decision.analysis?.winnerId);
-        const htmlWinnerName = htmlWinnerOpt?.name || (decision.analysis?.isTie ? 'Tie' : 'Calculation Pending');
+        const htmlAnalysis = decision.analysis;
+        const isHtmlInvalid = (htmlAnalysis?.decisionOutcome as string) === 'invalid';
+        const isHtmlIncomplete = (htmlAnalysis?.decisionOutcome as string) === 'incomplete';
+        const isHtmlTie = Boolean(htmlAnalysis?.isTie);
+        const htmlWinnerOpt = htmlAnalysis?.winnerId ? decision.options?.find(o => o.id === htmlAnalysis.winnerId) : null;
+        const htmlWinnerName = isHtmlInvalid
+          ? 'Invalid Evaluation'
+          : isHtmlIncomplete
+          ? 'Incomplete Evaluation'
+          : htmlWinnerOpt?.name || (isHtmlTie ? 'Tie' : 'Calculation Pending');
         const evaluations = decision.analysis?.evaluations || [];
 
         const htmlContent = `<!DOCTYPE html>
@@ -319,7 +335,7 @@ export class ExportService {
   <div class="container">
     <div style="display: flex; justify-content: space-between; align-items: baseline;">
       <h1>${escapeHtml(decision.title)}</h1>
-      <span class="badge badge-winner">Winner: ${escapeHtml(htmlWinnerName)}</span>
+      <span class="badge badge-winner">${isHtmlInvalid || isHtmlIncomplete ? 'Status' : 'Winner'}: ${escapeHtml(htmlWinnerName)}</span>
     </div>
     <p><strong>Description:</strong> ${escapeHtml(decision.description || 'No description provided.')}</p>
     <p style="font-size: 13px; color: #94a3b8;">
@@ -343,12 +359,12 @@ export class ExportService {
           evaluations.length > 0
             ? evaluations
                 .map(
-                  (e: { rank: number; optionName: string; weightedScore: number; scoreDifferenceToLeader: number }) => `
+                  (e: { rank?: number | null; optionName: string; weightedScore?: number | null; scoreDifferenceToLeader?: number | null }) => `
             <tr>
-              <td><strong>#${e.rank}</strong></td>
+              <td><strong>${e.rank !== null && e.rank !== undefined ? `#${e.rank}` : 'Unranked'}</strong></td>
               <td>${escapeHtml(e.optionName)}</td>
-              <td>${(e.weightedScore).toFixed(2)}</td>
-              <td>${e.rank === 1 ? '— (Leader)' : `-${(e.scoreDifferenceToLeader).toFixed(2)}`}</td>
+              <td>${typeof e.weightedScore === 'number' && Number.isFinite(e.weightedScore) ? (e.weightedScore).toFixed(2) : 'N/A'}</td>
+              <td>${e.rank === 1 ? '— (Leader)' : typeof e.scoreDifferenceToLeader === 'number' && Number.isFinite(e.scoreDifferenceToLeader) ? `-${(e.scoreDifferenceToLeader).toFixed(2)}` : '—'}</td>
             </tr>`
                 )
                 .join('')

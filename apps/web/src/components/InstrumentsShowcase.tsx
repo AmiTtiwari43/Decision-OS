@@ -21,6 +21,8 @@ interface InstrumentsShowcaseProps {
   criteria: Criterion[];
   options: Option[];
   weights: Record<string, number>;
+  lockedIds?: string[];
+  initialInstrumentId?: string;
   activeOptionIds: string[];
   evaluations: OptionEvaluation[];
   sensitivity: SensitivityAnalysis[];
@@ -66,12 +68,14 @@ export const InstrumentsShowcase: React.FC<InstrumentsShowcaseProps> = ({
   criteria,
   options,
   weights,
+  lockedIds = [],
+  initialInstrumentId = 'radar',
   activeOptionIds,
   evaluations,
   sensitivity,
   onSelectWeight,
 }) => {
-  const [activeInstrumentId, setActiveInstrumentId] = useState<string>('radar');
+  const [activeInstrumentId, setActiveInstrumentId] = useState<string>(initialInstrumentId);
 
   const activeInstrument = instruments.find((i) => i.id === activeInstrumentId) || instruments[0];
 
@@ -236,6 +240,7 @@ export const InstrumentsShowcase: React.FC<InstrumentsShowcaseProps> = ({
                   criteria={criteria}
                   options={options}
                   weights={weights}
+                  lockedIds={lockedIds}
                 />
               </motion.div>
             )}

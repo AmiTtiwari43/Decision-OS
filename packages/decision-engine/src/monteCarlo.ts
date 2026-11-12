@@ -4,6 +4,7 @@ import type {
   MonteCarloConfig,
   MonteCarloResult,
   MonteCarloOptionResult,
+  MonteCarloCriterionStats,
 } from './types';
 import { normalizeWeights } from './normalization';
 
@@ -84,6 +85,11 @@ export function runMonteCarloSimulation(
   const optionScores = new Float64Array(numOptions);
   const optWinCounts = new Float64Array(numOptions);
 
+  const weightSums = new Float64Array(numCriteria);
+  const weightSqSums = new Float64Array(numCriteria);
+  const minWeights = new Float64Array(numCriteria).fill(Infinity);
+  const maxWeights = new Float64Array(numCriteria).fill(-Infinity);
+
   for (let iter = 0; iter < iterations; iter++) {
     // Generate perturbed weights
     for (let c = 0; c < numCriteria; c++) {
@@ -106,6 +112,22 @@ export function runMonteCarloSimulation(
 
     // Renormalize perturbed weights
     const perturbedNormalized = normalizeWeights(perturbedCriteria as unknown as ReadonlyArray<EngineCriterion>, lockedIds);
+
+    // Optional inspection hook for per-iteration invariant verification (minimal test seam)
+    if (config.onIterationWeights) {
+      // Create an independent snapshot and freeze it so consumer code cannot mutate internal simulation state
+      const snapshot: Readonly<Record<string, number>> = Object.freeze({ ...perturbedNormalized });
+      config.onIterationWeights(snapshot, iter);
+    }
+
+    // Track simulated weight distribution metrics for invariant verification
+    for (let c = 0; c < numCriteria; c++) {
+      const w = perturbedNormalized[criteria[c].id] ?? 0;
+      weightSums[c] += w;
+      weightSqSums[c] += w * w;
+      if (w < minWeights[c]) minWeights[c] = w;
+      if (w > maxWeights[c]) maxWeights[c] = w;
+    }
 
     // Score options under perturbed weights
     let maxScore = -Infinity;
@@ -168,6 +190,22 @@ export function runMonteCarloSimulation(
     robustnessRating = 'sensitive';
   }
 
+  const criterionStats: MonteCarloCriterionStats[] = criteria.map((crit, c) => {
+    const meanExact = weightSums[c] / iterations;
+    const varianceExact = Math.max(0, (weightSqSums[c] / iterations) - (meanExact * meanExact));
+    const isLocked = isLockedCriteria[c] === 1;
+
+    return {
+      criterionId: crit.id,
+      meanWeight: round1(meanExact),
+      variance: Math.round(varianceExact * 10000) / 10000,
+      stdDev: Math.round(Math.sqrt(varianceExact) * 100) / 100,
+      minWeight: round1(minWeights[c]),
+      maxWeight: round1(maxWeights[c]),
+      isLocked,
+    };
+  });
+
   return {
     engineVersion: '1.0.0',
     iterations,
@@ -177,5 +215,6 @@ export function runMonteCarloSimulation(
     dominantOptionId,
     dominantWinProbability: topProb,
     robustnessRating,
+    criterionStats,
   };
 }

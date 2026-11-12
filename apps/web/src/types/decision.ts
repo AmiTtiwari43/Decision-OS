@@ -6,6 +6,7 @@ export interface Criterion {
   category: 'growth' | 'finance' | 'lifestyle' | 'risk' | 'execution';
   defaultWeight: number; // 0 - 100 percentage
   iconName?: string;
+  isLocked?: boolean;
 }
 
 export interface Option {
@@ -30,6 +31,14 @@ export interface Scenario {
   weights: Record<string, number>; // criterionId -> percentage (sum = 100)
 }
 
+export interface ScoreCoordinateProvenance {
+  isSynthetic: boolean;
+  source?: string;
+  insertedAt?: string;
+}
+
+export type ScoreProvenanceMap = Record<string, Record<string, ScoreCoordinateProvenance>>;
+
 export interface DecisionDataset {
   id: string;
   title: string;
@@ -38,6 +47,7 @@ export interface DecisionDataset {
   criteria: Criterion[];
   options: Option[];
   scenarios: Scenario[];
+  scoreProvenance?: ScoreProvenanceMap;
 }
 
 export interface ContributionItem {
@@ -54,9 +64,13 @@ export interface OptionEvaluation {
   option: Option;
   weightedScore: number;
   rawScoreAvg: number;
-  rank: number;
+  rank: number | null;
   scoreDifferenceToLeader: number;
   contributions: ContributionItem[];
+}
+
+export interface EvaluatedOptionEvaluation extends OptionEvaluation {
+  rank: number;
 }
 
 export interface DeltaDriver {
@@ -84,7 +98,7 @@ export interface SensitivityAnalysis {
 }
 
 export interface ExplainabilitySummary {
-  winningOption: Option;
+  winningOption: Option | null;
   runnerUpOption: Option | null;
   pointLead: number;
   headline: string;
@@ -96,7 +110,7 @@ export interface ExplainabilitySummary {
 
 export interface EngineResult {
   evaluations: OptionEvaluation[];
-  winner: OptionEvaluation;
+  winner: OptionEvaluation | null;
   runnerUp: OptionEvaluation | null;
   normalizedWeights: Record<string, number>;
   totalWeight: number;
@@ -107,7 +121,16 @@ export interface EngineResult {
   evaluatedAt?: string;
   isTie?: boolean;
   tiedWinnerIds?: readonly string[];
-  decisionOutcome?: 'decisive' | 'tie';
+  decisionOutcome?: 'decisive' | 'tie' | 'incomplete' | 'invalid';
+  isIncomplete?: boolean;
+  isInvalid?: boolean;
+  invalidReason?: 'weights' | 'scores' | null;
+  errorMessage?: string | null;
   calculationHash?: string;
   inputHash?: string;
+}
+
+export interface EvaluatedEngineResult extends EngineResult {
+  evaluations: EvaluatedOptionEvaluation[];
+  winner: EvaluatedOptionEvaluation;
 }

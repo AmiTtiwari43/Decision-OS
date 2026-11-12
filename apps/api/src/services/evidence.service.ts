@@ -93,6 +93,14 @@ export class EvidenceService {
       throw new InvalidDecisionIdError(decisionId);
     }
 
+    // Safeguard: Synthetic metadata cannot be accepted as evidence or verified assessment
+    const rawInput = input as unknown as Record<string, unknown>;
+    if (Boolean(rawInput.isSynthetic) || Boolean(rawInput.synthetic)) {
+      throw new InvalidEvidenceTargetError(
+        'Synthetic demonstration metadata cannot be accepted as verified evidence or assessment.'
+      );
+    }
+
     const decision = await decisionRepository.findById(decisionId);
     if (!decision) {
       throw new DecisionNotFoundError(decisionId);

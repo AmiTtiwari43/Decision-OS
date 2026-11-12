@@ -1,5 +1,13 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
-import type { DecisionDataset, Option, Criterion, EngineResult } from '../types/decision.js';
+import type {
+  DecisionDataset,
+  Option,
+  Criterion,
+  OptionEvaluation,
+  EngineResult,
+  ScoreCoordinateProvenance,
+  ScoreProvenanceMap,
+} from '../types/decision.js';
 import { runDecisionEngine } from '../utils/decisionEngine.js';
 import { mapServerAnalysisToEngineResult } from '../utils/engineMapper.js';
 import { primaryJobOfferDataset } from '../data/decisionData.js';
@@ -306,15 +314,49 @@ export function updateOptionScoreInDataset(
   dataset: DecisionDataset,
   optionId: string,
   criterionId: string,
-  rawScore: number | string | null | undefined
+  rawScore: number | string | null | undefined,
+  provenance?: ScoreCoordinateProvenance
 ): DecisionDataset {
+  const nextProvenance: ScoreProvenanceMap = dataset.scoreProvenance
+    ? JSON.parse(JSON.stringify(dataset.scoreProvenance))
+    : {};
+
+  const isDeleting = rawScore === '' || rawScore === null || rawScore === undefined;
+
+  if (isDeleting) {
+    if (nextProvenance[optionId]) {
+      delete nextProvenance[optionId][criterionId];
+      if (Object.keys(nextProvenance[optionId]).length === 0) {
+        delete nextProvenance[optionId];
+      }
+    }
+  } else if (provenance?.isSynthetic) {
+    if (!nextProvenance[optionId]) {
+      nextProvenance[optionId] = {};
+    }
+    nextProvenance[optionId][criterionId] = {
+      isSynthetic: true,
+      source: provenance.source || 'demo',
+      insertedAt: provenance.insertedAt || new Date().toISOString(),
+    };
+  } else {
+    // Normal manual edit clears synthetic status for this coordinate
+    if (nextProvenance[optionId]) {
+      delete nextProvenance[optionId][criterionId];
+      if (Object.keys(nextProvenance[optionId]).length === 0) {
+        delete nextProvenance[optionId];
+      }
+    }
+  }
+
   return {
     ...dataset,
+    scoreProvenance: nextProvenance,
     options: dataset.options.map((opt) => {
       if (opt.id !== optionId) return opt;
       const newScores = { ...opt.scores };
 
-      if (rawScore === '' || rawScore === null || rawScore === undefined) {
+      if (isDeleting) {
         delete newScores[criterionId];
       } else {
         const num = typeof rawScore === 'number' ? rawScore : Number(rawScore);
@@ -329,12 +371,57 @@ export function updateOptionScoreInDataset(
   };
 }
 
+export function clearSyntheticScoresInDataset(dataset: DecisionDataset): DecisionDataset {
+  const prov = dataset.scoreProvenance;
+  if (!prov) return dataset;
+
+  let current = { ...dataset };
+  for (const optId of Object.keys(prov)) {
+    for (const critId of Object.keys(prov[optId] || {})) {
+      if (prov[optId][critId]?.isSynthetic) {
+        current = updateOptionScoreInDataset(current, optId, critId, null);
+      }
+    }
+  }
+  return current;
+}
+
+export function hasSyntheticScoresInDataset(dataset: DecisionDataset): boolean {
+  if (!dataset.scoreProvenance) return false;
+  for (const opt of dataset.options) {
+    for (const crit of dataset.criteria) {
+      if (dataset.scoreProvenance[opt.id]?.[crit.id]?.isSynthetic === true) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function getDatasetSyntheticScores(dataset: DecisionDataset): MissingScoreCoordinate[] {
+  if (!dataset.scoreProvenance) return [];
+  const synthetics: MissingScoreCoordinate[] = [];
+  for (const opt of dataset.options) {
+    for (const crit of dataset.criteria) {
+      if (dataset.scoreProvenance[opt.id]?.[crit.id]?.isSynthetic === true) {
+        synthetics.push({
+          optionId: opt.id,
+          criterionId: crit.id,
+          optionName: opt.name,
+          criterionName: crit.name,
+        });
+      }
+    }
+  }
+  return synthetics;
+}
+
 export function getDatasetMissingScores(dataset: DecisionDataset): MissingScoreCoordinate[] {
   const missing: MissingScoreCoordinate[] = [];
   for (const opt of dataset.options) {
     for (const crit of dataset.criteria) {
-      const val = opt.scores[crit.id];
-      if (typeof val !== 'number' || !Number.isFinite(val) || val < 0 || val > 100) {
+      const rawVal: unknown = opt.scores?.[crit.id];
+      if (rawVal === undefined || rawVal === null || (typeof rawVal === 'string' && rawVal.trim() === '')) {
         missing.push({
           optionId: opt.id,
           criterionId: crit.id,
@@ -345,6 +432,47 @@ export function getDatasetMissingScores(dataset: DecisionDataset): MissingScoreC
     }
   }
   return missing;
+}
+
+export interface InvalidScoreCoordinate {
+  optionId: string;
+  criterionId: string;
+  optionName: string;
+  criterionName: string;
+  value: unknown;
+  reason: string;
+}
+
+export function getDatasetInvalidScores(dataset: DecisionDataset): InvalidScoreCoordinate[] {
+  const invalid: InvalidScoreCoordinate[] = [];
+  for (const opt of dataset.options) {
+    for (const crit of dataset.criteria) {
+      const rawVal: unknown = opt.scores?.[crit.id];
+      if (rawVal === undefined || rawVal === null || (typeof rawVal === 'string' && rawVal.trim() === '')) {
+        continue; // missing, handled separately by getDatasetMissingScores
+      }
+      if (typeof rawVal !== 'number' || !Number.isFinite(rawVal)) {
+        invalid.push({
+          optionId: opt.id,
+          criterionId: crit.id,
+          optionName: opt.name,
+          criterionName: crit.name,
+          value: rawVal,
+          reason: `Score for alternative '${opt.name}' on criterion '${crit.name}' must be a finite number`,
+        });
+      } else if (rawVal < 0.0 || rawVal > 100.0) {
+        invalid.push({
+          optionId: opt.id,
+          criterionId: crit.id,
+          optionName: opt.name,
+          criterionName: crit.name,
+          value: rawVal,
+          reason: `Score for alternative '${opt.name}' on criterion '${crit.name}' must be between 0.0 and 100.0 (received ${rawVal})`,
+        });
+      }
+    }
+  }
+  return invalid;
 }
 
 export function reconstructDatasetFromDto(doc: DecisionDto): DecisionDataset {
@@ -389,6 +517,7 @@ export function reconstructDatasetFromDto(doc: DecisionDto): DecisionDataset {
       };
     }),
     scenarios: [],
+    scoreProvenance: doc.scoreProvenance ? JSON.parse(JSON.stringify(doc.scoreProvenance)) : {},
   };
 }
 
@@ -427,27 +556,64 @@ export function buildPayloadFromState(
     }
   }
 
+  // Strict synthetic provenance serialization: only send coordinates that currently exist in both options and criteria
+  // and possess active valid scores.
+  const scoreProvenance: Record<string, Record<string, { isSynthetic: boolean; source?: string }>> = {};
+  if (dataset.scoreProvenance) {
+    for (const opt of dataset.options) {
+      for (const crit of dataset.criteria) {
+        const prov = dataset.scoreProvenance[opt.id]?.[crit.id];
+        if (prov?.isSynthetic && scores[opt.id]?.[crit.id] !== undefined) {
+          if (!scoreProvenance[opt.id]) {
+            scoreProvenance[opt.id] = {};
+          }
+          scoreProvenance[opt.id][crit.id] = {
+            isSynthetic: true,
+            source: prov.source || 'demo',
+          };
+        }
+      }
+    }
+  }
+
   return {
     title: dataset.title,
     description: dataset.context || dataset.question || '',
     criteria,
     options,
     scores,
+    scoreProvenance,
   };
 }
 
-export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOfferDataset) {
+export function useDecisionModel(
+  initialDataset: DecisionDataset = primaryJobOfferDataset,
+  initialLockedIds?: string[]
+) {
   const [dataset, setDatasetState] = useState<DecisionDataset>(initialDataset);
+
+  const initialLocks = useMemo(() => {
+    if (initialLockedIds && Array.isArray(initialLockedIds)) {
+      return initialLockedIds;
+    }
+    return initialDataset.criteria
+      .filter((c) => Boolean(c.isLocked))
+      .map((c) => c.id);
+  }, [initialDataset.criteria, initialLockedIds]);
+
+  const [lockedIds, setLockedIds] = useState<string[]>(initialLocks);
 
   const [weights, setWeightsState] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
     initialDataset.criteria.forEach((c) => {
       initial[c.id] = c.defaultWeight;
     });
-    return computeCanonicalWeights(initialDataset.criteria, initial);
+    try {
+      return computeCanonicalWeights(initialDataset.criteria, initial, initialLocks);
+    } catch {
+      return initial;
+    }
   });
-
-  const [lockedIds, setLockedIds] = useState<string[]>([]);
   const [activeScenarioId, setActiveScenarioId] = useState<string | null>('career-first');
   const [activeOptionIds, setActiveOptionIds] = useState<string[]>(() =>
     initialDataset.options.slice(0, 2).map((o) => o.id)
@@ -483,15 +649,19 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     return dataset.options.filter((o) => activeOptionIds.includes(o.id));
   }, [dataset.options, activeOptionIds]);
 
-  // Evaluates completeness: checks if every alternative has a finite valid score in [0, 100] for every criterion
+  // Evaluates completeness and score validity
   const getMissingScores = useCallback((): MissingScoreCoordinate[] => {
     return getDatasetMissingScores(dataset);
   }, [dataset]);
 
+  const getInvalidScores = useCallback((): InvalidScoreCoordinate[] => {
+    return getDatasetInvalidScores(dataset);
+  }, [dataset]);
+
   const isScoreMatrixComplete = useCallback((): boolean => {
     if (dataset.criteria.length === 0 || dataset.options.length === 0) return false;
-    return getMissingScores().length === 0;
-  }, [dataset.criteria.length, dataset.options.length, getMissingScores]);
+    return getMissingScores().length === 0 && getInvalidScores().length === 0;
+  }, [dataset.criteria.length, dataset.options.length, getMissingScores, getInvalidScores]);
 
   // Determine if the current evaluation is authoritative, stale, or draft
   const isEvaluationStale = useMemo((): boolean => {
@@ -503,9 +673,10 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
 
   const isAuthoritative = useMemo((): boolean => {
     if (mode !== 'saved' || isDirty || !serverDecision?.analysis) return false;
+    if (hasSyntheticScoresInDataset(dataset)) return false;
     const status = getDecisionEvaluationStatus(serverDecision);
     return status === 'decisive' || status === 'tie';
-  }, [mode, isDirty, serverDecision]);
+  }, [mode, isDirty, serverDecision, dataset]);
 
   // Authoritative server-side result vs optimistic local preview
   const engineResult = useMemo((): EngineResult => {
@@ -517,12 +688,133 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       );
     }
 
-    // Local optimistic calculation preview
-    const localResult = runDecisionEngine(activeOptions, dataset.criteria, weights, lockedIds);
-    return {
-      ...localResult,
-      isAuthoritative: false,
-    };
+    try {
+      // Local optimistic calculation preview
+      const localResult = runDecisionEngine(activeOptions, dataset.criteria, weights, lockedIds);
+      return {
+        ...localResult,
+        isAuthoritative: false,
+        isIncomplete: false,
+        isInvalid: false,
+        invalidReason: null,
+        errorMessage: null,
+      };
+    } catch (engineErr: unknown) {
+      const errMessage = engineErr instanceof Error ? engineErr.message : String(engineErr);
+
+      // Check whether canonical weight normalization fails (e.g. locked weights > 100%)
+      let normalizedWeights: Record<string, number> = {};
+      let isInvalidWeights = false;
+      let normalizationError: string | null = null;
+
+      try {
+        normalizedWeights = computeCanonicalWeights(dataset.criteria, weights, lockedIds);
+      } catch (normErr: unknown) {
+        isInvalidWeights = true;
+        normalizationError = normErr instanceof Error ? normErr.message : String(normErr);
+        // Do NOT silently substitute default weights when canonical normalization fails.
+        // Retain raw weights so UI can inspect the problematic values.
+        normalizedWeights = { ...weights };
+      }
+
+      const totalWeight = Number(
+        Object.values(normalizedWeights).reduce((a, b) => a + b, 0).toFixed(1)
+      );
+
+      // Check for invalid score values across active options
+      const activeDataset: DecisionDataset = { ...dataset, options: activeOptions };
+      const invalidScores = getDatasetInvalidScores(activeDataset);
+      const hasInvalidScores = invalidScores.length > 0;
+      const invalidScoreError = hasInvalidScores ? invalidScores[0].reason : null;
+
+      // Check for incomplete matrix across active options
+      const missingScores = getDatasetMissingScores(activeDataset);
+      const isMissingScores = missingScores.length > 0;
+      const isInsufficientOptions = activeOptions.length < 2;
+      const isNoCriteria = dataset.criteria.length === 0;
+
+      // Classification priority:
+      // Invalid weights or invalid score values MUST produce an invalid state (never misleading incomplete)
+      const isInvalid = isInvalidWeights || hasInvalidScores;
+      const invalidReason: 'weights' | 'scores' | null = isInvalidWeights
+        ? 'weights'
+        : hasInvalidScores
+        ? 'scores'
+        : null;
+
+      const isIncomplete = !isInvalid && (isMissingScores || isInsufficientOptions || isNoCriteria);
+
+      // Incomplete/invalid evaluations: strictly assign rank: null; do not fabricate scores, ranks, or winners
+      const unrankedEvals: OptionEvaluation[] = activeOptions.map((opt) => ({
+        option: opt,
+        weightedScore: 0,
+        rawScoreAvg: 0,
+        rank: null,
+        scoreDifferenceToLeader: 0,
+        contributions: dataset.criteria.map((c) => ({
+          criterionId: c.id,
+          criterionName: c.name,
+          shortName: c.shortName,
+          rawScore: typeof opt.scores[c.id] === 'number' && Number.isFinite(opt.scores[c.id]) ? opt.scores[c.id] : 0,
+          weight: normalizedWeights[c.id] ?? 0,
+          weightedPoints: 0,
+          percentageOfTotal: 0,
+        })),
+      }));
+
+      let headline = 'Incomplete Decision Input';
+      let dynamicRationale = 'Complete all criterion scores across alternatives in the Scoring Matrix to calculate results.';
+      let sensitivityStatement = 'Sensitivity analysis requires complete scores across all criteria.';
+
+      if (isInvalidWeights) {
+        headline = 'Invalid Weight Configuration';
+        dynamicRationale = normalizationError || 'Sum of locked criterion weights exceeds 100.0%. Reduce locked weights to allow valid normalization.';
+        sensitivityStatement = 'Sensitivity analysis unavailable: weights must be validly normalized.';
+      } else if (hasInvalidScores) {
+        headline = 'Invalid Score Input';
+        dynamicRationale = invalidScoreError || 'One or more criterion scores are invalid. All scores must be finite numbers between 0.0 and 100.0.';
+        sensitivityStatement = 'Sensitivity analysis unavailable: score values must be finite numbers between 0.0 and 100.0.';
+      } else if (isInsufficientOptions) {
+        headline = 'Incomplete Decision Input';
+        dynamicRationale = 'At least two alternatives are required to compare and evaluate a decision.';
+        sensitivityStatement = 'Add a second option to compare trade-offs and sensitivity thresholds.';
+      } else if (isNoCriteria) {
+        headline = 'Incomplete Decision Input';
+        dynamicRationale = 'At least one criterion is required to evaluate alternatives.';
+        sensitivityStatement = 'Add at least one criterion to evaluate decision alternatives.';
+      }
+
+      const activeError = isInvalidWeights
+        ? normalizationError
+        : hasInvalidScores
+        ? invalidScoreError
+        : errMessage;
+
+      return {
+        evaluations: unrankedEvals,
+        winner: null,
+        runnerUp: null,
+        normalizedWeights,
+        totalWeight,
+        sensitivity: [],
+        explainability: {
+          winningOption: null,
+          runnerUpOption: null,
+          pointLead: 0,
+          headline,
+          primaryDrivers: [],
+          concededAreas: [],
+          dynamicRationale,
+          sensitivityStatement,
+        },
+        isAuthoritative: false,
+        isIncomplete,
+        isInvalid,
+        invalidReason,
+        decisionOutcome: isInvalid ? 'invalid' : 'incomplete',
+        errorMessage: activeError,
+      };
+    }
   }, [isAuthoritative, serverDecision, activeOptions, dataset.criteria, weights, lockedIds]);
 
   // Weight Calibration with Canonical Largest Remainder Normalization
@@ -623,7 +915,11 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     dataset.criteria.forEach((c) => {
       initial[c.id] = c.defaultWeight;
     });
-    setWeightsState(computeCanonicalWeights(dataset.criteria, initial));
+    try {
+      setWeightsState(computeCanonicalWeights(dataset.criteria, initial));
+    } catch {
+      setWeightsState(initial);
+    }
     setActiveOptionIds(dataset.options.map((o) => o.id));
   }, [currentUserRole, dataset, mode]);
 
@@ -643,21 +939,134 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     newDataset.criteria.forEach((c) => {
       initial[c.id] = c.defaultWeight;
     });
-    setWeightsState(computeCanonicalWeights(newDataset.criteria, initial));
+    try {
+      setWeightsState(computeCanonicalWeights(newDataset.criteria, initial));
+    } catch {
+      setWeightsState(initial);
+    }
     setActiveOptionIds(newDataset.options.map((o) => o.id));
   }, []);
 
   // ─── Score Matrix Editing ──────────────────────────────────────────────────
 
   const updateOptionScore = useCallback(
-    (optionId: string, criterionId: string, rawScore: number | string | null | undefined) => {
+    (
+      optionId: string,
+      criterionId: string,
+      rawScore: number | string | null | undefined,
+      provenance?: ScoreCoordinateProvenance
+    ) => {
       if (currentUserRole === 'viewer' || currentUserRole === 'contributor') return;
 
       mutationSeqRef.current += 1;
-      setDatasetState((prev) => updateOptionScoreInDataset(prev, optionId, criterionId, rawScore));
+      setDatasetState((prev) =>
+        updateOptionScoreInDataset(prev, optionId, criterionId, rawScore, provenance)
+      );
       setIsDirty(true);
     },
     [currentUserRole]
+  );
+
+  const clearSyntheticScores = useCallback(async () => {
+    if (currentUserRole === 'viewer' || currentUserRole === 'contributor') return;
+
+    mutationSeqRef.current += 1;
+    setDatasetState((prev) => clearSyntheticScoresInDataset(prev));
+    setIsDirty(true);
+
+    if (decisionId && mode === 'saved') {
+      try {
+        const updated = await apiClient.clearSyntheticScores(decisionId, {
+          expectedVersion: serverDecision?.version,
+        });
+        setServerDecision(updated);
+        setIsDirty(false);
+      } catch {
+        // retain local state for retry
+      }
+    }
+  }, [currentUserRole, decisionId, mode, serverDecision]);
+
+  const replaceSyntheticScore = useCallback(
+    async (optionId: string, criterionId: string, score: number): Promise<DecisionDto | null> => {
+      if (currentUserRole === 'viewer' || currentUserRole === 'contributor') {
+        throw new Error('You do not have permission to modify decision scores.');
+      }
+      mutationSeqRef.current += 1;
+      setDatasetState((prev) =>
+        updateOptionScoreInDataset(prev, optionId, criterionId, score)
+      );
+      setIsDirty(true);
+
+      if (decisionId && mode === 'saved') {
+        const updated = await apiClient.replaceSyntheticScore(decisionId, {
+          optionId,
+          criterionId,
+          score,
+          expectedVersion: serverDecision?.version,
+        });
+        setServerDecision(updated);
+        setIsDirty(false);
+        return updated;
+      }
+      return null;
+    },
+    [currentUserRole, decisionId, mode, serverDecision]
+  );
+
+  const populateSyntheticDemo = useCallback(
+    async (defaultValue = 75): Promise<DecisionDto | null> => {
+      if (currentUserRole === 'viewer' || currentUserRole === 'contributor') {
+        throw new Error('You do not have permission to modify decision scores.');
+      }
+      if (decisionId && mode === 'saved') {
+        const updated = await apiClient.populateSyntheticDemo(decisionId, {
+          defaultValue,
+          expectedVersion: serverDecision?.version,
+        });
+        setServerDecision(updated);
+        setDatasetState((prev) => {
+          let next = { ...prev };
+          const serverScores = updated.scores || {};
+          const serverProv = updated.scoreProvenance || {};
+          next.scoreProvenance = JSON.parse(JSON.stringify(serverProv));
+          for (const opt of next.options) {
+            const optScores = serverScores[opt.id] || {};
+            for (const [critId, val] of Object.entries(optScores)) {
+              if (typeof val === 'number') {
+                next = updateOptionScoreInDataset(
+                  next,
+                  opt.id,
+                  critId,
+                  val,
+                  serverProv[opt.id]?.[critId]
+                );
+              }
+            }
+          }
+          return next;
+        });
+        setIsDirty(false);
+        return updated;
+      } else {
+        mutationSeqRef.current += 1;
+        setDatasetState((prev) => {
+          let next = { ...prev };
+          const missing = getDatasetMissingScores(next);
+          for (const m of missing) {
+            next = updateOptionScoreInDataset(next, m.optionId, m.criterionId, defaultValue, {
+              isSynthetic: true,
+              source: 'demo',
+              insertedAt: new Date().toISOString(),
+            });
+          }
+          return next;
+        });
+        setIsDirty(true);
+        return null;
+      }
+    },
+    [currentUserRole, decisionId, mode, serverDecision]
   );
 
   const updateDecisionMetadata = useCallback(
@@ -920,6 +1329,34 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       let savedDoc: DecisionDto;
 
       if (decisionId) {
+        // If any coordinate was synthetic on server and has been replaced with a real assessment,
+        // execute atomic replacement so server records verified transition
+        const serverProv = serverDecision?.scoreProvenance;
+        if (serverProv) {
+          for (const opt of dataset.options) {
+            for (const crit of dataset.criteria) {
+              if (
+                serverProv[opt.id]?.[crit.id]?.isSynthetic &&
+                !dataset.scoreProvenance?.[opt.id]?.[crit.id]?.isSynthetic
+              ) {
+                const newScore = opt.scores[crit.id];
+                if (typeof newScore === 'number' && Number.isFinite(newScore)) {
+                  try {
+                    await apiClient.replaceSyntheticScore(decisionId, {
+                      optionId: opt.id,
+                      criterionId: crit.id,
+                      score: newScore,
+                      expectedVersion: serverDecision?.version,
+                    });
+                  } catch {
+                    // continue to normal save
+                  }
+                }
+              }
+            }
+          }
+        }
+
         const updatePayload: UpdateDecisionPayload = {
           ...(payload as UpdateDecisionPayload),
           expectedVersion: serverDecision?.version,
@@ -994,6 +1431,17 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
       throw err;
     }
 
+    const invalidScores = getInvalidScores();
+    if (invalidScores.length > 0) {
+      const err = new ApiClientError({
+        statusCode: 422,
+        error: 'Unprocessable Entity',
+        message: `Cannot calculate: Decision has ${invalidScores.length} invalid score(s). Every score must be a finite number between 0 and 100.`,
+      });
+      setApiError(err);
+      throw err;
+    }
+
     const missing = getMissingScores();
     if (missing.length > 0) {
       const err = new ApiClientError({
@@ -1001,6 +1449,20 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
         error: 'Unprocessable Entity',
         message: `Cannot calculate: Decision has ${missing.length} missing score(s). Every alternative must have a finite score between 0 and 100 on every criterion.`,
         missingPairs: missing.map((m) => ({ optionId: m.optionId, criterionId: m.criterionId })),
+      });
+      setApiError(err);
+      throw err;
+    }
+
+    const synthetics = getDatasetSyntheticScores(dataset);
+    if (synthetics.length > 0) {
+      const coordList = synthetics
+        .map((s) => `'${s.optionName}' on '${s.criterionName}'`)
+        .join(', ');
+      const err = new ApiClientError({
+        statusCode: 422,
+        error: 'Unprocessable Entity',
+        message: `Cannot calculate authoritative analysis: Decision contains ${synthetics.length} synthetic demonstration score(s). Replace synthetic values with verified assessments at: ${coordList}.`,
       });
       setApiError(err);
       throw err;
@@ -1105,6 +1567,7 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     serverDecision,
     saveStatus,
     getMissingScores,
+    getInvalidScores,
   ]);
 
   const loadDecision = useCallback(
@@ -1226,10 +1689,25 @@ export function useDecisionModel(initialDataset: DecisionDataset = primaryJobOff
     removeCriterion,
     calculateAuthoritative,
     getMissingScores,
+    getInvalidScores,
     isScoreMatrixComplete,
 
     // Mutation Sequence & Operation In-Flight Protection (F-B3-01 & F-B3-04)
     getMutationSeq: () => mutationSeqRef.current,
     isOperationInFlight: saveStatus === 'in_flight',
+
+    // Incomplete & Invalid Model Evaluation State (C-01 & M-01)
+    isIncomplete: engineResult.isIncomplete ?? false,
+    isInvalid: engineResult.isInvalid ?? false,
+    invalidReason: engineResult.invalidReason ?? null,
+    evaluationError: engineResult.errorMessage ?? null,
+
+    // Synthetic Demonstration Score Metadata & Tracking (Batch 02-R2, R3 & R4)
+    scoreProvenance: dataset.scoreProvenance || {},
+    clearSyntheticScores,
+    replaceSyntheticScore,
+    populateSyntheticDemo,
+    hasSyntheticScores: hasSyntheticScoresInDataset(dataset),
+    syntheticScoresList: getDatasetSyntheticScores(dataset),
   };
 }

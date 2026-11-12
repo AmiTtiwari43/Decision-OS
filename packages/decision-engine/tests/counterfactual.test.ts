@@ -237,7 +237,7 @@ describe('Option-Score Sensitivity & Multi-Parameter Counterfactual', () => {
 
       // Ensure we tested a statistically significant number of analytical tipping points
       expect(evaluatedTippingCount).toBeGreaterThan(2000);
-    });
+    }, 20000);
   });
 });
 

@@ -104,6 +104,28 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
         },
       ],
     },
+    scoreProvenance: {
+      type: Schema.Types.Mixed,
+      default: {},
+      validate: [
+        {
+          validator: (provenance: unknown) => {
+            if (!provenance || typeof provenance !== 'object') return false;
+            for (const optMap of Object.values(provenance as Record<string, unknown>)) {
+              if (!optMap || typeof optMap !== 'object') return false;
+              for (const entry of Object.values(optMap as Record<string, unknown>)) {
+                if (!entry || typeof entry !== 'object') return false;
+                if (typeof (entry as { isSynthetic?: unknown }).isSynthetic !== 'boolean') {
+                  return false;
+                }
+              }
+            }
+            return true;
+          },
+          message: 'Score provenance must contain valid coordinate metadata with boolean isSynthetic',
+        },
+      ],
+    },
     analysis: {
       type: Schema.Types.Mixed,
       default: null,
@@ -190,6 +212,7 @@ export const DecisionSchema = new Schema<IDecision, Model<DecisionDocument>>(
         ret.pendingOperationId = ret.pendingOperationId || null;
         ret.quarantineReason = ret.quarantineReason || null;
         ret.auditHead = ret.auditHead || null;
+        ret.scoreProvenance = ret.scoreProvenance || {};
         return ret;
       },
     },

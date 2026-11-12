@@ -27,6 +27,14 @@ export interface DecisionOption {
  */
 export type ScoreMatrix = Record<string, Record<string, number>>;
 
+export interface ScoreCoordinateProvenance {
+  isSynthetic: boolean;
+  source?: string;
+  insertedAt?: string;
+}
+
+export type ScoreProvenanceMap = Record<string, Record<string, ScoreCoordinateProvenance>>;
+
 export interface DecisionAuditHead {
   sequenceNumber: number;
   eventHash: string;
@@ -40,6 +48,7 @@ export interface IDecision {
   criteria: DecisionCriterion[];
   options: DecisionOption[];
   scores: ScoreMatrix;
+  scoreProvenance?: ScoreProvenanceMap;
   analysis: EngineResult | null;
   calculationVersion: number;
   version: number;
@@ -69,6 +78,7 @@ export interface DecisionDto {
   criteria: DecisionCriterion[];
   options: DecisionOption[];
   scores: ScoreMatrix;
+  scoreProvenance?: ScoreProvenanceMap;
   analysis: EngineResult | null;
   calculationVersion: number;
   version: number;
@@ -91,6 +101,7 @@ export interface CreateDecisionInput {
   criteria?: DecisionCriterion[];
   options?: DecisionOption[];
   scores?: ScoreMatrix;
+  scoreProvenance?: ScoreProvenanceMap;
   analysis?: EngineResult | null;
   calculationVersion?: number;
   version?: number;
@@ -104,12 +115,30 @@ export interface CreateDecisionInput {
   auditHead?: DecisionAuditHead | null;
 }
 
+export interface ReplaceSyntheticScoreInput {
+  optionId: string;
+  criterionId: string;
+  score: number;
+  expectedVersion?: number;
+  comment?: string;
+}
+
+export interface ClearSyntheticScoresInput {
+  expectedVersion?: number;
+}
+
+export interface PopulateSyntheticDemoInput {
+  defaultValue?: number;
+  expectedVersion?: number;
+}
+
 export interface UpdateDecisionInput {
   title?: string;
   description?: string;
   criteria?: DecisionCriterion[];
   options?: DecisionOption[];
   scores?: ScoreMatrix;
+  scoreProvenance?: ScoreProvenanceMap;
   analysis?: EngineResult | null;
   calculationVersion?: number;
   version?: number;
@@ -122,4 +151,21 @@ export interface UpdateDecisionInput {
   pendingOperationId?: string | null;
   quarantineReason?: string | null;
   auditHead?: DecisionAuditHead | null;
+}
+
+export interface ReplaceSyntheticScoreInput {
+  optionId: string;
+  criterionId: string;
+  score: number;
+  expectedVersion?: number;
+  comment?: string;
+}
+
+export interface ClearSyntheticScoresInput {
+  expectedVersion?: number;
+}
+
+export interface PopulateSyntheticDemoInput {
+  defaultValue?: number;
+  expectedVersion?: number;
 }

@@ -83,6 +83,11 @@ export class OperationJournalRepository {
       heartbeatAt: new Date(),
       retryCount: 0,
     });
+    if (mongoose.connection.readyState !== 1) {
+      throw new Error(
+        `Cannot persist operation journal entry: database is not connected (readyState: ${mongoose.connection.readyState}). Operation aborted to prevent unjournaled mutation.`
+      );
+    }
     return doc.save();
   }
 

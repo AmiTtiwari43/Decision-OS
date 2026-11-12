@@ -209,7 +209,7 @@ export const DecisionDemo: React.FC<DecisionDemoProps> = ({ onOpenSandbox: _onOp
                 <ScoreCard
                   key={evaluation.option.id}
                   evaluation={evaluation}
-                  isLeader={evaluation.rank === 1}
+                  isLeader={evaluation.rank === 1 && !engineResult.isIncomplete && !engineResult.isInvalid}
                   totalOptions={evaluations.length}
                 />
               ))}

@@ -5,6 +5,10 @@ import {
   criterionSchema,
   optionSchema,
   scoreValueSchema,
+  scoreProvenanceItemSchema,
+  replaceSyntheticScoreSchema,
+  clearSyntheticScoresSchema,
+  populateSyntheticDemoSchema,
 } from '../src/models/index';
 
 describe('Decision Schema & Validation Unit Tests', () => {
@@ -217,6 +221,184 @@ describe('Decision Schema & Validation Unit Tests', () => {
           ],
         })
       ).toThrowError(/Duplicate criterion ID 'dup' detected/);
+    });
+  });
+
+  describe('Score Provenance Schema Validation', () => {
+    it('accepts valid score provenance with boolean isSynthetic and source', () => {
+      const item = {
+        isSynthetic: true,
+        source: 'demo',
+      };
+      const parsed = scoreProvenanceItemSchema.parse(item);
+      expect(parsed.isSynthetic).toBe(true);
+      expect(parsed.source).toBe('demo');
+    });
+
+    it('rejects malformed provenance with non-boolean isSynthetic', () => {
+      expect(() => {
+        scoreProvenanceItemSchema.parse({
+          isSynthetic: 'yes',
+        });
+      }).toThrow();
+    });
+
+    it('rejects unexpected fields in provenance due to strict validation', () => {
+      expect(() => {
+        scoreProvenanceItemSchema.parse({
+          isSynthetic: true,
+          maliciousInjectedField: 'hack',
+        });
+      }).toThrow();
+    });
+
+    it('validates score provenance map in createDecisionSchema', () => {
+      const input = {
+        title: 'Decision with Synthetic Metadata',
+        criteria: [{ id: 'c1', name: 'Criterion 1', weight: 100 }],
+        options: [{ id: 'opt1', name: 'Option 1' }],
+        scores: {
+          opt1: { c1: 75 },
+        },
+        scoreProvenance: {
+          opt1: {
+            c1: { isSynthetic: true, source: 'demo' },
+          },
+        },
+      };
+
+      const parsed = createDecisionSchema.parse(input);
+      expect(parsed.scoreProvenance?.opt1?.c1?.isSynthetic).toBe(true);
+      expect(parsed.scoreProvenance?.opt1?.c1?.source).toBe('demo');
+    });
+
+    it('rejects score provenance targeting an unknown option ID', () => {
+      const input = {
+        title: 'Decision with Invalid Option in Provenance',
+        criteria: [{ id: 'c1', name: 'Criterion 1', weight: 100 }],
+        options: [{ id: 'opt1', name: 'Option 1' }],
+        scores: {
+          opt1: { c1: 75 },
+        },
+        scoreProvenance: {
+          'unknown-opt': {
+            c1: { isSynthetic: true, source: 'demo' },
+          },
+        },
+      };
+
+      expect(() => createDecisionSchema.parse(input)).toThrowError(
+        /Synthetic score provenance contains unknown alternative ID 'unknown-opt'/
+      );
+    });
+
+    it('rejects score provenance targeting an unknown criterion ID', () => {
+      const input = {
+        title: 'Decision with Invalid Criterion in Provenance',
+        criteria: [{ id: 'c1', name: 'Criterion 1', weight: 100 }],
+        options: [{ id: 'opt1', name: 'Option 1' }],
+        scores: {
+          opt1: { c1: 75 },
+        },
+        scoreProvenance: {
+          opt1: {
+            'unknown-crit': { isSynthetic: true, source: 'demo' },
+          },
+        },
+      };
+
+      expect(() => createDecisionSchema.parse(input)).toThrowError(
+        /Synthetic score provenance contains unknown criterion ID 'unknown-crit'/
+      );
+    });
+
+    it('rejects isSynthetic: false because synthetic provenance cannot be negated via metadata', () => {
+      expect(() => {
+        scoreProvenanceItemSchema.parse({
+          isSynthetic: false,
+        });
+      }).toThrowError(/isSynthetic must be true/);
+    });
+
+    it('rejects synthetic provenance without a corresponding score value in scores', () => {
+      const input = {
+        title: 'Decision with Missing Score for Synthetic Provenance',
+        criteria: [{ id: 'c1', name: 'Criterion 1', weight: 100 }],
+        options: [{ id: 'opt1', name: 'Option 1' }],
+        scores: {},
+        scoreProvenance: {
+          opt1: {
+            c1: { isSynthetic: true, source: 'demo' },
+          },
+        },
+      };
+
+      expect(() => createDecisionSchema.parse(input)).toThrowError(
+        /without a corresponding score value/
+      );
+    });
+  });
+
+  describe('Explicit Replacement & Synthetic Management Schemas (Batch 02-R3)', () => {
+    it('validates valid replaceSyntheticScore payload', () => {
+      const payload = {
+        optionId: 'opt-alpha',
+        criterionId: 'crit-cost',
+        score: 72.5,
+        expectedVersion: 2,
+        comment: 'Verified vendor quote pricing',
+      };
+      const parsed = replaceSyntheticScoreSchema.parse(payload);
+      expect(parsed.optionId).toBe('opt-alpha');
+      expect(parsed.criterionId).toBe('crit-cost');
+      expect(parsed.score).toBe(72.5);
+      expect(parsed.expectedVersion).toBe(2);
+      expect(parsed.comment).toBe('Verified vendor quote pricing');
+    });
+
+    it('rejects replaceSyntheticScore payload with invalid score values (< 0, > 100, NaN, non-number)', () => {
+      expect(() => replaceSyntheticScoreSchema.parse({ optionId: 'o1', criterionId: 'c1', score: -5 })).toThrow();
+      expect(() => replaceSyntheticScoreSchema.parse({ optionId: 'o1', criterionId: 'c1', score: 105 })).toThrow();
+      expect(() => replaceSyntheticScoreSchema.parse({ optionId: 'o1', criterionId: 'c1', score: NaN })).toThrow();
+      expect(() => replaceSyntheticScoreSchema.parse({ optionId: 'o1', criterionId: 'c1', score: '75' as any })).toThrow();
+    });
+
+    it('rejects replaceSyntheticScore payload with missing optionId or criterionId', () => {
+      expect(() => replaceSyntheticScoreSchema.parse({ criterionId: 'c1', score: 80 })).toThrow();
+      expect(() => replaceSyntheticScoreSchema.parse({ optionId: 'o1', score: 80 })).toThrow();
+    });
+
+    it('rejects extra injected properties in replaceSyntheticScoreSchema (strict)', () => {
+      expect(() =>
+        replaceSyntheticScoreSchema.parse({
+          optionId: 'o1',
+          criterionId: 'c1',
+          score: 80,
+          unauthorizedField: 'injected',
+        })
+      ).toThrow();
+    });
+
+    it('validates clearSyntheticScores payload', () => {
+      const parsedEmpty = clearSyntheticScoresSchema.parse({});
+      expect(parsedEmpty).toEqual({});
+
+      const parsedVersion = clearSyntheticScoresSchema.parse({ expectedVersion: 3 });
+      expect(parsedVersion.expectedVersion).toBe(3);
+
+      expect(() => clearSyntheticScoresSchema.parse({ unknownField: true })).toThrow();
+    });
+
+    it('validates populateSyntheticDemo payload with default and custom values', () => {
+      const parsedDefault = populateSyntheticDemoSchema.parse({});
+      expect(parsedDefault.defaultValue).toBe(75);
+
+      const parsedCustom = populateSyntheticDemoSchema.parse({ defaultValue: 80, expectedVersion: 4 });
+      expect(parsedCustom.defaultValue).toBe(80);
+      expect(parsedCustom.expectedVersion).toBe(4);
+
+      expect(() => populateSyntheticDemoSchema.parse({ defaultValue: -1 })).toThrow();
+      expect(() => populateSyntheticDemoSchema.parse({ defaultValue: 101 })).toThrow();
     });
   });
 });

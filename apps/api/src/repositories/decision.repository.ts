@@ -31,10 +31,10 @@ export class DecisionRepository {
   /**
    * Creates and persists a new Decision document.
    */
-  async create(data: CreateDecisionInput): Promise<DecisionDocument> {
+  async create(data: CreateDecisionInput, session?: mongoose.ClientSession): Promise<DecisionDocument> {
     const validated = createDecisionSchema.parse(data);
     const doc = new DecisionModel(validated);
-    await doc.save();
+    await doc.save({ session: session || undefined });
     return doc;
   }
 
@@ -42,11 +42,11 @@ export class DecisionRepository {
    * Retrieves a Decision document by its MongoDB ObjectId.
    * Returns null if the ID is invalid or the document is not found.
    */
-  async findById(id: string): Promise<DecisionDocument | null> {
+  async findById(id: string, session?: mongoose.ClientSession): Promise<DecisionDocument | null> {
     if (!id || typeof id !== 'string' || !mongoose.isValidObjectId(id)) {
       return null;
     }
-    return DecisionModel.findById(id).exec();
+    return DecisionModel.findById(id).session(session || null).exec();
   }
 
   /**
@@ -121,7 +121,8 @@ export class DecisionRepository {
   async update(
     id: string,
     updateData: UpdateDecisionInput,
-    expectedVersion?: number
+    expectedVersion?: number,
+    session?: mongoose.ClientSession
   ): Promise<DecisionDocument | null> {
     if (!id || typeof id !== 'string' || !mongoose.isValidObjectId(id)) {
       return null;
@@ -141,7 +142,7 @@ export class DecisionRepository {
     const updated = await DecisionModel.findOneAndUpdate(
       query,
       { $set: updatePayload },
-      { returnDocument: 'after', runValidators: true }
+      { returnDocument: 'after', runValidators: true, session: session || null }
     ).exec();
 
     return updated;

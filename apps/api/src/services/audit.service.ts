@@ -13,7 +13,7 @@ import {
   InvalidDecisionIdError,
   ConcurrencyFencingError,
 } from '../errors/domain.errors.js';
-import { runInTransaction } from '../db/connection.js';
+import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
 import type {
   AuditAction,
   AuditEntityType,
@@ -120,7 +120,7 @@ export class AuditService {
     const eventId = input.eventId || crypto.randomUUID();
     const session = explicitSession || input.session;
 
-    if (!session) {
+    if (!session && isReplicaSetSupported()) {
       return runInTransaction(async (txSession) => {
         return this.recordEvent(input, txSession);
       });
@@ -286,9 +286,17 @@ export class AuditService {
           ('code' in err || 'errorLabels' in err) &&
           (err as { code?: number }).code === 11000;
 
-        if (isDuplicateKey && attempt < maxAttempts - 1) {
-          await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
-          continue;
+        if (isDuplicateKey) {
+          const committed = await AuditEventModel.findOne({ eventId })
+            .session(session || null)
+            .exec();
+          if (committed) {
+            return committed;
+          }
+          if (attempt < maxAttempts - 1) {
+            await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
+            continue;
+          }
         }
         throw err;
       }

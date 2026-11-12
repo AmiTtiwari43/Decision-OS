@@ -20,7 +20,7 @@ export const ScoreCard: React.FC<ScoreCardProps> = ({
       layout
       transition={{ type: 'spring', stiffness: 350, damping: 30 }}
       className={`rounded-2xl p-5 sm:p-6 transition-all duration-300 relative border ${
-        isLeader
+        isLeader && rank === 1
           ? 'bg-gradient-to-b from-surface-card to-surface border-signal/50 shadow-glow-signal-sm ring-1 ring-signal/20'
           : 'bg-surface/60 border-border opacity-90 hover:opacity-100 hover:border-slate-600'
       }`}
@@ -43,14 +43,14 @@ export const ScoreCard: React.FC<ScoreCardProps> = ({
         </div>
 
         <div className="flex items-center gap-1.5">
-          {isLeader ? (
+          {isLeader && rank === 1 ? (
             <span className="px-2.5 py-1 rounded-md bg-signal text-background font-mono text-xs font-bold flex items-center gap-1 shadow-sm">
               <Award className="w-3.5 h-3.5" />
               <span>Rank #1</span>
             </span>
           ) : (
             <span className="px-2.5 py-1 rounded-md bg-surface-subtle border border-border text-slate-400 font-mono text-xs">
-              Rank #{rank}
+              {rank !== null && rank !== undefined ? `Rank #${rank}` : 'Unranked'}
             </span>
           )}
         </div>
@@ -68,13 +68,15 @@ export const ScoreCard: React.FC<ScoreCardProps> = ({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-3xl sm:text-4xl font-extrabold font-mono text-white tracking-tight">
-              {weightedScore.toFixed(1)}
+              {rank !== null && rank !== undefined ? weightedScore.toFixed(1) : '—'}
             </span>
-            <span className="text-xs font-mono text-slate-500">/ 100 max</span>
+            <span className="text-xs font-mono text-slate-500">
+              {rank !== null && rank !== undefined ? '/ 100 max' : 'Score Pending'}
+            </span>
           </div>
         </div>
 
-        {!isLeader && scoreDifferenceToLeader > 0 && (
+        {!isLeader && rank !== null && rank !== undefined && scoreDifferenceToLeader > 0 && (
           <div className="text-right">
             <span className="text-xs font-mono font-semibold text-accent-amber px-2 py-1 rounded bg-accent-amber/10 border border-accent-amber/20">
               -{scoreDifferenceToLeader.toFixed(1)} pts
@@ -89,7 +91,7 @@ export const ScoreCard: React.FC<ScoreCardProps> = ({
           className="h-full rounded-full transition-all duration-500"
           style={{
             width: `${Math.min(100, weightedScore)}%`,
-            backgroundColor: isLeader ? '#B8FF5A' : option.color,
+            backgroundColor: isLeader && rank === 1 ? '#B8FF5A' : option.color,
           }}
         />
       </div>

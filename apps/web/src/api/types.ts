@@ -26,6 +26,14 @@ export interface DecisionOptionDto {
  */
 export type ScoreMatrixDto = Record<string, Record<string, number>>;
 
+export interface ScoreProvenanceDto {
+  isSynthetic: boolean;
+  source?: string;
+  insertedAt?: string;
+}
+
+export type ScoreProvenanceMapDto = Record<string, Record<string, ScoreProvenanceDto>>;
+
 export interface DecisionDto {
   _id: string;
   id?: string;
@@ -34,6 +42,7 @@ export interface DecisionDto {
   criteria: DecisionCriterionDto[];
   options: DecisionOptionDto[];
   scores: ScoreMatrixDto;
+  scoreProvenance?: ScoreProvenanceMapDto;
   analysis: EngineResult | null;
   calculationVersion: number;
   version?: number;
@@ -51,6 +60,7 @@ export interface CreateDecisionPayload {
   criteria?: DecisionCriterionDto[];
   options?: DecisionOptionDto[];
   scores?: ScoreMatrixDto;
+  scoreProvenance?: ScoreProvenanceMapDto;
 }
 
 export interface UpdateDecisionPayload {
@@ -59,6 +69,24 @@ export interface UpdateDecisionPayload {
   criteria?: DecisionCriterionDto[];
   options?: DecisionOptionDto[];
   scores?: ScoreMatrixDto;
+  scoreProvenance?: ScoreProvenanceMapDto;
+  expectedVersion?: number;
+}
+
+export interface ReplaceSyntheticScorePayload {
+  optionId: string;
+  criterionId: string;
+  score: number;
+  expectedVersion?: number;
+  comment?: string;
+}
+
+export interface ClearSyntheticScoresPayload {
+  expectedVersion?: number;
+}
+
+export interface PopulateSyntheticDemoPayload {
+  defaultValue?: number;
   expectedVersion?: number;
 }
 

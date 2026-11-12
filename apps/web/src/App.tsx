@@ -42,6 +42,7 @@ function AppContent() {
     criteria,
     options,
     weights,
+    lockedIds,
     activeOptionIds,
     engineResult,
     setCriterionWeight,
@@ -182,10 +183,34 @@ function AppContent() {
 
             {/* Live Telemetry Ticker Ribbon */}
             <DecisionTicker
-              leaderName={winner.option.name}
-              leaderScore={winner.weightedScore}
-              scoreLead={explainability.pointLead}
-              tippingInfo={tippingStr}
+              leaderName={
+                engineResult.isIncomplete
+                  ? 'Pending Complete Scores'
+                  : engineResult.isInvalid
+                  ? (engineResult.invalidReason === 'scores' ? 'Invalid Scores' : 'Invalid Weights')
+                  : winner
+                  ? winner.option.name
+                  : 'No Leader'
+              }
+              leaderScore={
+                engineResult.isIncomplete || engineResult.isInvalid
+                  ? 0
+                  : winner
+                  ? winner.weightedScore
+                  : 0
+              }
+              scoreLead={
+                engineResult.isIncomplete || engineResult.isInvalid
+                  ? 0
+                  : explainability.pointLead
+              }
+              tippingInfo={
+                engineResult.isIncomplete || engineResult.isInvalid
+                  ? (engineResult.isInvalid
+                      ? (engineResult.invalidReason === 'scores' ? 'Invalid Score Values' : 'Weights Exceed 100%')
+                      : 'Scores Incomplete')
+                  : tippingStr
+              }
             />
 
             <ProblemSection />
@@ -200,6 +225,7 @@ function AppContent() {
                 criteria={criteria}
                 options={options}
                 weights={weights}
+                lockedIds={lockedIds}
                 activeOptionIds={activeOptionIds}
                 evaluations={evaluations}
                 sensitivity={sensitivity}
@@ -208,15 +234,17 @@ function AppContent() {
             </div>
 
             {/* Verified Boardroom Decision Briefing Pass */}
-            <DecisionTicket
-              winner={winner}
-              runnerUp={runnerUp}
-              criteria={criteria}
-              weights={weights}
-              question={dataset.question}
-              decisionId={decisionId}
-              isAuthoritative={isAuthoritative}
-            />
+            {winner && !engineResult.isIncomplete && !engineResult.isInvalid && (
+              <DecisionTicket
+                winner={winner}
+                runnerUp={runnerUp}
+                criteria={criteria}
+                weights={weights}
+                question={dataset.question}
+                decisionId={decisionId}
+                isAuthoritative={isAuthoritative}
+              />
+            )}
 
             {/* Real Scenario Case Studies */}
             <CaseStudies onOpenSandbox={() => setIsSandboxOpen(true)} />

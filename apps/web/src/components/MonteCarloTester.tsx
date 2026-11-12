@@ -2,75 +2,141 @@ import React, { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Activity, Play, AlertTriangle, ShieldCheck } from 'lucide-react';
 import type { Criterion, Option } from '../types/decision';
-import { normalizeWeights, evaluateOption } from '../utils/decisionEngine';
+import {
+  runMonteCarloSimulation,
+  type MonteCarloResult,
+  type EngineOption,
+  type EngineCriterion,
+} from '@decision-os/decision-engine';
+import { normalizeWeights } from '../utils/decisionEngine';
 import { sound } from '../utils/audioFx';
 
 interface MonteCarloTesterProps {
   criteria: Criterion[];
   options: Option[];
   weights: Record<string, number>;
+  lockedIds?: string[];
+  initialNoiseLevel?: number;
+  initialSeed?: number;
 }
 
 export const MonteCarloTester: React.FC<MonteCarloTesterProps> = ({
   criteria,
   options,
   weights,
+  lockedIds = [],
+  initialNoiseLevel = 15,
+  initialSeed = 42,
 }) => {
   const [isRunning, setIsRunning] = useState(false);
-  const [noiseLevel, setNoiseLevel] = useState<number>(15);
+  const [noiseLevel, setNoiseLevel] = useState<number>(initialNoiseLevel);
+  const [seed, setSeed] = useState<number>(initialSeed);
 
   const simulationResults = useMemo(() => {
-    if (options.length < 2) return null;
+    // Handle zero, one, or missing inputs safely without runtime errors
+    if (!options || options.length < 2 || !criteria || criteria.length === 0) return null;
+
+    // Strict validation: check that required scores exist and are finite numbers in [0, 100]
+    for (const opt of options) {
+      if (!opt.scores || typeof opt.scores !== 'object') return null;
+      for (const c of criteria) {
+        const val = opt.scores[c.id];
+        if (typeof val !== 'number' || !Number.isFinite(val) || val < 0 || val > 100) {
+          return null;
+        }
+      }
+    }
 
     const iterations = 1000;
-    const winCounts: Record<string, number> = {};
-    options.forEach((o) => (winCounts[o.id] = 0));
+    const sigmaRelative = noiseLevel / 100.0;
 
-    const alphaScores: number[] = [];
-    const betaScores: number[] = [];
+    const engineCriteria: EngineCriterion[] = criteria.map((c) => ({
+      id: c.id,
+      name: c.name,
+      shortName: c.shortName,
+      weight: Math.max(0, weights[c.id] ?? c.defaultWeight ?? 0),
+      isLocked: lockedIds.includes(c.id),
+    }));
 
-    for (let i = 0; i < iterations; i++) {
-      const perturbed: Record<string, number> = {};
-      criteria.forEach((c) => {
-        const base = weights[c.id] || 20;
-        const delta = (Math.random() * 2 - 1) * noiseLevel;
-        perturbed[c.id] = Math.max(1, base + delta);
-      });
+    const engineOptions: EngineOption[] = options.map((o) => ({
+      id: o.id,
+      name: o.name,
+      scores: o.scores,
+    }));
 
-      const norm = normalizeWeights(perturbed, criteria);
-
-      const evals = options.map((opt) => evaluateOption(opt, criteria, norm));
-      evals.sort((a, b) => b.weightedScore - a.weightedScore);
-
-      const winId = evals[0].option.id;
-      winCounts[winId] = (winCounts[winId] || 0) + 1;
-
-      if (options[0]) alphaScores.push(evals.find((e) => e.option.id === options[0].id)?.weightedScore || 0);
-      if (options[1]) betaScores.push(evals.find((e) => e.option.id === options[1].id)?.weightedScore || 0);
+    let baseNorm: Record<string, number>;
+    try {
+      baseNorm = normalizeWeights(weights, criteria, lockedIds);
+    } catch {
+      return null;
     }
+
+    const mcResult: MonteCarloResult = runMonteCarloSimulation(
+      engineOptions,
+      engineCriteria,
+      baseNorm,
+      lockedIds,
+      {
+        iterations,
+        seed,
+        sigmaRelative,
+      }
+    );
+
+    const optionsMap = new Map<string, Option>(options.map((o) => [o.id, o]));
+    const PALETTE = ['#B8FF5A', '#38BDF8', '#F59E0B', '#FB7185', '#A78BFA', '#34D399', '#F472B6'];
+
+    // Map all alternatives returned by simulation with colors and win probabilities
+    const optionDistributions = mcResult.optionResults.map((r, idx) => {
+      const opt = optionsMap.get(r.optionId);
+      const color = opt?.color || PALETTE[idx % PALETTE.length];
+      return {
+        optionId: r.optionId,
+        name: r.optionName,
+        color,
+        winCount: r.winCount,
+        winProbability: r.winProbability,
+      };
+    });
+
+    const totalProbability = Number(
+      optionDistributions.reduce((sum, item) => sum + item.winProbability, 0).toFixed(1)
+    );
+
+    const isRobust = mcResult.robustnessRating === 'robust';
+
+    // Correctly locate the dominant winner across all alternatives
+    // Strictly preserve canonical engine truth: if dominantOptionId is null (e.g. tie), do NOT fall back to options[0]
+    const dominantWinner = mcResult.dominantOptionId
+      ? (options.find((o) => o.id === mcResult.dominantOptionId) ?? null)
+      : null;
+    const dominantPercentage = mcResult.dominantWinProbability;
 
     const optA = options[0];
     const optB = options[1];
-
-    const winPercentA = Number(((winCounts[optA.id] / iterations) * 100).toFixed(1));
-    const winPercentB = Number(((winCounts[optB.id] / iterations) * 100).toFixed(1));
-
-    const isRobust = winPercentA > 70 || winPercentB > 70;
+    const resA = mcResult.optionResults.find((r) => r.optionId === optA?.id);
+    const resB = mcResult.optionResults.find((r) => r.optionId === optB?.id);
 
     return {
       iterations,
-      winCounts,
-      winPercentA,
-      winPercentB,
+      optionDistributions,
+      totalProbability,
       isRobust,
-      dominantWinner: winPercentA >= winPercentB ? optA : optB,
-      dominantPercentage: Math.max(winPercentA, winPercentB),
+      dominantWinner,
+      dominantPercentage,
+      robustnessRating: mcResult.robustnessRating,
+      criterionStats: mcResult.criterionStats,
+      seed,
+      noiseLevel,
+      winPercentA: resA ? resA.winProbability : 0,
+      winPercentB: resB ? resB.winProbability : 0,
     };
-  }, [criteria, options, weights, noiseLevel]);
+  }, [criteria, options, weights, lockedIds, noiseLevel, seed]);
 
   const handleRunTest = () => {
     sound.playTick(900);
     setIsRunning(true);
+    setSeed((prev) => (prev + 1) >>> 0);
     setTimeout(() => {
       sound.playCelebrate();
       setIsRunning(false);
@@ -114,40 +180,54 @@ export const MonteCarloTester: React.FC<MonteCarloTesterProps> = ({
 
       {/* Main Results Grid */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-        {/* Left 2 Cols: Distribution Bar & Win Rates */}
+        {/* Left 2 Cols: Distribution Bar & Win Rates for All Alternatives */}
         <div className="md:col-span-2 space-y-4">
-          <div className="flex justify-between items-baseline text-xs font-mono">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: options[0]?.color }} />
-              <span className="text-slate-200 font-bold">{options[0]?.name}:</span>
-              <span className="text-signal font-extrabold text-sm">{simulationResults.winPercentA}%</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-accent-cyan font-extrabold text-sm">{simulationResults.winPercentB}%</span>
-              <span className="text-slate-200 font-bold">:{options[1]?.name}</span>
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: options[1]?.color }} />
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 text-xs font-mono">
+            {simulationResults.optionDistributions.map((opt) => (
+              <div
+                key={opt.optionId}
+                className="flex items-center justify-between p-2 rounded-xl bg-surface/70 border border-border-subtle gap-2"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <span
+                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                    style={{ backgroundColor: opt.color }}
+                  />
+                  <span className="text-slate-200 font-bold truncate">{opt.name}:</span>
+                </div>
+                <span className="font-extrabold text-sm shrink-0" style={{ color: opt.color }}>
+                  {opt.winProbability}%
+                </span>
+              </div>
+            ))}
           </div>
 
-          {/* Probability Distribution Bar */}
+          {/* Multi-segment Probability Distribution Bar */}
           <div className="w-full h-4 bg-background rounded-full overflow-hidden flex p-0.5 border border-border-subtle shadow-inner">
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${simulationResults.winPercentA}%` }}
-              transition={{ duration: 0.5 }}
-              className="h-full rounded-l-full bg-signal shadow-glow-signal-sm"
-            />
-            <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${simulationResults.winPercentB}%` }}
-              transition={{ duration: 0.5 }}
-              className="h-full rounded-r-full bg-accent-cyan"
-            />
+            {simulationResults.optionDistributions.map((opt, idx) => (
+              <motion.div
+                key={opt.optionId}
+                initial={{ width: 0 }}
+                animate={{ width: `${opt.winProbability}%` }}
+                transition={{ duration: 0.5 }}
+                style={{ backgroundColor: opt.color }}
+                className={`h-full ${idx === 0 ? 'rounded-l-full' : ''} ${
+                  idx === simulationResults.optionDistributions.length - 1 ? 'rounded-r-full' : ''
+                }`}
+                title={`${opt.name}: ${opt.winProbability}%`}
+              />
+            ))}
           </div>
 
-          {/* Noise Level Slider */}
-          <div className="flex items-center justify-between pt-2 text-xs text-slate-400">
-            <span>Priority Fluctuation Noise (±{noiseLevel}%):</span>
+          {/* Distribution Totals & Rounding Notice */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] font-mono text-slate-400">
+            <span>{`Total Distribution: ${simulationResults.totalProbability}% (±0.1% display rounding)`}</span>
+            <span>Simulated with Mulberry32 PRNG</span>
+          </div>
+
+          {/* Noise Level Controls */}
+          <div className="flex items-center justify-between pt-2 text-xs text-slate-400 border-t border-border-subtle">
+            <span>{`Priority Fluctuation Noise (±${noiseLevel}%):`}</span>
             <div className="flex gap-1">
               {[10, 15, 25].map((lvl) => (
                 <button
@@ -156,13 +236,13 @@ export const MonteCarloTester: React.FC<MonteCarloTesterProps> = ({
                     sound.playTick();
                     setNoiseLevel(lvl);
                   }}
-                  className={`px-2.5 py-1 rounded text-[11px] font-mono ${
+                  className={`px-2.5 py-1 rounded text-[11px] font-mono cursor-pointer transition-colors ${
                     noiseLevel === lvl
                       ? 'bg-signal text-background font-bold'
                       : 'bg-surface text-slate-400 border border-border-subtle hover:text-white'
                   }`}
                 >
-                  ±{lvl}%
+                  {`±${lvl}%`}
                 </button>
               ))}
             </div>
@@ -172,7 +252,7 @@ export const MonteCarloTester: React.FC<MonteCarloTesterProps> = ({
         {/* Right Col: Statistical Robustness Card */}
         <div className="p-4 rounded-2xl bg-surface/80 border border-border flex flex-col justify-between">
           <div className="flex items-center gap-2 text-xs font-mono uppercase text-slate-400">
-            {simulationResults.isRobust ? (
+            {simulationResults.dominantWinner && simulationResults.isRobust ? (
               <ShieldCheck className="w-4 h-4 text-signal" />
             ) : (
               <AlertTriangle className="w-4 h-4 text-accent-amber" />
@@ -182,16 +262,26 @@ export const MonteCarloTester: React.FC<MonteCarloTesterProps> = ({
 
           <div className="my-2">
             <div className="text-xl font-extrabold text-white">
-              {simulationResults.isRobust ? 'High Confidence' : 'Moderate Sensitivity'}
+              {!simulationResults.dominantWinner
+                ? 'No Dominant Option'
+                : simulationResults.isRobust
+                ? 'High Confidence'
+                : 'Moderate Sensitivity'}
             </div>
-            <p className="text-xs text-slate-300 mt-1 leading-relaxed">
-              {simulationResults.dominantWinner.name} maintains victory in{' '}
-              <strong>{simulationResults.dominantPercentage}%</strong> of random priority fluctuations.
-            </p>
+            {simulationResults.dominantWinner ? (
+              <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                <strong className="text-white">{simulationResults.dominantWinner.name}</strong> maintains victory in{' '}
+                <strong className="text-signal">{simulationResults.dominantPercentage}%</strong> of random priority fluctuations.
+              </p>
+            ) : (
+              <p className="text-xs text-amber-300/90 mt-1 leading-relaxed">
+                No single option dominates under priority noise. Leading alternatives share identical win rates ({simulationResults.dominantPercentage}%).
+              </p>
+            )}
           </div>
 
           <div className="pt-2 border-t border-border-subtle/50 text-[10px] font-mono text-slate-500">
-            Standard Gaussian Multi-Criteria Monte Carlo
+            Canonical Mulberry32 Gaussian Monte Carlo (v1.0.0)
           </div>
         </div>
       </div>

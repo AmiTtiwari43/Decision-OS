@@ -28,6 +28,21 @@ export const scoresSchema = z.record(
   z.record(z.string(), scoreValueSchema)
 );
 
+export const scoreProvenanceItemSchema = z
+  .object({
+    isSynthetic: z.literal(true, {
+      errorMap: () => ({ message: 'isSynthetic must be true; synthetic provenance cannot be negated via metadata' }),
+    }),
+    source: z.string().trim().max(100).optional(),
+    insertedAt: z.string().trim().optional(),
+  })
+  .strict();
+
+export const scoreProvenanceSchema = z.record(
+  z.string(),
+  z.record(z.string(), scoreProvenanceItemSchema)
+);
+
 export const createDecisionSchema = z
   .object({
     title: z
@@ -39,6 +54,7 @@ export const createDecisionSchema = z
     criteria: z.array(criterionSchema).default([]),
     options: z.array(optionSchema).default([]),
     scores: scoresSchema.default({}),
+    scoreProvenance: scoreProvenanceSchema.default({}),
     analysis: z.any().nullable().default(null),
     calculationVersion: z.number().int().min(1).default(1),
     ownerId: z.any().optional(),
@@ -73,6 +89,41 @@ export const createDecisionSchema = z
       }
       optionIds.add(opt.id);
     }
+
+    // Validate score provenance coordinates
+    if (data.scoreProvenance) {
+      const critIds = new Set(data.criteria.map((c) => c.id));
+      const optIds = new Set(data.options.map((o) => o.id));
+
+      for (const [optId, critMap] of Object.entries(data.scoreProvenance)) {
+        if (!optIds.has(optId)) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Synthetic score provenance contains unknown alternative ID '${optId}'`,
+            path: ['scoreProvenance', optId],
+          });
+        }
+        for (const [critId, entry] of Object.entries(critMap || {})) {
+          if (!critIds.has(critId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Synthetic score provenance contains unknown criterion ID '${critId}'`,
+              path: ['scoreProvenance', optId, critId],
+            });
+          }
+          if (entry.isSynthetic && data.scores) {
+            const val = data.scores[optId]?.[critId];
+            if (val === undefined || val === null) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Synthetic score provenance registered for coordinate (${optId}, ${critId}) without a corresponding score value`,
+                path: ['scoreProvenance', optId, critId],
+              });
+            }
+          }
+        }
+      }
+    }
   });
 
 export const updateDecisionSchema = z
@@ -82,6 +133,7 @@ export const updateDecisionSchema = z
     criteria: z.array(criterionSchema).optional(),
     options: z.array(optionSchema).optional(),
     scores: scoresSchema.optional(),
+    scoreProvenance: scoreProvenanceSchema.optional(),
     analysis: z.any().nullable().optional(),
     calculationVersion: z.number().int().min(1).optional(),
     version: z.number().int().min(1).optional(),
@@ -89,6 +141,10 @@ export const updateDecisionSchema = z
     ownerId: z.any().optional(),
     isContributionRoundLocked: z.boolean().optional(),
     contributionRoundLockedAt: z.coerce.date().nullable().optional(),
+    isAudited: z.boolean().optional(),
+    auditIntegrityStatus: z.enum(['healthy', 'pending_reconciliation', 'quarantined']).optional(),
+    pendingOperationId: z.string().nullable().optional(),
+    quarantineReason: z.string().nullable().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.criteria) {
@@ -120,7 +176,66 @@ export const updateDecisionSchema = z
         optionIds.add(opt.id);
       }
     }
+
+    if (data.scoreProvenance) {
+      if (data.options) {
+        const optIds = new Set(data.options.map((o) => o.id));
+        for (const optId of Object.keys(data.scoreProvenance)) {
+          if (!optIds.has(optId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Synthetic score provenance contains unknown alternative ID '${optId}'`,
+              path: ['scoreProvenance', optId],
+            });
+          }
+        }
+      }
+      if (data.criteria) {
+        const critIds = new Set(data.criteria.map((c) => c.id));
+        for (const [optId, critMap] of Object.entries(data.scoreProvenance)) {
+          for (const critId of Object.keys(critMap || {})) {
+            if (!critIds.has(critId)) {
+              ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                message: `Synthetic score provenance contains unknown criterion ID '${critId}'`,
+                path: ['scoreProvenance', optId, critId],
+              });
+            }
+          }
+        }
+      }
+    }
   });
+
+export const replaceSyntheticScoreSchema = z
+  .object({
+    optionId: z.string({ required_error: 'Option ID is required' }).trim().min(1, 'Option ID is required'),
+    criterionId: z.string({ required_error: 'Criterion ID is required' }).trim().min(1, 'Criterion ID is required'),
+    score: z
+      .number({ required_error: 'Replacement score is required' })
+      .finite('Score must be a finite number')
+      .min(0, 'Score cannot be less than 0')
+      .max(100, 'Score cannot exceed 100'),
+    expectedVersion: z.number().int().min(1).optional(),
+    comment: z.string().trim().max(500).optional(),
+  })
+  .strict();
+
+export const clearSyntheticScoresSchema = z
+  .object({
+    expectedVersion: z.number().int().min(1).optional(),
+  })
+  .strict();
+
+export const populateSyntheticDemoSchema = z
+  .object({
+    defaultValue: z.number().finite().min(0).max(100).default(75),
+    expectedVersion: z.number().int().min(1).optional(),
+  })
+  .strict();
 
 export type ValidatedCreateDecisionInput = z.infer<typeof createDecisionSchema>;
 export type ValidatedUpdateDecisionInput = z.infer<typeof updateDecisionSchema>;
+export type ValidatedReplaceSyntheticScoreInput = z.infer<typeof replaceSyntheticScoreSchema>;
+export type ValidatedClearSyntheticScoresInput = z.infer<typeof clearSyntheticScoresSchema>;
+export type ValidatedPopulateSyntheticDemoInput = z.infer<typeof populateSyntheticDemoSchema>;

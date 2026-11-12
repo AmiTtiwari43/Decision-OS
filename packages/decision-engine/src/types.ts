@@ -49,10 +49,27 @@ export interface MonteCarloOptionResult {
   readonly winProbability: number;
 }
 
+export interface MonteCarloCriterionStats {
+  readonly criterionId: string;
+  readonly meanWeight: number;
+  readonly variance: number;
+  readonly stdDev: number;
+  readonly minWeight: number;
+  readonly maxWeight: number;
+  readonly isLocked: boolean;
+}
+
 export interface MonteCarloConfig {
   readonly iterations?: number;
   readonly seed?: number;
   readonly sigmaRelative?: number;
+  /**
+   * Optional inspection callback invoked for each simulation iteration.
+   * Minimal non-intrusive test seam for verifying per-iteration invariants without retaining
+   * millions of weight vectors in memory during production simulations.
+   * Receives an independent, frozen snapshot of the normalized weights to guarantee isolation.
+   */
+  readonly onIterationWeights?: (weights: Readonly<Record<string, number>>, iterationIndex: number) => void;
 }
 
 export interface MonteCarloResult {
@@ -64,6 +81,7 @@ export interface MonteCarloResult {
   readonly dominantOptionId: string | null;
   readonly dominantWinProbability: number;
   readonly robustnessRating: 'robust' | 'moderate' | 'sensitive';
+  readonly criterionStats?: ReadonlyArray<MonteCarloCriterionStats>;
 }
 
 export interface EngineEvaluationInput {

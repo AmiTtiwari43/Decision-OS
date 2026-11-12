@@ -3,6 +3,9 @@ import type {
   DecisionDto,
   CreateDecisionPayload,
   UpdateDecisionPayload,
+  ReplaceSyntheticScorePayload,
+  ClearSyntheticScoresPayload,
+  PopulateSyntheticDemoPayload,
   ListDecisionsQuery,
   PaginatedDecisionsDto,
   ApiErrorResponse,
@@ -388,6 +391,81 @@ export class DecisionApiClient {
     return this.request<DecisionDto>(`/api/decisions/${encodeURIComponent(cleanId)}/analyze`, {
       method: 'POST',
     });
+  }
+
+  /**
+   * POST /api/decisions/:id/replace-synthetic-score — Atomically replaces a synthetic score coordinate.
+   */
+  async replaceSyntheticScore(
+    id: string,
+    payload: ReplaceSyntheticScorePayload
+  ): Promise<DecisionDto> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/replace-synthetic-score`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/clear-synthetic-scores — Clears all synthetic scores and flags.
+   */
+  async clearSyntheticScores(
+    id: string,
+    payload?: ClearSyntheticScoresPayload
+  ): Promise<DecisionDto> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/clear-synthetic-scores`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/populate-synthetic-demo — Authoritative server demo fill.
+   */
+  async populateSyntheticDemo(
+    id: string,
+    payload?: PopulateSyntheticDemoPayload
+  ): Promise<DecisionDto> {
+    const cleanId = (id || '').trim();
+    if (!cleanId) {
+      throw new ApiClientError({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Decision ID is required.',
+      });
+    }
+
+    return this.request<DecisionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/populate-synthetic-demo`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }
+    );
   }
 
   // ─── Sharing & Invitation API ──────────────────────────────────────────────

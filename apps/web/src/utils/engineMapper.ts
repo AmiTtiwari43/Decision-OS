@@ -2,11 +2,11 @@ import type { EngineResult as CanonicalEngineResult } from '@decision-os/decisio
 import type {
   Option,
   Criterion,
-  OptionEvaluation,
+  EvaluatedOptionEvaluation,
   SensitivityAnalysis,
   ExplainabilitySummary,
   DeltaDriver,
-  EngineResult,
+  EvaluatedEngineResult,
 } from '../types/decision.js';
 
 /**
@@ -17,12 +17,12 @@ export function mapServerAnalysisToEngineResult(
   serverAnalysis: CanonicalEngineResult,
   options: Option[],
   criteria: Criterion[]
-): EngineResult {
+): EvaluatedEngineResult {
   const optionsMap = new Map<string, Option>(options.map(o => [o.id, o]));
   const criteriaMap = new Map<string, Criterion>(criteria.map(c => [c.id, c]));
 
   // 1. Map option evaluations from server results
-  const evaluations: OptionEvaluation[] = serverAnalysis.evaluations.map((evalResult) => {
+  const evaluations: EvaluatedOptionEvaluation[] = serverAnalysis.evaluations.map((evalResult) => {
     const existingOpt = optionsMap.get(evalResult.optionId);
     const option: Option = existingOpt ?? {
       id: evalResult.optionId,

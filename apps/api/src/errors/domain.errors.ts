@@ -57,6 +57,77 @@ export class IncompleteScoresError extends Error {
 }
 
 /**
+ * A coordinate identifying a synthetic score.
+ */
+export interface SyntheticScoreCoordinate {
+  optionId: string;
+  criterionId: string;
+  optionName?: string;
+  criterionName?: string;
+}
+
+/**
+ * Thrown when authoritative calculation is attempted on a decision containing synthetic demonstration values.
+ */
+export class SyntheticScoresPresentError extends Error {
+  readonly statusCode = 422;
+  readonly syntheticCoordinates: SyntheticScoreCoordinate[];
+
+  constructor(syntheticCoordinates: SyntheticScoreCoordinate[]) {
+    super(
+      `Authoritative analysis cannot be calculated while synthetic demonstration scores remain. ` +
+        `Replace synthetic scores with verified assessments at ${syntheticCoordinates.length} coordinate(s): ` +
+        syntheticCoordinates.map(c => `option '${c.optionId}' × criterion '${c.criterionId}'`).join(', ')
+    );
+    this.name = 'SyntheticScoresPresentError';
+    this.syntheticCoordinates = syntheticCoordinates;
+    Object.setPrototypeOf(this, SyntheticScoresPresentError.prototype);
+  }
+}
+
+/**
+ * Thrown when an update attempts an unauthorized provenance transition or downgrade,
+ * such as clearing synthetic status via ordinary update or setting isSynthetic to false.
+ */
+export class InvalidProvenanceTransitionError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidProvenanceTransitionError';
+    Object.setPrototypeOf(this, InvalidProvenanceTransitionError.prototype);
+  }
+}
+
+/**
+ * Thrown when a replacement operation targets a coordinate that does not possess synthetic provenance.
+ */
+export class CoordinateNotSyntheticError extends Error {
+  readonly statusCode = 422;
+
+  constructor(optionId: string, criterionId: string) {
+    super(
+      `Coordinate option '${optionId}' × criterion '${criterionId}' does not have synthetic provenance to replace.`
+    );
+    this.name = 'CoordinateNotSyntheticError';
+    Object.setPrototypeOf(this, CoordinateNotSyntheticError.prototype);
+  }
+}
+
+/**
+ * Thrown when a coordinate references a nonexistent option or criterion, or an invalid replacement score.
+ */
+export class InvalidScoreCoordinateError extends Error {
+  readonly statusCode = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidScoreCoordinateError';
+    Object.setPrototypeOf(this, InvalidScoreCoordinateError.prototype);
+  }
+}
+
+/**
  * Thrown when the decision engine's internal ValidationError is raised.
  * Wraps the original engine error to keep the service layer decoupled.
  */

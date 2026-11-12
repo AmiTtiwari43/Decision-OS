@@ -1,3 +1,13 @@
+import {
+  normalizeWeights as canonicalNormalizeWeights,
+  validateInput,
+  evaluateDecision,
+  calculateSensitivity as canonicalCalculateSensitivity,
+  ValidationError,
+  type EngineCriterion,
+  type EngineOption,
+} from '@decision-os/decision-engine';
+import { mapServerAnalysisToEngineResult } from './engineMapper.js';
 import type {
   Criterion,
   Option,
@@ -6,100 +16,77 @@ import type {
   DeltaDriver,
   SensitivityAnalysis,
   ExplainabilitySummary,
-  EngineResult,
-} from '../types/decision';
+  EvaluatedEngineResult,
+} from '../types/decision.js';
+
+export { ValidationError };
 
 /**
- * Normalizes raw weights so they sum to exactly 100%.
- * Supports locked weights which remain unchanged while distributing remainder to unlocked weights.
+ * Normalizes raw weights so they sum to exactly 100.0%.
+ * Delegates to canonical Hare-Niemeyer (Largest Remainder) algorithm
+ * with deterministic ASCII criterion-ID tie-breaking and locked weight preservation.
  */
 export function normalizeWeights(
   rawWeights: Record<string, number>,
   criteria: Criterion[],
   lockedIds: string[] = []
 ): Record<string, number> {
-  const result: Record<string, number> = {};
-  
-  // Calculate total locked weight
-  let lockedSum = 0;
-  lockedIds.forEach(id => {
-    const val = Math.max(0, Math.min(100, rawWeights[id] || 0));
-    lockedSum += val;
-  });
-
-  // Clamp lockedSum to 100
-  if (lockedSum >= 100) {
-    criteria.forEach(c => {
-      if (lockedIds.includes(c.id)) {
-        result[c.id] = Number(((rawWeights[c.id] || 0) / lockedSum * 100).toFixed(1));
-      } else {
-        result[c.id] = 0;
-      }
-    });
-    return result;
+  if (!criteria || criteria.length === 0) {
+    return {};
   }
 
-  const remainingTarget = 100 - lockedSum;
-  const unlockedCriteria = criteria.filter(c => !lockedIds.includes(c.id));
+  const engineCriteria: EngineCriterion[] = criteria.map((c) => ({
+    id: c.id,
+    name: c.name,
+    shortName: c.shortName,
+    weight: Math.max(0, rawWeights[c.id] ?? c.defaultWeight ?? 0),
+    isLocked: lockedIds.includes(c.id),
+  }));
 
-  // If no unlocked criteria, just return as is
-  if (unlockedCriteria.length === 0) {
-    criteria.forEach(c => {
-      result[c.id] = Number((rawWeights[c.id] || 0).toFixed(1));
-    });
-    return result;
-  }
-
-  // Calculate sum of unlocked weights
-  let unlockedSum = 0;
-  unlockedCriteria.forEach(c => {
-    unlockedSum += Math.max(0, rawWeights[c.id] || 0);
-  });
-
-  // Set locked values directly
-  lockedIds.forEach(id => {
-    result[id] = Number((rawWeights[id] || 0).toFixed(1));
-  });
-
-  // Distribute remaining target
-  if (unlockedSum === 0) {
-    const evenSplit = remainingTarget / unlockedCriteria.length;
-    unlockedCriteria.forEach(c => {
-      result[c.id] = Number(evenSplit.toFixed(1));
-    });
-  } else {
-    unlockedCriteria.forEach(c => {
-      const proportion = (rawWeights[c.id] || 0) / unlockedSum;
-      result[c.id] = Number((proportion * remainingTarget).toFixed(1));
-    });
-  }
-
-  // Correction pass for small rounding error to ensure exactly 100%
-  const totalSum = Object.values(result).reduce((acc, v) => acc + v, 0);
-  const diff = Number((100 - totalSum).toFixed(1));
-  if (diff !== 0 && unlockedCriteria.length > 0) {
-    const firstUnlocked = unlockedCriteria[0].id;
-    result[firstUnlocked] = Number((result[firstUnlocked] + diff).toFixed(1));
-  }
-
-  return result;
+  return canonicalNormalizeWeights(engineCriteria, lockedIds);
 }
 
 /**
  * Calculates weighted score and detailed contributions for a single option.
+ * Strictly validates that every criterion has a finite numeric score in [0, 100].
+ * Missing scores are rejected with ValidationError; never fabricated or defaulted to 50.
  */
 export function evaluateOption(
   option: Option,
   criteria: Criterion[],
   normalizedWeights: Record<string, number>
 ): Omit<OptionEvaluation, 'rank' | 'scoreDifferenceToLeader'> {
+  if (!criteria || criteria.length === 0) {
+    throw new ValidationError('Decision matrix must contain at least one criterion');
+  }
+
+  if (!option || !option.scores || typeof option.scores !== 'object') {
+    throw new ValidationError(`Option '${option?.id ?? 'unknown'}' is missing a scores object`);
+  }
+
   let totalWeightedScore = 0;
   let rawSum = 0;
 
-  const contributions: ContributionItem[] = criteria.map(c => {
-    const rawScore = option.scores[c.id] ?? 50;
+  const contributions: ContributionItem[] = criteria.map((c) => {
+    const rawScore = option.scores[c.id];
+    if (rawScore === undefined || rawScore === null) {
+      throw new ValidationError(
+        `Option '${option.id}' is missing required score for criterion '${c.id}'`
+      );
+    }
+    if (typeof rawScore !== 'number' || !Number.isFinite(rawScore)) {
+      throw new ValidationError(
+        `Score for option '${option.id}' on criterion '${c.id}' must be a finite number`
+      );
+    }
+    if (rawScore < 0.0 || rawScore > 100.0) {
+      throw new ValidationError(
+        `Score for option '${option.id}' on criterion '${c.id}' must be between 0.0 and 100.0 (received ${rawScore})`
+      );
+    }
+
     const weight = normalizedWeights[c.id] ?? 0;
-    const weightedPoints = (rawScore * weight) / 100;
+    const weightedPoints = (rawScore * weight) / 100.0;
 
     totalWeightedScore += weightedPoints;
     rawSum += rawScore;
@@ -110,22 +97,24 @@ export function evaluateOption(
       shortName: c.shortName,
       rawScore,
       weight,
-      weightedPoints: Number(weightedPoints.toFixed(2)),
+      weightedPoints: Math.round(weightedPoints * 100) / 100,
       percentageOfTotal: 0,
     };
   });
 
-  const finalScore = Number(totalWeightedScore.toFixed(1));
+  const finalScore = Math.round(totalWeightedScore * 10) / 10;
 
-  contributions.forEach(item => {
+  contributions.forEach((item) => {
     item.percentageOfTotal =
-      finalScore > 0 ? Number(((item.weightedPoints / finalScore) * 100).toFixed(1)) : 0;
+      totalWeightedScore > 0
+        ? Math.round(((item.weightedPoints / totalWeightedScore) * 100) * 10) / 10
+        : 0;
   });
 
   return {
     option,
     weightedScore: finalScore,
-    rawScoreAvg: Number((rawSum / (criteria.length || 1)).toFixed(1)),
+    rawScoreAvg: Math.round((rawSum / (criteria.length || 1)) * 10) / 10,
     contributions,
   };
 }
@@ -133,91 +122,79 @@ export function evaluateOption(
 /**
  * Performs sensitivity analysis to identify the exact tipping point weight for each criterion
  * where the runner-up overtakes the current winner.
+ * Delegates to canonical closed-form sensitivity equation with frozen locked weights.
  */
 export function calculateSensitivity(
   winnerEval: OptionEvaluation,
   runnerUpEval: OptionEvaluation | null,
   criteria: Criterion[],
-  weights: Record<string, number>
+  weights: Record<string, number>,
+  lockedIds: string[] = []
 ): SensitivityAnalysis[] {
-  if (!runnerUpEval) return [];
-
-  const winner = winnerEval.option;
-  const runnerUp = runnerUpEval.option;
-
-  return criteria.map(c => {
-    const k = c.id;
-    const currentWeight = weights[k] ?? 0;
-    const sAk = winner.scores[k] ?? 50;
-    const sBk = runnerUp.scores[k] ?? 50;
-
-    let R_A = 0;
-    let R_B = 0;
-    criteria.forEach(other => {
-      if (other.id !== k) {
-        const w = (weights[other.id] ?? 0) / 100;
-        R_A += (winner.scores[other.id] ?? 50) * w;
-        R_B += (runnerUp.scores[other.id] ?? 50) * w;
-      }
-    });
-
-    const deltaR = 100 * (R_A - R_B);
-    const deltaS = sAk - sBk;
-    const denominator = deltaR - deltaS * (100 - currentWeight);
-
-    let tippingPointWeight: number | null = null;
-    let weightDeltaNeeded: number | null = null;
-    let wouldFlip = false;
-
-    if (denominator !== 0) {
-      const w_star = (100 * deltaR) / denominator;
-      if (w_star > 0 && w_star <= 95) {
-        tippingPointWeight = Number(w_star.toFixed(1));
-        weightDeltaNeeded = Number((tippingPointWeight - currentWeight).toFixed(1));
-        wouldFlip = true;
-      }
-    }
-
-    let feasibility: 'low-threshold' | 'medium-threshold' | 'unreachable' = 'unreachable';
-    let summary = '';
-
-    if (wouldFlip && tippingPointWeight !== null && weightDeltaNeeded !== null) {
-      const absDelta = Math.abs(weightDeltaNeeded);
-      if (absDelta <= 15) {
-        feasibility = 'low-threshold';
-        summary = `Shifting ${c.name} from ${currentWeight}% to ${tippingPointWeight}% (${weightDeltaNeeded > 0 ? '+' : ''}${weightDeltaNeeded}%) causes ${runnerUp.name} to win.`;
-      } else if (absDelta <= 35) {
-        feasibility = 'medium-threshold';
-        summary = `If ${c.name} becomes a dominant priority at ${tippingPointWeight}%, ${runnerUp.name} takes the lead.`;
-      } else {
-        feasibility = 'unreachable';
-        summary = `Requires extreme weighting (${tippingPointWeight}%) to change the outcome.`;
-      }
-    } else {
-      if (sAk >= sBk) {
-        summary = `${winner.name} maintains an advantage here; increasing this weight solidifies its lead.`;
-      } else {
-        summary = `Even at high priority, ${c.name} alone is insufficient to overturn the score difference.`;
-      }
-    }
-
-    return {
+  if (!runnerUpEval) {
+    return criteria.map((c) => ({
       criterionId: c.id,
       criterionName: c.name,
       shortName: c.shortName,
-      currentWeight,
-      tippingPointWeight,
-      weightDeltaNeeded,
-      wouldFlipToOptionId: wouldFlip ? runnerUp.id : null,
-      wouldFlipToOptionName: wouldFlip ? runnerUp.name : null,
-      feasibility,
-      summary,
+      currentWeight: weights[c.id] ?? 0,
+      tippingPointWeight: null,
+      weightDeltaNeeded: null,
+      wouldFlipToOptionId: null,
+      wouldFlipToOptionName: null,
+      feasibility: 'unreachable',
+      summary: 'Add a second option to calculate sensitivity thresholds.',
+    }));
+  }
+
+  const engineCriteria: EngineCriterion[] = criteria.map((c) => ({
+    id: c.id,
+    name: c.name,
+    shortName: c.shortName,
+    weight: weights[c.id] ?? c.defaultWeight ?? 0,
+    isLocked: lockedIds.includes(c.id),
+  }));
+
+  const leaderOpt: EngineOption = {
+    id: winnerEval.option.id,
+    name: winnerEval.option.name,
+    scores: winnerEval.option.scores,
+  };
+
+  const challengerOpt: EngineOption = {
+    id: runnerUpEval.option.id,
+    name: runnerUpEval.option.name,
+    scores: runnerUpEval.option.scores,
+  };
+
+  const canonicalTipping = canonicalCalculateSensitivity(
+    leaderOpt,
+    challengerOpt,
+    engineCriteria,
+    weights,
+    lockedIds
+  );
+
+  const criteriaMap = new Map(criteria.map((c) => [c.id, c]));
+
+  return canonicalTipping.map((t) => {
+    const c = criteriaMap.get(t.criterionId);
+    return {
+      criterionId: t.criterionId,
+      criterionName: c?.name ?? t.criterionId,
+      shortName: c?.shortName ?? t.criterionId,
+      currentWeight: t.currentWeight,
+      tippingPointWeight: t.tippingPointWeight,
+      weightDeltaNeeded: t.weightDeltaNeeded,
+      wouldFlipToOptionId: t.wouldFlipToOptionId,
+      wouldFlipToOptionName: t.wouldFlipToOptionId ? runnerUpEval.option.name : null,
+      feasibility: t.feasibility,
+      summary: t.summary,
     };
   });
 }
 
 /**
- * Synthesizes transparent plain-English explainability drivers without any hallucinations or generic fluff.
+ * Synthesizes transparent plain-English explainability drivers without any hallucinations or fabricated fallbacks.
  */
 export function generateExplainability(
   winnerEval: OptionEvaluation,
@@ -229,7 +206,7 @@ export function generateExplainability(
   const winner = winnerEval.option;
   const runnerUp = runnerUpEval ? runnerUpEval.option : null;
   const pointLead = runnerUpEval
-    ? Number((winnerEval.weightedScore - runnerUpEval.weightedScore).toFixed(1))
+    ? Math.round((winnerEval.weightedScore - runnerUpEval.weightedScore) * 10) / 10
     : winnerEval.weightedScore;
 
   if (!runnerUp) {
@@ -245,12 +222,12 @@ export function generateExplainability(
     };
   }
 
-  const drivers: DeltaDriver[] = criteria.map(c => {
+  const drivers: DeltaDriver[] = criteria.map((c) => {
     const w = weights[c.id] ?? 0;
-    const wScore = winner.scores[c.id] ?? 50;
-    const rScore = runnerUp.scores[c.id] ?? 50;
+    const wScore = winner.scores[c.id] ?? 0;
+    const rScore = runnerUp.scores[c.id] ?? 0;
     const rawDiff = wScore - rScore;
-    const pointAdvantage = Number(((rawDiff * w) / 100).toFixed(2));
+    const pointAdvantage = Math.round(((rawDiff * w) / 100.0) * 100) / 100;
 
     return {
       criterionId: c.id,
@@ -265,15 +242,17 @@ export function generateExplainability(
   });
 
   const primaryDrivers = drivers
-    .filter(d => d.pointAdvantage > 0)
+    .filter((d) => d.pointAdvantage > 0)
     .sort((a, b) => b.pointAdvantage - a.pointAdvantage);
 
   const concededAreas = drivers
-    .filter(d => d.pointAdvantage < 0)
+    .filter((d) => d.pointAdvantage < 0)
     .sort((a, b) => a.pointAdvantage - b.pointAdvantage);
 
   let headline = '';
-  if (pointLead > 8) {
+  if (Math.abs(pointLead) < 1e-9) {
+    headline = `Mathematical Tie: ${winner.name} and ${runnerUp.name} share identical scores (${winnerEval.weightedScore} pts).`;
+  } else if (pointLead > 8) {
     headline = `${winner.name} holds a decisive +${pointLead} pt lead over ${runnerUp.name}.`;
   } else if (pointLead >= 3) {
     headline = `${winner.name} fits your current priorities better (+${pointLead} pts).`;
@@ -281,16 +260,32 @@ export function generateExplainability(
     headline = `${winner.name} narrowly leads ${runnerUp.name} by +${pointLead} pts in a close contest.`;
   }
 
-  const topAdvantageNames = primaryDrivers.slice(0, 2).map(d => `${d.criterionName} (+${d.rawDiff} raw)`).join(' and ');
-  const topConcededNames = concededAreas.slice(0, 2).map(d => `${d.criterionName} (-${Math.abs(d.rawDiff)} raw)`).join(' and ');
+  const topAdvantageNames = primaryDrivers
+    .slice(0, 2)
+    .map((d) => `${d.criterionName} (+${d.rawDiff} raw)`)
+    .join(' and ');
+  const topConcededNames = concededAreas
+    .slice(0, 2)
+    .map((d) => `${d.criterionName} (-${Math.abs(d.rawDiff)} raw)`)
+    .join(' and ');
 
-  let dynamicRationale = `${winner.name} ranks highest because your current weights favor its strengths in ${topAdvantageNames || 'core metrics'}.`;
-  if (concededAreas.length > 0) {
-    dynamicRationale += ` This effectively offsets ${runnerUp.name}'s advantage in ${topConcededNames}.`;
+  let dynamicRationale = '';
+  if (Math.abs(pointLead) < 1e-9) {
+    dynamicRationale = `The decision resulted in an exact tie under canonical Hare-Niemeyer normalization. Neither option holds a mathematically decisive advantage.`;
+  } else {
+    dynamicRationale = `${winner.name} ranks highest because your current weights favor its strengths in ${topAdvantageNames || 'core metrics'}.`;
+    if (concededAreas.length > 0) {
+      dynamicRationale += ` This effectively offsets ${runnerUp.name}'s advantage in ${topConcededNames}.`;
+    }
   }
 
   const accessibleTippingPoint = sensitivity
-    .filter(s => s.feasibility === 'low-threshold' && s.weightDeltaNeeded !== null && s.weightDeltaNeeded > 0)
+    .filter(
+      (s) =>
+        s.feasibility === 'low-threshold' &&
+        s.weightDeltaNeeded !== null &&
+        s.weightDeltaNeeded > 0
+    )
     .sort((a, b) => (a.weightDeltaNeeded || 999) - (b.weightDeltaNeeded || 999))[0];
 
   let sensitivityStatement = '';
@@ -315,42 +310,42 @@ export function generateExplainability(
 /**
  * Main execution function for the Decision OS Engine.
  * Evaluates all options, normalizes weights, calculates sensitivity, and generates explainability.
+ * Delegates strictly to canonical @decision-os/decision-engine.
  */
 export function runDecisionEngine(
   options: Option[],
   criteria: Criterion[],
   rawWeights: Record<string, number>,
   lockedIds: string[] = []
-): EngineResult {
-  const normalizedWeights = normalizeWeights(rawWeights, criteria, lockedIds);
-
-  const rawEvaluations = options.map(opt => evaluateOption(opt, criteria, normalizedWeights));
-
-  rawEvaluations.sort((a, b) => b.weightedScore - a.weightedScore);
-
-  const leaderScore = rawEvaluations[0]?.weightedScore || 0;
-
-  const evaluations: OptionEvaluation[] = rawEvaluations.map((item, index) => ({
-    ...item,
-    rank: index + 1,
-    scoreDifferenceToLeader: Number((leaderScore - item.weightedScore).toFixed(1)),
+): EvaluatedEngineResult {
+  const engineCriteria: EngineCriterion[] = criteria.map((c) => ({
+    id: c.id,
+    name: c.name,
+    shortName: c.shortName,
+    weight: Math.max(0, rawWeights[c.id] ?? c.defaultWeight ?? 0),
+    isLocked: lockedIds.includes(c.id),
   }));
 
-  const winner = evaluations[0];
-  const runnerUp = evaluations.length > 1 ? evaluations[1] : null;
+  const engineOptions: EngineOption[] = options.map((o) => ({
+    id: o.id,
+    name: o.name,
+    scores: o.scores,
+  }));
 
-  const sensitivity = calculateSensitivity(winner, runnerUp, criteria, normalizedWeights);
-  const explainability = generateExplainability(winner, runnerUp, criteria, normalizedWeights, sensitivity);
+  // Canonical strict validation: rejects empty sets, non-finite scores, out-of-range scores, missing scores
+  validateInput(engineCriteria, engineOptions);
 
-  const totalWeight = Number(Object.values(normalizedWeights).reduce((a, b) => a + b, 0).toFixed(1));
+  // Canonical evaluation: normalization, dual-precision scoring, competition ranking, sensitivity, cryptographic hashes
+  const canonicalResult = evaluateDecision({
+    criteria: engineCriteria,
+    options: engineOptions,
+    lockedIds,
+  });
+
+  const mapped = mapServerAnalysisToEngineResult(canonicalResult, options, criteria);
 
   return {
-    evaluations,
-    winner,
-    runnerUp,
-    normalizedWeights,
-    totalWeight,
-    sensitivity,
-    explainability,
+    ...mapped,
+    isAuthoritative: false,
   };
 }

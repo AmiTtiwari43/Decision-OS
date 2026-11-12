@@ -3,6 +3,7 @@ import {
   normalizeWeights,
   evaluateOption,
   runDecisionEngine,
+  ValidationError,
 } from './decisionEngine';
 import {
   primaryJobOfferDataset,
@@ -42,16 +43,10 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
       expect(Number(totalSum.toFixed(1))).toBe(100);
     });
 
-    it('handles locked sum >= 100 by clamping and zeroing unlocked criteria', () => {
+    it('rejects locked sum >= 100 with canonical ValidationError', () => {
       const raw = { careerGrowth: 60, compensation: 60, learning: 20, workLifeBalance: 10, stability: 10 };
       const lockedIds = ['careerGrowth', 'compensation'];
-      const normalized = normalizeWeights(raw, jobOfferDataset.criteria, lockedIds);
-
-      expect(normalized.learning).toBe(0);
-      expect(normalized.workLifeBalance).toBe(0);
-      expect(normalized.stability).toBe(0);
-      expect(normalized.careerGrowth).toBe(50);
-      expect(normalized.compensation).toBe(50);
+      expect(() => normalizeWeights(raw, jobOfferDataset.criteria, lockedIds)).toThrow(ValidationError);
     });
 
     it('splits remainder evenly if all unlocked weights are 0', () => {
@@ -206,7 +201,7 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
   });
 
   describe('6. Edge Cases & Missing Value Handling', () => {
-    it('falls back to 50 for missing criteria scores in options', () => {
+    it('strictly rejects missing criteria scores with ValidationError instead of falling back to 50', () => {
       const crit: Criterion[] = [
         { id: 'c1', name: 'Crit 1', shortName: 'C1', description: '', category: 'growth', defaultWeight: 50 },
         { id: 'c2', name: 'Crit 2', shortName: 'C2', description: '', category: 'finance', defaultWeight: 50 },
@@ -216,10 +211,8 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
         scores: { c1: 80 }, // c2 missing!
         strengths: [], vulnerabilities: [],
       };
-      const evalResult = evaluateOption(optWithMissing, crit, { c1: 50, c2: 50 });
-      // 80 * 0.5 + 50 * 0.5 = 40 + 25 = 65.0
-      expect(evalResult.weightedScore).toBe(65.0);
-      expect(evalResult.contributions.find(c => c.criterionId === 'c2')?.rawScore).toBe(50);
+      expect(() => evaluateOption(optWithMissing, crit, { c1: 50, c2: 50 })).toThrow(ValidationError);
+      expect(() => runDecisionEngine([optWithMissing], crit, { c1: 50, c2: 50 })).toThrow(ValidationError);
     });
 
     it('characterizes tie behavior where two options have identical scores', () => {
@@ -239,7 +232,10 @@ describe('Phase 0: Decision Engine Characterization Tests', () => {
       expect(result.winner.weightedScore).toBe(80);
       expect(result.runnerUp?.weightedScore).toBe(80);
       expect(result.winner.rank).toBe(1);
-      expect(result.runnerUp?.rank).toBe(2);
+      expect(result.runnerUp?.rank).toBe(1);
+      expect(result.isTie).toBe(true);
+      expect(result.tiedWinnerIds).toEqual(['tieA', 'tieB']);
+      expect(result.decisionOutcome).toBe('tie');
       expect(result.runnerUp?.scoreDifferenceToLeader).toBe(0);
     });
   });

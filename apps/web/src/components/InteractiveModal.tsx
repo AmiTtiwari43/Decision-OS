@@ -31,6 +31,9 @@ import {
   Calculator,
   RefreshCw,
   Hash,
+  Zap,
+  ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { templateDatasets } from '../data/decisionData.js';
@@ -100,6 +103,9 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     updateOptionScore,
     updateDecisionMetadata,
     clearApiError,
+    scoreProvenance,
+    clearSyntheticScores,
+    populateSyntheticDemo,
 
     // Batch 3 CRUD & Calculation
     addAlternative,
@@ -139,6 +145,12 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const isOperationInFlight = saveStatus === 'in_flight' || isCalculating;
   const missingScoresList = getMissingScores();
   const isComplete = isScoreMatrixComplete();
+
+  const { winner, runnerUp, explainability, sensitivity } = engineResult;
+
+  const accessibleTipping = sensitivity?.find(
+    (s) => s.tippingPointWeight !== null && s.weightDeltaNeeded !== null && s.wouldFlipToOptionId !== null
+  );
 
   const {
     connectionStatus,
@@ -285,9 +297,13 @@ Verification: ${
 
 ## Outcome
 ${
-  isTie
+  engineResult.isIncomplete || engineResult.isInvalid
+    ? (engineResult.isInvalid
+        ? `⚠️ **Invalid Decision Input (${engineResult.invalidReason === 'scores' ? 'Invalid Scores' : 'Invalid Weights'})**\n${engineResult.errorMessage || explainability.dynamicRationale}`
+        : `⚠️ **Evaluation Incomplete**\n${explainability.dynamicRationale}`)
+    : isTie
     ? `🤝 **Mathematical Tie** between: ${(tiedWinnerIds || []).join(', ')}`
-    : `🏆 **${winner.option.name}** (Weighted Score: ${winner.weightedScore}/100)
+    : `🏆 **${winner ? winner.option.name : 'No Winner'}** (Weighted Score: ${winner ? winner.weightedScore : 0}/100)
 ${explainability.headline}`
 }
 
@@ -300,7 +316,7 @@ ${explainability.sensitivityStatement}
 ${evaluations
   .map(
     (e, idx) =>
-      `${idx + 1}. **${e.option.name}** — ${e.weightedScore} pts (${e.option.badge || ''})`
+      `${e.rank !== null && e.rank !== undefined ? `${e.rank}.` : `${idx + 1}. [Unranked]`} **${e.option.name}** — ${e.weightedScore} pts (${e.option.badge || ''})`
   )
   .join('\n')}
 
@@ -308,7 +324,9 @@ ${evaluations
 ${criteria
   .map(
     (c) =>
-      `- **${c.name}**: ${weights[c.id]}% (Raw winner score: ${winner.option.scores[c.id] || 0}/100)`
+      winner
+        ? `- **${c.name}**: ${weights[c.id]}% (Raw winner score: ${winner.option.scores?.[c.id] ?? 0}/100)`
+        : `- **${c.name}**: ${weights[c.id]}% (Winner score: N/A)`
   )
   .join('\n')}
 
@@ -596,18 +614,18 @@ ${criteria
           <div className="px-4 sm:px-6 pt-3 bg-surface border-b border-border flex items-center justify-between gap-3 overflow-x-auto shrink-0">
             <div className="flex items-center gap-1 sm:gap-2">
               <button
-                onClick={() => setActiveTab('matrix')}
+                onClick={() => setActiveTab('alternatives')}
                 className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
-                  activeTab === 'matrix'
+                  activeTab === 'alternatives'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Table className="w-3.5 h-3.5" />
-                <span>Score Matrix</span>
-                {!isComplete && (
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-                )}
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                  options.length >= 2 ? 'bg-signal/20 text-signal border border-signal/30' : 'bg-surface-subtle text-slate-400'
+                }`}>1</span>
+                <Layers className="w-3.5 h-3.5" />
+                <span>Alternatives ({options.length})</span>
               </button>
 
               <button
@@ -618,20 +636,31 @@ ${criteria
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                  criteria.length >= 1 ? 'bg-signal/20 text-signal border border-signal/30' : 'bg-surface-subtle text-slate-400'
+                }`}>2</span>
                 <Sliders className="w-3.5 h-3.5" />
                 <span>Weights & Criteria ({criteria.length})</span>
               </button>
 
               <button
-                onClick={() => setActiveTab('alternatives')}
+                onClick={() => setActiveTab('matrix')}
                 className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
-                  activeTab === 'alternatives'
+                  activeTab === 'matrix'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
-                <Layers className="w-3.5 h-3.5" />
-                <span>Alternatives ({options.length})</span>
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                  isComplete ? 'bg-signal/20 text-signal border border-signal/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                }`}>3</span>
+                <Table className="w-3.5 h-3.5" />
+                <span>Score Matrix</span>
+                {!isComplete ? (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" title={`${missingScoresList.length} scores missing`} />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-signal" />
+                )}
               </button>
 
               <button
@@ -642,6 +671,9 @@ ${criteria
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                  isAuthoritative ? 'bg-signal/20 text-signal border border-signal/30' : 'bg-surface-subtle text-slate-400'
+                }`}>4</span>
                 <Award className="w-3.5 h-3.5" />
                 <span>Authoritative Results</span>
                 {isAuthoritative && (
@@ -774,16 +806,22 @@ ${criteria
                       </span>
                     )}
                   </div>
-                  {isAuthoritative ? (
+                  {engineResult.isIncomplete || engineResult.isInvalid ? (
+                    <div className="text-xs font-mono text-amber-400">
+                      {engineResult.isInvalid
+                        ? (engineResult.invalidReason === 'scores' ? 'Invalid Score Input' : 'Invalid Weight Configuration')
+                        : 'Incomplete Evaluation Input'}
+                    </div>
+                  ) : isAuthoritative ? (
                     engineResult.isTie ? (
                       <div className="text-sm font-bold text-amber-300">
                         🤝 Exact Mathematical Tie
                       </div>
                     ) : (
                       <div className="text-sm font-bold text-white">
-                        {engineResult.winner.option.name}{' '}
+                        {engineResult.winner?.option.name ?? '—'}{' '}
                         <span className="text-signal font-mono">
-                          ({engineResult.winner.weightedScore} pts)
+                          ({engineResult.winner?.weightedScore ?? 0} pts)
                         </span>
                       </div>
                     )
@@ -793,7 +831,7 @@ ${criteria
                     </div>
                   ) : (
                     <div className="text-sm font-bold text-slate-300">
-                      {engineResult.winner.option.name}{' '}
+                      {engineResult.winner?.option.name ?? '—'}{' '}
                       <span className="text-slate-500 font-mono">
                         (Preview)
                       </span>
@@ -814,7 +852,10 @@ ${criteria
                   weights={weights}
                   lockedIds={lockedIds}
                   currentUserRole={currentUserRole}
+                  scoreProvenance={scoreProvenance}
                   onUpdateScore={updateOptionScore}
+                  onClearSyntheticScores={clearSyntheticScores}
+                  onPopulateSyntheticDemo={populateSyntheticDemo}
                   missingScores={missingScoresList}
                   disabled={isOperationInFlight}
                 />
@@ -918,6 +959,226 @@ ${criteria
                   </div>
                 )}
 
+                {/* Incomplete State Banner */}
+                {engineResult.isIncomplete && (
+                  <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-2.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 shrink-0">
+                        <AlertTriangle className="w-5 h-5 text-amber-400 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-300">
+                            Decision Incomplete — Awaiting Complete Scores
+                          </span>
+                          <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-amber-500/20 text-amber-200 border border-amber-500/30">
+                            {missingScoresList.length} Missing
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                          Under canonical MCDA rules, rank determinations and winner calculations are strictly suppressed until every alternative has a complete score for every criterion.
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('matrix')}
+                      className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-background font-mono font-bold text-xs shrink-0 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Table className="w-3.5 h-3.5" />
+                      <span>Open Score Matrix (Step 3) →</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Invalid State Banner */}
+                {engineResult.isInvalid && (
+                  <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 shrink-0">
+                        <AlertCircle className="w-5 h-5 text-rose-400" />
+                      </div>
+                      <div>
+                        <span className="text-xs font-mono font-bold uppercase tracking-wider text-rose-300">
+                          Invalid Decision Configuration
+                        </span>
+                        <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+                          {engineResult.errorMessage || 'Please review criterion weights and score inputs.'}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab(engineResult.invalidReason === 'weights' ? 'weights' : 'matrix')}
+                      className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-white font-mono font-bold text-xs shrink-0 flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                    >
+                      <span>Fix {engineResult.invalidReason === 'weights' ? 'Weights (Step 2)' : 'Scores (Step 3)'} →</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* Evaluated Winner & Runner-Up Presentation Hero Card */}
+                {!engineResult.isIncomplete && !engineResult.isInvalid && winner && (
+                  <div className="p-5 sm:p-6 rounded-2xl bg-gradient-to-br from-surface-card via-surface to-surface-card border border-signal/50 shadow-glow-signal-sm space-y-5">
+                    {/* Winner Header Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border-subtle">
+                      <div className="flex items-center gap-3">
+                        <span className="p-2.5 rounded-xl bg-signal/15 text-signal border border-signal/30 shrink-0">
+                          <Award className="w-6 h-6 text-signal" />
+                        </span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono font-bold uppercase tracking-wider text-signal">
+                              Rank #1 Selected Recommendation
+                            </span>
+                            {isAuthoritative ? (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-signal/20 text-signal border border-signal/40 font-bold flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" />
+                                <span>Authoritative MCDA</span>
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-surface-subtle text-slate-400 border border-border">
+                                Preview
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight mt-0.5 flex items-center gap-2">
+                            <span
+                              className="w-3.5 h-3.5 rounded-full inline-block shrink-0 shadow-sm"
+                              style={{ backgroundColor: winner.option.color }}
+                            />
+                            <span>{winner.option.name}</span>
+                          </h3>
+                          {winner.option.tagline && (
+                            <span className="text-xs text-slate-400 font-mono block mt-0.5">
+                              {winner.option.tagline}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-baseline gap-3 bg-surface p-3.5 rounded-xl border border-border shrink-0 self-start sm:self-auto">
+                        <div className="text-right">
+                          <div className="text-[10px] font-mono uppercase text-slate-400">Weighted Score</div>
+                          <div className="text-2xl sm:text-3xl font-extrabold font-mono text-white">
+                            {winner.weightedScore.toFixed(1)}
+                            <span className="text-xs font-normal text-slate-400 ml-1">/ 100</span>
+                          </div>
+                        </div>
+                        {runnerUp && explainability.pointLead > 0 && (
+                          <div className="pl-3 border-l border-border-subtle">
+                            <div className="text-[10px] font-mono uppercase text-signal">Margin Lead</div>
+                            <div className="text-sm font-bold font-mono text-signal">
+                              +{explainability.pointLead.toFixed(1)} pts
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Executive Headline & Plain-English Rationale */}
+                    <div className="space-y-2">
+                      <div className="text-base sm:text-lg font-bold text-white leading-snug">
+                        {explainability.headline}
+                      </div>
+                      <p className="text-xs sm:text-sm text-slate-300 leading-relaxed">
+                        {explainability.dynamicRationale}
+                      </p>
+                    </div>
+
+                    {/* Primary Drivers vs Conceded Areas (Honest Trade-off Explainability) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                      {/* Primary Drivers */}
+                      <div className="p-3.5 rounded-xl bg-surface/70 border border-border-subtle space-y-2.5">
+                        <div className="flex items-center gap-2 text-xs font-mono font-bold text-signal uppercase tracking-wider">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>Primary Drivers (Winning Advantages)</span>
+                        </div>
+                        {explainability.primaryDrivers && explainability.primaryDrivers.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {explainability.primaryDrivers.map((driver) => (
+                              <div
+                                key={driver.criterionId}
+                                className="flex items-center justify-between text-xs p-2 rounded-lg bg-surface border border-border-subtle"
+                              >
+                                <span className="text-white font-medium truncate pr-2">{driver.criterionName}</span>
+                                <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                                  <span className="text-slate-400">{driver.winnerScore} vs {driver.runnerUpScore}</span>
+                                  <span className="font-bold text-signal bg-signal/10 px-1.5 py-0.5 rounded border border-signal/20">
+                                    +{driver.pointAdvantage.toFixed(1)} pts
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 italic">
+                            Lead distributed evenly across criteria.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Conceded Areas */}
+                      <div className="p-3.5 rounded-xl bg-surface/70 border border-border-subtle space-y-2.5">
+                        <div className="flex items-center gap-2 text-xs font-mono font-bold text-amber-300 uppercase tracking-wider">
+                          <AlertCircle className="w-3.5 h-3.5" />
+                          <span>Conceded Areas (Honest Trade-offs)</span>
+                        </div>
+                        {explainability.concededAreas && explainability.concededAreas.length > 0 ? (
+                          <div className="space-y-1.5">
+                            {explainability.concededAreas.map((conceded) => (
+                              <div
+                                key={conceded.criterionId}
+                                className="flex items-center justify-between text-xs p-2 rounded-lg bg-surface border border-border-subtle"
+                              >
+                                <span className="text-white font-medium truncate pr-2">{conceded.criterionName}</span>
+                                <div className="flex items-center gap-2 font-mono text-[11px] shrink-0">
+                                  <span className="text-slate-400">{conceded.winnerScore} vs {conceded.runnerUpScore}</span>
+                                  <span className="font-bold text-accent-amber bg-accent-amber/10 px-1.5 py-0.5 rounded border border-accent-amber/20">
+                                    {conceded.pointAdvantage.toFixed(1)} pts
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="text-xs text-slate-400 italic">
+                            Winner outperformed challenger across all evaluated criteria.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Interactive Sensitivity Tipping Point */}
+                    {accessibleTipping && accessibleTipping.tippingPointWeight !== null && runnerUp && (
+                      <div className="p-4 rounded-xl bg-accent-amber/10 border border-accent-amber/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                        <div className="flex items-start gap-2.5">
+                          <Zap className="w-4 h-4 text-accent-amber shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold uppercase tracking-wider text-accent-amber block font-mono">
+                              Sensitivity Tipping Point Calculus
+                            </span>
+                            <p className="text-slate-200 mt-0.5">
+                              If <strong className="text-white">{accessibleTipping.criterionName}</strong> weight shifts from{' '}
+                              <span className="font-mono text-signal font-bold">{accessibleTipping.currentWeight}%</span> to{' '}
+                              <span className="font-mono text-accent-amber font-bold">{accessibleTipping.tippingPointWeight}%</span>,{' '}
+                              <strong className="text-white">{runnerUp.option.name}</strong> overturns the decision.
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => setCriterionWeight(accessibleTipping.criterionId, accessibleTipping.tippingPointWeight!)}
+                          className="shrink-0 px-3.5 py-2 rounded-lg bg-accent-amber/20 hover:bg-accent-amber/30 border border-accent-amber/40 text-amber-200 font-mono font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-[1.02]"
+                          title="Simulate weight adjustment to trigger outcome transition in real time"
+                        >
+                          <Zap className="w-3.5 h-3.5 text-amber-400" />
+                          <span>Simulate Flip</span>
+                          <ArrowRight className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Option Evaluations Table */}
                 <div className="space-y-3">
                   <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
@@ -933,72 +1194,91 @@ ${criteria
                   </div>
 
                   <div className="space-y-3">
-                    {engineResult.evaluations.map((item) => (
-                      <div
-                        key={item.option.id}
-                        className={`p-3.5 rounded-xl border transition-all ${
-                          item.rank === 1
-                            ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
-                            : 'bg-surface/50 border-border-subtle'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="flex items-center gap-2">
-                            <span
-                              className="w-2.5 h-2.5 rounded-full"
-                              style={{ backgroundColor: item.option.color }}
+                    {engineResult.evaluations.map((item) => {
+                      const isOptionWinner = item.rank === 1 && !engineResult.isIncomplete && !engineResult.isInvalid;
+
+                      return (
+                        <div
+                          key={item.option.id}
+                          className={`p-4 rounded-xl border transition-all ${
+                            isOptionWinner
+                              ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm ring-1 ring-signal/20'
+                              : 'bg-surface/50 border-border-subtle'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2.5">
+                              <span
+                                className="w-3 h-3 rounded-full shrink-0 shadow-sm"
+                                style={{ backgroundColor: item.option.color }}
+                              />
+                              <div>
+                                <span className="text-sm font-bold text-white">
+                                  {item.option.name}
+                                </span>
+                                {item.option.tagline && (
+                                  <span className="text-[11px] text-slate-400 font-mono block">
+                                    {item.option.tagline}
+                                  </span>
+                                )}
+                              </div>
+                              <span className={`text-[10px] font-mono px-2 py-0.5 rounded border font-semibold ml-1 ${
+                                isOptionWinner
+                                  ? 'bg-signal/20 text-signal border-signal/40'
+                                  : item.rank !== null
+                                    ? 'bg-surface border-border text-slate-300'
+                                    : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                              }`}>
+                                {item.rank !== null && item.rank !== undefined ? `Rank #${item.rank}` : 'Unranked · Pending Scores'}
+                              </span>
+                            </div>
+
+                            <div className="flex items-baseline gap-2 font-mono text-xs">
+                              {item.rank !== null && item.rank !== undefined ? (
+                                <>
+                                  <span className="font-bold text-white text-base">
+                                    {item.weightedScore.toFixed(1)}
+                                  </span>
+                                  <span className="text-slate-500">/ 100</span>
+                                  {!isOptionWinner && item.scoreDifferenceToLeader > 0 && (
+                                    <span className="text-[11px] font-semibold text-accent-amber ml-1">
+                                      (-{item.scoreDifferenceToLeader.toFixed(1)} pts)
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                <span className="text-amber-400 font-semibold text-xs">
+                                  Score Pending
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-3">
+                            <div
+                              className="h-full rounded-full transition-all duration-300"
+                              style={{
+                                width: `${item.rank !== null ? Math.min(100, item.weightedScore) : 0}%`,
+                                backgroundColor: isOptionWinner ? '#B8FF5A' : item.option.color,
+                              }}
                             />
-                            <span className="text-sm font-bold text-white">
-                              {item.option.name}
-                            </span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-surface border border-border text-slate-400">
-                              Rank #{item.rank}
-                            </span>
                           </div>
-                          <div className="flex items-center gap-1.5 font-mono text-xs">
-                            <span className="font-bold text-white text-base">
-                              {item.weightedScore}
-                            </span>
-                            <span className="text-slate-500">/100</span>
-                          </div>
+
+                          {/* Criterion breakdown mini-row */}
+                          {item.contributions && item.contributions.length > 0 && item.rank !== null && (
+                            <div className="pt-2 border-t border-border-subtle/50 flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] font-mono text-slate-400">
+                              {item.contributions.map((c) => (
+                                <span key={c.criterionId} className="flex items-center gap-1">
+                                  <span className="text-slate-400">{c.shortName || c.criterionName}:</span>
+                                  <span className="text-white font-semibold">{c.rawScore}</span>
+                                  <span className="text-slate-600 font-normal">({c.weightedPoints.toFixed(1)} pts)</span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
                         </div>
-
-                        <div className="w-full h-1.5 bg-background rounded-full overflow-hidden mb-2">
-                          <div
-                            className="h-full rounded-full transition-all duration-300"
-                            style={{
-                              width: `${item.weightedScore}%`,
-                              backgroundColor: item.rank === 1 ? '#B8FF5A' : item.option.color,
-                            }}
-                          />
-                        </div>
-
-                        <div className="text-[11px] text-slate-400 line-clamp-1">
-                          {item.option.tagline || item.option.description}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Explainability & Sensitivity Statements */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-3.5 rounded-xl bg-surface/70 border border-border text-xs text-slate-300">
-                    <span className="font-bold text-signal block mb-1">
-                      Explainability Rationale:
-                    </span>
-                    <p className="leading-relaxed">
-                      {engineResult.explainability.dynamicRationale}
-                    </p>
-                  </div>
-
-                  <div className="p-3.5 rounded-xl bg-surface/70 border border-border text-xs text-slate-300">
-                    <span className="font-bold text-sky-400 block mb-1">
-                      Sensitivity & Tipping-Point:
-                    </span>
-                    <p className="leading-relaxed">
-                      {engineResult.explainability.sensitivityStatement}
-                    </p>
+                      );
+                    })}
                   </div>
                 </div>
 
