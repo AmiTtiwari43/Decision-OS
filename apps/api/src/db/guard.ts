@@ -90,6 +90,7 @@ export function getTestRunId(): string {
 /**
  * Returns an isolated test database URI ensuring deterministic isolation
  * per run identifier and parallel worker identifier.
+ * Defaults to the replica set configuration required for transaction and fencing tests.
  */
 export function getTestDatabaseUri(
   baseUri?: string,
@@ -98,9 +99,10 @@ export function getTestDatabaseUri(
   const uri =
     baseUri ||
     process.env.TEST_MONGODB_URI ||
+    process.env.TEST_REPLICA_SET_URI ||
     (process.env.MONGODB_URI
       ? process.env.MONGODB_URI.replace(/\/([^/?#]+)(\?.*)?$/, '/decision_os_test$2')
-      : 'mongodb://127.0.0.1:27017/decision_os_test');
+      : 'mongodb://127.0.0.1:27018/decision_os_test?replicaSet=rs0&directConnection=true');
 
   const runId = options?.runId || process.env.TEST_RUN_ID;
   const workerId =
@@ -125,6 +127,16 @@ export function getTestDatabaseUri(
   }
 
   return uri;
+}
+
+/**
+ * Returns the URI for isolated standalone (single-instance) database testing.
+ */
+export function getStandaloneTestDatabaseUri(): string {
+  return (
+    process.env.TEST_STANDALONE_MONGODB_URI ||
+    'mongodb://127.0.0.1:27017/decision_os_standalone_test'
+  );
 }
 
 export type TestDatabaseLifecycleState =

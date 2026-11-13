@@ -190,15 +190,24 @@ Batch 02-R5.2 formally concludes Batch 02 with live, non-mocked verification of 
    - *Standalone Duplicate Retry*: Proved duplicate demo-fill retries on standalone MongoDB are idempotent no-ops that create zero journals and zero duplicate audit events.
    - *Disconnection Fail-Closed Guarantee*: Proved that database disconnection (`readyState !== 1`) strictly rejects operations before any partial or unjournaled mutations can occur.
    - *Test Harness URI Isolation*: Added `TEST_STANDALONE_MONGODB_URI` fallback to allow simultaneous execution of live standalone persistence tests on port 27017 alongside replica set tests on port 27018.
-3. **Master Verification Sign-Off**:
+3. **Reproducible Defect Remediations**:
+   - *Connection Topology / Port Switching Guard (`apps/api/src/db/connection.ts`)*: Fixed `connectToDatabase` to verify that an existing active connection matches the target URI's port and replica-set requirement before reusing it; previously, switching between standalone (port 27017) and replica set (port 27018) silently reused the standalone connection.
+   - *Audit CAS Sequence Validation & Non-Transient Constraint Guard (`apps/api/src/services/audit.service.ts`)*: Added optimistic validation ensuring requested `sequenceNumber` strictly exceeds current head sequence before write dispatch (`ConcurrencyFencingError`). Stripped `TransientTransactionError` label on E11000 duplicate key errors to prevent `session.withTransaction` from entering unbounded 30-second retry loops on deterministic unique constraint violations.
+   - *Test Database URI Resolution (`apps/api/src/db/guard.ts`)*: Added `getStandaloneTestDatabaseUri()` and deterministic fallback to replica set port 27018 for multi-document transaction and fencing test suites.
+4. **Master Verification Sign-Off**:
    - `replicaSetTransactionRollback.test.ts`: 5/5 passed.
    - `standaloneLiveRecovery.test.ts`: 14/14 passed.
    - `standaloneAuditRecovery.test.ts`: 11/11 passed.
    - `serverEnforcedSyntheticIntegrity.test.ts`: 22/22 passed.
    - `decisionRouteSyntheticDemo.test.ts`: 16/16 passed.
    - `batch4_r1_transactions.test.ts`: 10/10 passed.
-   - Frontend Batch 02 verification suites: 32/32 passed.
-   - Full regression across all workspaces: 0 typecheck errors, 0 lint errors, 419 total passed tests.
+   - `batch4_r4_audit.test.ts`: 11/11 passed.
+   - `syntheticProvenance.test.ts`: 10/10 passed.
+   - Total targeted audit & transaction API tests: 99/99 passed.
+   - Frontend Batch 02 & showcase suites: 243/243 passed across 23 test files.
+   - Decision Engine canonical suite: 98/98 passed across 12 test files.
+   - Independent lifecycle audit (`scripts/independent_audit_lifecycle.ts`): 15/15 passed.
+   - Static analysis: 0 typecheck errors, 0 lint warnings/errors across all workspaces.
 
 ---
 

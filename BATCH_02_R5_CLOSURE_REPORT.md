@@ -34,7 +34,10 @@ Batch 02-R5 is formally closed. This verification confirms that:
 | **9. Version Desynchronization Quarantine** | Version mismatches mark journal `UNRECOVERABLE` and decision `quarantined`. | `standaloneLiveRecovery.test.ts` (Section 5.2) | **PASS** |
 | **10. Transient Reconciliation Recovery** | Network error during reconciliation audit write leaves decision safely in `pending_reconciliation`; subsequent pass completes recovery. | `standaloneLiveRecovery.test.ts` (Scenario 9.1) | **PASS** |
 | **11. Self-Healing Access Paths** | `getDecision` and `analyzeDecision` trigger `reconcileStandaloneAudit` on access if `pending_reconciliation`. | `decisionRouteSyntheticDemo.test.ts`<br>`standaloneLiveRecovery.test.ts` | **PASS** |
-| **12. Cryptographic Hash-Chain Integrity** | Unbroken SHA-256 chaining (`previousEventHash` $\to$ `eventHash`) verified across multi-step mutations on live MongoDB. | `standaloneLiveRecovery.test.ts` (Section 8) | **PASS** |
+| **12. Cryptographic Hash-Chain Integrity** | Unbroken SHA-256 chaining (`previousEventHash` $\to$ `eventHash`) verified across multi-step mutations on live MongoDB. | `standaloneLiveRecovery.test.ts` (Section 8)<br>`batch4_r4_audit.test.ts` | **PASS** |
+| **13. Topology/Port Connection Guard** | `connectToDatabase` verifies active connection port/topology matches target URI before reuse; safely reconnects when switching between standalone (27017) and replica set (27018). | `apps/api/src/db/connection.ts`<br>`batch4_r1_transactions.test.ts` | **PASS** |
+| **14. Audit Pre-Write CAS Validation** | `auditService.recordEvent` validates `sequenceNumber > currentSequence` prior to insertion, immediately throwing `ConcurrencyFencingError`. | `apps/api/src/services/audit.service.ts`<br>`batch4_r4_audit.test.ts` (Test 3) | **PASS** |
+| **15. Non-Transient Unique Key Guard** | Strips `TransientTransactionError` from E11000 errors to prevent `session.withTransaction` retry spin on deterministic constraint failures. | `apps/api/src/services/audit.service.ts`<br>`batch4_r4_audit.test.ts` (Test 3) | **PASS** |
 
 ---
 
@@ -44,16 +47,18 @@ Batch 02-R5 is formally closed. This verification confirms that:
 ```
  RUN  v4.1.12 apps/api
 
- ✓ tests/batch4_r1_transactions.test.ts (10 tests) 2291ms
- ✓ tests/standaloneLiveRecovery.test.ts (14 tests) 3711ms
- ✓ tests/replicaSetTransactionRollback.test.ts (5 tests) 4270ms
- ✓ tests/serverEnforcedSyntheticIntegrity.test.ts (22 tests) 90ms
- ✓ tests/standaloneAuditRecovery.test.ts (11 tests) 61ms
- ✓ tests/decisionRouteSyntheticDemo.test.ts (16 tests) 844ms
+ ✓ tests/batch4_r4_audit.test.ts (11 tests) 1388ms
+ ✓ tests/replicaSetTransactionRollback.test.ts (5 tests) 2269ms
+ ✓ tests/standaloneLiveRecovery.test.ts (14 tests) 1762ms
+ ✓ tests/decisionRouteSyntheticDemo.test.ts (16 tests) 591ms
+ ✓ tests/batch4_r1_transactions.test.ts (10 tests) 563ms
+ ✓ tests/serverEnforcedSyntheticIntegrity.test.ts (22 tests) 48ms
+ ✓ tests/standaloneAuditRecovery.test.ts (11 tests) 44ms
+ ✓ tests/syntheticProvenance.test.ts (10 tests) 16ms
 
- Test Files  6 passed (6)
-      Tests  78 passed (78)
-   Duration  15.26s
+ Test Files  8 passed (8)
+      Tests  99 passed (99)
+   Duration  24.08s
 ```
 
 ### 3.2 Decision Engine Canonical Suite (packages/decision-engine)
@@ -91,6 +96,28 @@ Batch 02-R5 is formally closed. This verification confirms that:
 ### 3.4 Quality Gates (Static Analysis & Type Safety)
 - **TypeScript Typecheck**: `npm run typecheck` $\to$ 0 errors across all 3 workspaces (`@decision-os/api`, `@decision-os/web`, `@decision-os/decision-engine`).
 - **Oxlint**: `npm run lint` $\to$ 0 errors across all workspaces.
+
+### 3.5 Independent Lifecycle Audit Suite (`scripts/independent_audit_lifecycle.ts`)
+```
+--- AUDIT RESULTS SUMMARY ---
+[PASS] 1. Registration
+[PASS] 2. Valid login
+[PASS] 3. Invalid login
+[PASS] 4. Browser refresh with valid token
+[PASS] 5. Browser refresh after logout & Token Lifecycle Check
+[PASS] 6. Expired token
+[PASS] 7. Tampered token
+[PASS] 8. Missing token
+[PASS] 9. Concurrent API requests (valid token)
+[PASS] 10. Protected route access enforcement
+[PASS] 11. REMEDIATED F-01: Network failure during session restoration
+[PASS] 12. REMEDIATED F-01: Backend 503 unavailable during restoration
+[PASS] 13. REMEDIATED F-01: HTTP 401 Unauthorized purges token
+[PASS] 14. REMEDIATED F-02: Production JWT_SECRET enforcement
+[PASS] 15. Concurrent 401 handling & Idempotence
+
+OVERALL VERDICT: ALL LIFECYCLE TESTS PASS (15/15)
+```
 
 ---
 

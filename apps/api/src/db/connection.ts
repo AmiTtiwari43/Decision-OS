@@ -83,12 +83,23 @@ export async function connectToDatabase(
   uri: string,
   options?: DatabaseConnectionOptions
 ): Promise<Connection> {
-  // If already connected, reuse existing connection
+  // If already connected, verify it matches target URI topology/port before reusing
   if (mongoose.connection.readyState === 1) {
-    if (options?.requireReplicaSet) {
-      assertReplicaSetSupported();
+    const currentPort = mongoose.connection.port;
+    const isPortMismatch =
+      (uri.includes(':27018') && currentPort !== 27018) ||
+      (uri.includes(':27017') && currentPort !== 27017);
+    const isReplicaSetMismatch =
+      (options?.requireReplicaSet || uri.includes('replicaSet')) && !isReplicaSetSupported();
+
+    if (isPortMismatch || isReplicaSetMismatch) {
+      await disconnectFromDatabase();
+    } else {
+      if (options?.requireReplicaSet) {
+        assertReplicaSetSupported();
+      }
+      return mongoose.connection;
     }
-    return mongoose.connection;
   }
 
   // If currently in the process of connecting, wait for completion

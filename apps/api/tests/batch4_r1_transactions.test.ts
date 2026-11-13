@@ -7,7 +7,7 @@ import {
   isReplicaSetSupported,
   assertReplicaSetSupported,
 } from '../src/db/connection.js';
-import { getTestDatabaseUri, assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase } from '../src/db/guard.js';
 import {
   DecisionModel,
   AuditEventModel,
@@ -20,7 +20,11 @@ import { resolveQuarantine } from '../src/services/decision.service.js';
 import { contributionService } from '../src/services/contribution.service.js';
 import { auditService } from '../src/services/audit.service.js';
 
-const REPLICA_SET_URI = getTestDatabaseUri();
+const REPLICA_SET_URI =
+  process.env.TEST_REPLICA_SET_URI ||
+  (process.env.TEST_MONGODB_URI?.includes('replicaSet')
+    ? process.env.TEST_MONGODB_URI
+    : 'mongodb://127.0.0.1:27018/decision_os_rs_transactions_test?replicaSet=rs0&directConnection=true');
 assertTestDatabase(REPLICA_SET_URI);
 
 const STANDALONE_URI = 'mongodb://127.0.0.1:27017/decision_os_standalone_test';

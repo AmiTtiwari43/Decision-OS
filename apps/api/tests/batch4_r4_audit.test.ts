@@ -7,7 +7,7 @@ import {
   runInTransaction,
   assertReplicaSetSupported,
 } from '../src/db/connection.js';
-import { getTestDatabaseUri, assertTestDatabase } from '../src/db/guard.js';
+import { assertTestDatabase } from '../src/db/guard.js';
 import {
   DecisionModel,
   OperationJournalModel,
@@ -21,7 +21,11 @@ import {
 } from '../src/services/recoveryWorker.service.js';
 import { ConcurrencyFencingError } from '../src/errors/domain.errors.js';
 
-const TEST_MONGODB_URI = getTestDatabaseUri();
+const TEST_MONGODB_URI =
+  process.env.TEST_REPLICA_SET_URI ||
+  (process.env.TEST_MONGODB_URI?.includes('replicaSet')
+    ? process.env.TEST_MONGODB_URI
+    : 'mongodb://127.0.0.1:27018/decision_os_rs_audit_test?replicaSet=rs0&directConnection=true');
 assertTestDatabase(TEST_MONGODB_URI);
 
 const ownerId = new mongoose.Types.ObjectId().toString();

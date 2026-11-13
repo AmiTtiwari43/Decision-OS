@@ -195,6 +195,12 @@ export class AuditService {
           }
         }
 
+        if (input.sequenceNumber !== undefined && input.sequenceNumber <= currentSequence) {
+          throw new ConcurrencyFencingError(
+            `Audit sequence number conflict on decision ${decisionId}: requested sequence ${input.sequenceNumber} <= current head sequence ${currentSequence}`
+          );
+        }
+
         const sequenceNumber = input.sequenceNumber || currentSequence + 1;
         const nowMs = Date.now();
         const eventTimestamp =
@@ -296,6 +302,14 @@ export class AuditService {
           if (attempt < maxAttempts - 1) {
             await new Promise((res) => setTimeout(res, 10 * (attempt + 1)));
             continue;
+          }
+          if (session && typeof err === 'object' && err !== null && 'errorLabels' in err) {
+            const labels = (err as { errorLabels?: string[] }).errorLabels;
+            if (Array.isArray(labels)) {
+              (err as { errorLabels: string[] }).errorLabels = labels.filter(
+                (l) => l !== 'TransientTransactionError'
+              );
+            }
           }
         }
         throw err;
