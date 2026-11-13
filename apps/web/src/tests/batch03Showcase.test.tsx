@@ -45,6 +45,15 @@ describe('Batch 03: Collaboration, AI Advisory & Cryptographic Audit Showcase Su
       expect(html).toContain('AI Advisory Analyst');
       expect(html).toContain('Cryptographic Audit Chain');
     });
+
+    it('articulates the advisory-versus-authoritative Rule #14 guarantee in the AI pillar', () => {
+      const html = renderToString(React.createElement(ShowcaseSection, { defaultTab: 'ai' }));
+
+      expect(html).toContain('Rule #14 Guarantee');
+      expect(html).toContain('No LLM ever calculates or alters authoritative scores, weights, or sensitivity points.');
+      expect(html).toContain('Explainable Advisory Recommendation Ranking (MDAR v1)');
+      expect(html).toContain('RANK #1');
+    });
   });
 
   describe('DeliberationModal Component', () => {

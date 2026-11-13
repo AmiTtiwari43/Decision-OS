@@ -22,7 +22,7 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
     vi.restoreAllMocks();
   });
 
-  it('1. executes AI analysis request and parses structured advisory output', async () => {
+  it('1. executes AI analysis request and parses structured advisory output with ranked suggestions', async () => {
     const mockResponse: AiAnalystResponseDto = {
       decisionId,
       analysisType: 'all',
@@ -37,6 +37,14 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
           winnerObservation: 'AWS leads in overall weighted utility.',
           keyTradeoffs: ['Performance vs Cost trade-offs'],
           sensitivityNotes: ['Moderate tipping points'],
+          risks: [
+            {
+              risk: 'Egress Network Surcharge Volatility',
+              severity: 'high',
+              mitigation: 'Implement regional peering',
+              affectedOptionIds: ['aws', 'gcp'],
+            },
+          ],
         },
         evidenceGaps: [
           {
@@ -65,6 +73,60 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
             rationale: 'Crucial for enterprise compliance',
           },
         ],
+        suggestedAlternatives: [
+          {
+            id: 'hybrid-cloud',
+            name: 'Hybrid Multi-Cloud Architecture',
+            description: 'Deploy stateless core across both clouds',
+            rationale: 'Prevents single vendor lock-in',
+            tradeoffs: 'Higher networking overhead',
+            potentialAdvantages: ['Zero lock-in'],
+            potentialDisadvantages: ['Egress fees'],
+          },
+        ],
+        expertRecommendations: [
+          {
+            domain: 'Cloud Security & Compliance',
+            role: 'contributor',
+            rationale: 'Audit key management and IAM federation',
+            targetCriteria: ['security'],
+            expectedContribution: 'Score validation on SOC2',
+          },
+        ],
+        rankedSuggestions: [
+          {
+            id: 'criterion-security',
+            rank: 1,
+            category: 'criterion',
+            title: 'Proposed Criterion: Security Compliance',
+            explanation: 'Incorporate FedRAMP and SOC2 certifications',
+            relevantCriteria: [{ id: 'security', name: 'Security Compliance' }],
+            supportingEvidence: [{ id: 'ev-1', title: 'SOC2 Whitepaper' }],
+            confidence: 0.85,
+            uncertaintyLevel: 'low',
+            rankingScore: 82.5,
+            rankingMethodology: 'MDAR v1',
+            scoreBreakdown: {
+              criteriaRelevance: 75,
+              evidenceGrounding: 80,
+              sensitivityUrgency: 90,
+              confidenceScore: 85,
+              penalties: 5,
+              formula: '0.35*Rel + 0.25*Ev + 0.25*Sens + 0.15*Conf - Pen',
+            },
+            missingInformation: ['Audit report on key rotation'],
+            potentialBiasOrLimitations: ['Adds evaluation overhead'],
+            whyThisRank: 'Ranked #1 due to critical sensitivity tipping point and high weight relevance.',
+            criteriaInfluence: 'Directly influences security and compliance scoring.',
+            evidenceSupport: 'Backed by verified SOC2 whitepaper.',
+            assumptionsMade: ['Assumes enterprise regulatory mandate'],
+            whatCouldChangeRecommendation: 'If client waives FedRAMP requirements',
+            actionablePayload: {
+              type: 'add_criterion',
+              criterion: { id: 'security', name: 'Security Compliance', weight: 20 },
+            },
+          },
+        ],
       },
     };
 
@@ -83,6 +145,12 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
     expect(res.output.executiveSummary).toContain('AWS vs GCP');
     expect(res.output.suggestedCriteria).toHaveLength(1);
     expect(res.output.suggestedCriteria[0].id).toBe('security');
+    expect(res.output.suggestedAlternatives).toHaveLength(1);
+    expect(res.output.suggestedAlternatives![0].id).toBe('hybrid-cloud');
+    expect(res.output.rankedSuggestions).toHaveLength(1);
+    expect(res.output.rankedSuggestions![0].rank).toBe(1);
+    expect(res.output.rankedSuggestions![0].rankingScore).toBe(82.5);
+    expect(res.output.rankedSuggestions![0].whyThisRank).toContain('Ranked #1');
   });
 
   it('2. explicitly applies an advisory criterion proposal to a decision', async () => {
@@ -129,7 +197,51 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
     expect(updated.analysis).toBeNull();
   });
 
-  it('3. handles provider service unavailable (503) error cleanly', async () => {
+  it('3. explicitly applies an advisory alternative option proposal to a decision', async () => {
+    const payload: ApplyProposalPayload = {
+      type: 'add_option',
+      option: {
+        id: 'hybrid-cloud',
+        name: 'Hybrid Multi-Cloud Architecture',
+        description: 'Stateless multi-cloud deployment',
+      },
+    };
+
+    const mockUpdatedDecision: DecisionDto = {
+      _id: decisionId,
+      title: 'Cloud Migration',
+      description: 'Evaluate compute options',
+      criteria: [{ id: 'cost', name: 'Cost', weight: 40, direction: 'benefit' }],
+      options: [
+        { id: 'aws', name: 'AWS' },
+        { id: 'hybrid-cloud', name: 'Hybrid Multi-Cloud Architecture' },
+      ],
+      scores: { aws: { cost: 80 } },
+      analysis: null,
+      calculationVersion: 2,
+      createdAt: '2026-10-30T00:00:00.000Z',
+      updatedAt: '2026-10-30T00:01:00.000Z',
+    };
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => mockUpdatedDecision,
+    });
+
+    const updated = await client.applyAiProposal(decisionId, payload);
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const callArgs = (globalThis.fetch as any).mock.calls[0];
+    expect(callArgs[0]).toContain(`/api/decisions/${decisionId}/ai/proposals/apply`);
+    expect(callArgs[1].method).toBe('POST');
+    expect(updated.options.some(o => o.id === 'hybrid-cloud')).toBe(true);
+    // Stale analysis policy: Adding an option resets authoritative analysis
+    expect(updated.analysis).toBeNull();
+  });
+
+  it('4. handles provider service unavailable (503) error cleanly', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 503,
@@ -145,7 +257,7 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
     await expect(client.runAiAnalysis(decisionId)).rejects.toThrow(/AI Analyst service is currently offline/);
   });
 
-  it('4. handles provider timeout (504) error cleanly', async () => {
+  it('5. handles provider timeout (504) error cleanly', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 504,
@@ -161,7 +273,7 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
     await expect(client.runAiAnalysis(decisionId)).rejects.toThrow(/timed out/);
   });
 
-  it('5. handles validation error (400) on duplicate proposal adoption', async () => {
+  it('6. handles validation error (400) on duplicate proposal adoption', async () => {
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: false,
       status: 400,
@@ -170,16 +282,15 @@ describe('Decision OS — Frontend AI Analyst Integration Tests', () => {
       json: async () => ({
         statusCode: 400,
         error: 'Bad Request',
-        message: "A criterion with id 'cost' already exists in this decision.",
+        message: "An option with id 'aws' already exists in this decision.",
       }),
     });
 
     await expect(
       client.applyAiProposal(decisionId, {
-        type: 'add_criterion',
-        criterion: { id: 'cost', name: 'Cost', weight: 20 },
+        type: 'add_option',
+        option: { id: 'aws', name: 'AWS' },
       })
     ).rejects.toThrow(/already exists/);
   });
 });
-

@@ -19,13 +19,14 @@ import type {
   ApplyProposalPayload,
 } from '../../models/ai.types.js';
 import type { DecisionDocument } from '../../models/index.js';
+import { suggestionRankingService } from './suggestion-ranking.service.js';
 import { env } from '../../config/env.js';
 
 export class AiService {
   /**
    * Executes structured, evidence-aware advisory AI analysis for a decision.
    * Enforces caller read authorization, contextual scoping, prompt injection defense,
-   * schema validation with bounded retries, and numerical consistency verification.
+   * schema validation with bounded retries, and deterministic explainable suggestion ranking.
    */
   async analyzeDecision(
     decisionId: string,
@@ -130,6 +131,17 @@ Please correct the response and return strictly valid JSON matching the schema.`
     // 5. Numerical verification pass: Verify claims against authoritative stored analysis
     this.verifyAuthoritativeFidelity(validatedOutput, decision);
 
+    // 6. Deterministic Suggestion Ranking & Explainability Pass
+    // The canonical MCDA engine remains the sole mathematical authority.
+    // The suggestion ranker orders advisory proposals deterministically without black-box math.
+    const rankedSuggestions = suggestionRankingService.rankSuggestions({
+      decision,
+      evidence: evidenceList,
+      contributions: visibleContributions,
+      output: validatedOutput,
+    });
+    validatedOutput.rankedSuggestions = rankedSuggestions;
+
     const responseDto: AiAnalystResponseDto = {
       decisionId: decision._id.toString(),
       analysisType: capability,
@@ -155,7 +167,7 @@ Please correct the response and return strictly valid JSON matching the schema.`
   }
 
   /**
-   * Applies an advisory AI proposal (e.g. adding a suggested criterion) to a decision.
+   * Applies an advisory AI proposal (e.g. adding a suggested criterion or alternative option) to a decision.
    * Requires explicit human action by an authorized decision owner or editor.
    */
   async applyProposal(
@@ -210,6 +222,45 @@ Please correct the response and return strictly valid JSON matching the schema.`
         entityType: 'criterion',
         entityId: id,
         summary: `Applied AI suggested criterion "${name}" (weight: ${weight})`,
+      });
+
+      return updated;
+    }
+
+    if (payload.type === 'add_option') {
+      const { id, name, description, tagline } = payload.option;
+
+      // Verify no duplicate option ID
+      const existing = decision.options.find(o => o.id.toLowerCase() === id.toLowerCase());
+      if (existing) {
+        throw new InvalidEvidenceTargetError(`An option with id '${id}' already exists in this decision.`);
+      }
+
+      decision.options.push({
+        id,
+        name,
+        description: description || '',
+        tagline: tagline || '',
+      });
+
+      // Stale analysis policy: adding an option leaves score matrix incomplete for that option,
+      // so authoritative analysis is cleared
+      const updated = await decisionRepository.update(decisionId, {
+        options: decision.options,
+        analysis: null,
+      });
+
+      if (!updated) {
+        throw new DecisionNotFoundError(decisionId);
+      }
+
+      await auditService.recordEvent({
+        decisionId,
+        actor: requester,
+        action: 'ai.proposal_applied',
+        entityType: 'option',
+        entityId: id,
+        summary: `Applied AI suggested alternative option "${name}"`,
       });
 
       return updated;
@@ -271,7 +322,15 @@ NON-NEGOTIABLE ARCHITECTURAL & SECURITY RULES:
   "tradeoffAnalysis": {
     "winnerObservation": "string (optional)",
     "keyTradeoffs": ["string"],
-    "sensitivityNotes": ["string"]
+    "sensitivityNotes": ["string"],
+    "risks": [
+      {
+        "risk": "string",
+        "severity": "low" | "medium" | "high" | "critical",
+        "mitigation": "string",
+        "affectedOptionIds": ["string"]
+      }
+    ]
   },
   "evidenceGaps": [
     {
@@ -298,6 +357,26 @@ NON-NEGOTIABLE ARCHITECTURAL & SECURITY RULES:
       "suggestedWeight": number,
       "direction": "benefit" | "cost",
       "rationale": "string"
+    }
+  ],
+  "suggestedAlternatives": [
+    {
+      "id": "string",
+      "name": "string",
+      "description": "string",
+      "rationale": "string",
+      "tradeoffs": "string",
+      "potentialAdvantages": ["string"],
+      "potentialDisadvantages": ["string"]
+    }
+  ],
+  "expertRecommendations": [
+    {
+      "domain": "string",
+      "role": "contributor" | "editor",
+      "rationale": "string",
+      "targetCriteria": ["string"],
+      "expectedContribution": "string"
     }
   ]
 }`;
@@ -329,13 +408,19 @@ NON-NEGOTIABLE ARCHITECTURAL & SECURITY RULES:
   }): string {
     const { decision, winnerId, winnerName, runnerUpName, isTie, contributions, evidence, capability } = params;
 
-    const criteriaList = decision.criteria
-      .map(c => `  - ID: ${c.id}, Name: "${c.name}", Weight: ${c.weight}%, Direction: ${c.direction}, Locked: ${c.isLocked}`)
-      .join('\n');
+    const criteriaList =
+      decision.criteria && decision.criteria.length > 0
+        ? decision.criteria
+            .map(c => `  - ID: ${c.id}, Name: "${c.name}", Weight: ${c.weight}%, Direction: ${c.direction}, Locked: ${c.isLocked}`)
+            .join('\n')
+        : '  None defined yet.';
 
-    const optionsList = decision.options
-      .map(o => `  - ID: ${o.id}, Name: "${o.name}", Tagline: "${o.tagline || ''}"`)
-      .join('\n');
+    const optionsList =
+      decision.options && decision.options.length > 0
+        ? decision.options
+            .map(o => `  - ID: ${o.id}, Name: "${o.name}", Tagline: "${o.tagline || ''}"`)
+            .join('\n')
+        : '  None defined yet.';
 
     const engineAnalysis = decision.analysis
       ? `  - Winner ID: <winner_id>${winnerId}</winner_id>
@@ -348,23 +433,31 @@ NON-NEGOTIABLE ARCHITECTURAL & SECURITY RULES:
   - Sensitivity Tipping Points: ${JSON.stringify(decision.analysis.sensitivity ?? [])}`
       : `  - No complete authoritative calculation yet (scores matrix incomplete).`;
 
-    const contributionsText = contributions.length > 0
-      ? contributions.map((c, i) =>
-          `  Contribution #${i + 1} (${c.status}): PreferredOption: "${c.recommendation?.preferredOptionId || 'none'}", Confidence: ${c.confidence ?? 'none'}, Rationale: "${c.recommendation?.rationale || 'none'}"`
-        ).join('\n')
-      : '  None';
+    const contributionsText =
+      contributions && contributions.length > 0
+        ? contributions
+            .map(
+              (c, i) =>
+                `  Contribution #${i + 1} (${c.status}): PreferredOption: "${c.recommendation?.preferredOptionId || 'none'}", Confidence: ${c.confidence ?? 'none'}, Rationale: "${c.recommendation?.rationale || 'none'}"`
+            )
+            .join('\n')
+        : '  None';
 
-    const evidenceText = evidence.length > 0
-      ? evidence.map((e, i) =>
-          `  Evidence #${i + 1}: Target: ${e.targetType}:${e.targetId}, Title: "${e.title}", Excerpt: "${e.sourceExcerpt || 'none'}", Summary: "${e.userSummary || 'none'}"`
-        ).join('\n')
-      : '  None';
+    const evidenceText =
+      evidence && evidence.length > 0
+        ? evidence
+            .map(
+              (e, i) =>
+                `  Evidence #${i + 1}: Target: ${e.targetType}:${e.targetId}, Title: "${e.title || 'Untitled'}", Excerpt: "${e.sourceExcerpt || 'none'}", Summary: "${e.userSummary || 'none'}"`
+            )
+            .join('\n')
+        : '  None';
 
     return `Requested Capability: ${capability}
 
 <untrusted_context_data>
 <decision>
-  <decision_title>${decision.title}</decision_title>
+  <decision_title>${decision.title || 'Untitled Decision'}</decision_title>
   <decision_description>${decision.description || 'No description provided.'}</decision_description>
 </decision>
 
@@ -389,7 +482,7 @@ ${evidenceText}
 </evidence_items>
 </untrusted_context_data>
 
-Analyze the decision above under the requested capability "${capability}". Provide thorough, evidence-aware advisory findings. Return strictly valid JSON conforming to the requested schema.`;
+Analyze the decision above under the requested capability "${capability}". Provide thorough, evidence-aware advisory findings including risks, alternatives, and expert input recommendations. Return strictly valid JSON conforming to the requested schema.`;
   }
 
   /**

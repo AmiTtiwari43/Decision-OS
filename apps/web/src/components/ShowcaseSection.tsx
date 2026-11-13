@@ -18,19 +18,22 @@ import {
   FileText,
   Activity,
   Check,
+  Award,
 } from 'lucide-react';
 import { sound } from '../utils/audioFx.js';
 
 export interface ShowcaseSectionProps {
   onOpenStudio?: () => void;
   onOpenAudit?: () => void;
+  defaultTab?: 'collaboration' | 'ai' | 'audit';
 }
 
 export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
   onOpenStudio,
   onOpenAudit,
+  defaultTab = 'collaboration',
 }) => {
-  const [activeTab, setActiveTab] = useState<'collaboration' | 'ai' | 'audit'>('collaboration');
+  const [activeTab, setActiveTab] = useState<'collaboration' | 'ai' | 'audit'>(defaultTab);
 
   // Collaboration State
   const [selectedPersona, setSelectedPersona] = useState<'cto' | 'cfo' | 'cpo'>('cto');
@@ -387,6 +390,61 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
                   </p>
                   <div className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-lg">
                     Feasibility: Low Threshold (+10.0% required)
+                  </div>
+                </div>
+              </div>
+
+              {/* Explainable Recommendation Ranking Showcase (MDAR v1) */}
+              <div className="p-5 rounded-2xl bg-surface border border-purple-500/20 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-purple-300">
+                    <Award className="w-4 h-4 text-purple-400" />
+                    <span>Explainable Advisory Recommendation Ranking (MDAR v1)</span>
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">
+                    Deterministic Multi-Factor Prioritization • Non-Probabilistic
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  {/* Rank #1 Card */}
+                  <div className="p-4 rounded-xl bg-surface-card border border-border space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 font-bold font-mono text-[11px]">
+                          RANK #1
+                        </span>
+                        <span className="font-semibold text-white">Proposed Criterion: Security Compliance</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-cyan-400 font-bold">84.5 / 100</span>
+                    </div>
+                    <p className="text-slate-300 leading-relaxed text-[11px]">
+                      Incorporate FedRAMP and SOC2 Type II certifications to mitigate enterprise regulatory exposure.
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-surface border border-border text-[11px] space-y-1 text-slate-400">
+                      <div><strong className="text-slate-300">Why this rank:</strong> Targets high-sensitivity tipping point (+10.0% weight change flips outcome) with verified evidence citations.</div>
+                      <div><strong className="text-slate-300">Human Authority Boundary:</strong> Requires explicit owner adoption before entering decision model.</div>
+                    </div>
+                  </div>
+
+                  {/* Rank #2 Card */}
+                  <div className="p-4 rounded-xl bg-surface-card border border-border space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-bold font-mono text-[11px]">
+                          RANK #2
+                        </span>
+                        <span className="font-semibold text-white">Alternative Option: Hybrid Multi-Cloud</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-indigo-400 font-bold">78.0 / 100</span>
+                    </div>
+                    <p className="text-slate-300 leading-relaxed text-[11px]">
+                      Deploy core stateless workloads across both providers to prevent single-vendor lock-in.
+                    </p>
+                    <div className="p-2.5 rounded-lg bg-surface border border-border text-[11px] space-y-1 text-slate-400">
+                      <div><strong className="text-slate-300">Why this rank:</strong> High strategic utility with identified trade-off in cross-region egress networking costs.</div>
+                      <div><strong className="text-slate-300">Missing Information:</strong> Benchmark egress pricing under multi-region failover spike load.</div>
+                    </div>
                   </div>
                 </div>
               </div>

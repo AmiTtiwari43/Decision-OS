@@ -48,6 +48,9 @@ export class MockAIProvider implements AIProvider {
       };
     }
 
+    const isEmptySuggestions = prompt.includes('__TEST_TRIGGER_EMPTY_SUGGESTIONS__');
+    const isDuplicateSuggestions = prompt.includes('__TEST_TRIGGER_DUPLICATE_SUGGESTIONS__');
+
     // Extract basic contextual hints from prompt
     const titleMatch = prompt.match(/<decision_title>([\s\S]*?)<\/decision_title>/) || prompt.match(/"title":\s*"([^"]+)"/);
     const decisionTitle = titleMatch ? titleMatch[1].trim() : 'Decision Evaluation';
@@ -66,6 +69,89 @@ export class MockAIProvider implements AIProvider {
 
     const isInjectionTest = prompt.includes('__TEST_TRIGGER_INJECTION__') || prompt.includes('IGNORE ALL PREVIOUS INSTRUCTIONS');
 
+    const suggestedCriteria = isEmptySuggestions
+      ? []
+      : [
+          {
+            id: 'compliance',
+            name: 'Regulatory & Security Compliance',
+            description: 'Evaluates adherence to industry standards, security certifications, and compliance mandates.',
+            suggestedWeight: 15,
+            direction: 'benefit',
+            rationale: 'Mitigates regulatory exposure and verifies enterprise security standards.',
+          },
+          ...(isDuplicateSuggestions
+            ? [
+                {
+                  id: 'compliance',
+                  name: 'Regulatory & Security Compliance',
+                  description: 'Duplicate compliance proposal to test deduplication.',
+                  suggestedWeight: 15,
+                  direction: 'benefit',
+                  rationale: 'Duplicate compliance rationale.',
+                },
+              ]
+            : []),
+        ];
+
+    const suggestedAlternatives = isEmptySuggestions
+      ? []
+      : [
+          {
+            id: 'hybrid-cloud',
+            name: 'Hybrid Multi-Cloud Architecture',
+            description: 'Deploy core stateless workloads across both clouds with centralized governance.',
+            rationale: 'Avoids total single-vendor lock-in while leveraging best-of-breed specialized managed services.',
+            tradeoffs: 'Increases cross-cloud networking overhead and operational tooling complexity.',
+            potentialAdvantages: ['Zero vendor lock-in', 'Workload placement optimization by cost'],
+            potentialDisadvantages: ['Egress data transfer costs', 'Dual-stack skill requirements'],
+          },
+        ];
+
+    const expertRecommendations = isEmptySuggestions
+      ? []
+      : [
+          {
+            domain: 'Cloud Security & Compliance',
+            role: 'contributor' as const,
+            rationale: 'Validate SOC2 Type II, FedRAMP, and data sovereignty compliance postures.',
+            targetCriteria: ['compliance', 'perf'],
+            expectedContribution: 'Score validation on cryptographic isolation and enterprise key management.',
+          },
+          {
+            domain: 'FinOps & Cloud Economics',
+            role: 'contributor' as const,
+            rationale: 'Audit reserved instance commitments and data egress pricing tiers.',
+            targetCriteria: ['cost'],
+            expectedContribution: 'Independent 3-year TCO sensitivity assessment under spike loads.',
+          },
+        ];
+
+    const risks = isEmptySuggestions
+      ? []
+      : [
+          {
+            risk: 'Cross-Region Data Egress Surcharges',
+            severity: 'high' as const,
+            mitigation: 'Implement local edge caching and VPC direct connect interconnects to cap variable transfer fees.',
+            affectedOptionIds: ['aws', 'gcp'],
+          },
+        ];
+
+    const evidenceGaps = isEmptySuggestions
+      ? []
+      : [
+          {
+            targetType: 'decision' as const,
+            targetId: 'root',
+            targetName: decisionTitle,
+            gapDescription: hasEvidence
+              ? 'Certain secondary criteria rely on qualitative assertions rather than empirical benchmarks.'
+              : 'Decision currently has zero attached empirical evidence or published citations.',
+            recommendation: 'Attach benchmark whitepapers, third-party audits, or empirical test results to substantiate critical scoring assumptions.',
+          },
+        ];
+
     const output = {
       executiveSummary: `Advisory analysis for "${decisionTitle}". The decision evaluates competing alternatives using multi-criteria utility weighting. Authoritative backend engine results indicate that ${winnerName} holds the highest overall rank under current normalized weights.${isInjectionTest ? ' [Note: Untrusted context text contained prompt override attempts which were safely quarantined.]' : ''}`,
       tradeoffAnalysis: {
@@ -78,18 +164,9 @@ export class MockAIProvider implements AIProvider {
           'Sensitivity tipping-point calculations indicate that moderate adjustments in unlocked weights could alter the final ranking.',
           'Monte Carlo win probabilities show the stability of the current winner under simulated score uncertainties.',
         ],
+        risks,
       },
-      evidenceGaps: [
-        {
-          targetType: 'decision',
-          targetId: 'root',
-          targetName: decisionTitle,
-          gapDescription: hasEvidence
-            ? 'Certain secondary criteria rely on qualitative assertions rather than empirical benchmarks.'
-            : 'Decision currently has zero attached empirical evidence or published citations.',
-          recommendation: 'Attach benchmark whitepapers, third-party audits, or empirical test results to substantiate critical scoring assumptions.',
-        },
-      ],
+      evidenceGaps,
       expertSummary: {
         totalContributionsAnalyzed: hasContributions ? 2 : 0,
         consensusAreas: hasContributions
@@ -111,16 +188,9 @@ export class MockAIProvider implements AIProvider {
         'What unstated regulatory or budgetary constraints might impact the viability of the preferred option?',
         'Under what conditions would the organization be willing to accept the trade-offs of the runner-up alternative?',
       ],
-      suggestedCriteria: [
-        {
-          id: 'compliance',
-          name: 'Regulatory & Security Compliance',
-          description: 'Evaluates adherence to industry standards, security certifications, and compliance mandates.',
-          suggestedWeight: 15,
-          direction: 'benefit',
-          rationale: 'Mitigates regulatory exposure and verifies enterprise security standards.',
-        },
-      ],
+      suggestedCriteria,
+      suggestedAlternatives,
+      expertRecommendations,
     };
 
     return {
