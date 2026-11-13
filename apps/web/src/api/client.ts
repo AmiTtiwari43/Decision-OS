@@ -22,10 +22,14 @@ import type {
   UpdateAccessGrantPayload,
   AcceptInvitationPayload,
   AcceptInvitationResponseDto,
+  DeclineInvitationPayload,
+  DeclineInvitationResponseDto,
   InvitationDetailsDto,
   PendingInvitationDto,
   DecisionContributionDto,
   SaveContributionPayload,
+  AdoptContributionPayload,
+  RejectContributionPayload,
   DecisionEvidenceDto,
   CreateEvidencePayload,
   UpdateEvidencePayload,
@@ -746,6 +750,18 @@ export class DecisionApiClient {
   }
 
   /**
+   * POST /api/invitations/decline — Authenticated recipient declines/rejects an invitation.
+   */
+  async declineInvitation(
+    payload: DeclineInvitationPayload
+  ): Promise<DeclineInvitationResponseDto> {
+    return this.request<DeclineInvitationResponseDto>('/api/invitations/decline', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
    * GET /api/invitations/details?token=... — Retrieves public invitation details.
    */
   async getInvitationDetails(token: string): Promise<InvitationDetailsDto> {
@@ -862,13 +878,46 @@ export class DecisionApiClient {
    */
   async adoptExpertScores(
     decisionId: string,
-    contributionId: string
+    contributionId: string,
+    payload: AdoptContributionPayload = { confirmation: true }
   ): Promise<DecisionDto> {
     const cleanId = (decisionId || '').trim();
     const cleanContribId = (contributionId || '').trim();
+    const body: Record<string, unknown> = {
+      confirmation: payload.confirmation ?? true,
+    };
+    if (payload.expectedVersion !== undefined) {
+      body.expectedVersion = payload.expectedVersion;
+    }
+    if (payload.selectedCriterionIds !== undefined) {
+      body.selectedCriterionIds = payload.selectedCriterionIds;
+    }
+
     return this.request<DecisionDto>(
       `/api/decisions/${encodeURIComponent(cleanId)}/contributions/${encodeURIComponent(cleanContribId)}/adopt`,
-      { method: 'POST' }
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }
+    );
+  }
+
+  /**
+   * POST /api/decisions/:id/contributions/:contributionId/reject — Decision owner rejects a contribution with rationale.
+   */
+  async rejectContribution(
+    decisionId: string,
+    contributionId: string,
+    payload: RejectContributionPayload
+  ): Promise<DecisionContributionDto> {
+    const cleanId = (decisionId || '').trim();
+    const cleanContribId = (contributionId || '').trim();
+    return this.request<DecisionContributionDto>(
+      `/api/decisions/${encodeURIComponent(cleanId)}/contributions/${encodeURIComponent(cleanContribId)}/reject`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
     );
   }
 

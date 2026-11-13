@@ -235,14 +235,65 @@ describe('Decision OS — Frontend Expert Contributions Integration Tests', () =
     });
     globalThis.fetch = fetchMock;
 
-    const updated = await client.adoptExpertScores(decisionId, contributionId);
+    const updated = await client.adoptExpertScores(decisionId, contributionId, {
+      confirmation: true,
+      expectedVersion: 1,
+    });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toBe(
       `http://localhost:3000/api/decisions/${decisionId}/contributions/${contributionId}/adopt`
     );
     expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      confirmation: true,
+      expectedVersion: 1,
+    });
     expect(updated._id).toBe(decisionId);
+  });
+
+  it('8. rejects an expert contribution with rationale', async () => {
+    const mockRejectedContribution: DecisionContributionDto = {
+      id: contributionId,
+      decisionId,
+      contributorId: 'user-expert-1',
+      recommendation: { preferredOptionId: 'aws', rationale: 'Rationale' },
+      criterionScores: { cost: 80 },
+      criterionReasoning: {},
+      confidence: 0.8,
+      status: 'rejected',
+      rejectionReason: 'Invalid cost assumptions for region us-east-1',
+      revision: 1,
+      history: [],
+      submittedAt: '2026-10-29T12:00:00.000Z',
+      withdrawnAt: null,
+      createdAt: '2026-10-29T11:00:00.000Z',
+      updatedAt: '2026-10-29T12:00:00.000Z',
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => mockRejectedContribution,
+    });
+    globalThis.fetch = fetchMock;
+
+    const res = await client.rejectContribution(decisionId, contributionId, {
+      rejectionReason: 'Invalid cost assumptions for region us-east-1',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(
+      `http://localhost:3000/api/decisions/${decisionId}/contributions/${contributionId}/reject`
+    );
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      rejectionReason: 'Invalid cost assumptions for region us-east-1',
+    });
+    expect(res.status).toBe('rejected');
+    expect(res.rejectionReason).toBe('Invalid cost assumptions for region us-east-1');
   });
 });
 

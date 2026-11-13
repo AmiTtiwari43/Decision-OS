@@ -224,5 +224,67 @@ describe('Decision OS — Frontend Sharing & Invitation Integration Tests', () =
     expect(res.decisionId).toBe(decisionId);
     expect(res.role).toBe('editor');
   });
+
+  it('8. creates an expert contributor invitation', async () => {
+    const mockCreatedResponse: CreateInvitationResponseDto = {
+      invitation: {
+        id: 'inv-contributor-1',
+        decisionId,
+        email: 'expert@example.com',
+        role: 'contributor',
+        status: 'pending',
+        expiresAt: '2026-11-05T12:00:00.000Z',
+        createdAt: '2026-10-29T12:00:00.000Z',
+        updatedAt: '2026-10-29T12:00:00.000Z',
+      },
+      token: 'contributor-token-abc',
+      invitationLink: '/invite?token=contributor-token-abc',
+    };
+
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => mockCreatedResponse,
+    });
+    globalThis.fetch = fetchMock;
+
+    const res = await client.createInvitation(decisionId, {
+      email: 'expert@example.com',
+      role: 'contributor',
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe(`http://localhost:3000/api/decisions/${decisionId}/invitations`);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({
+      email: 'expert@example.com',
+      role: 'contributor',
+    });
+    expect(res.invitation.role).toBe('contributor');
+  });
+
+  it('9. declines an invitation by token or invitationId', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'content-type': 'application/json' }),
+      json: async () => ({
+        message: 'Invitation declined successfully',
+        invitationId: 'inv-12345',
+      }),
+    });
+    globalThis.fetch = fetchMock;
+
+    const res = await client.declineInvitation({ token: 'token-to-decline' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toBe('http://localhost:3000/api/invitations/decline');
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ token: 'token-to-decline' });
+    expect(res.invitationId).toBe('inv-12345');
+  });
 });
 

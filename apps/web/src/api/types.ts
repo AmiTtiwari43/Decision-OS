@@ -207,6 +207,16 @@ export interface AcceptInvitationResponseDto {
   role: DecisionCollaboratorRole;
 }
 
+export interface DeclineInvitationPayload {
+  token?: string;
+  invitationId?: string;
+}
+
+export interface DeclineInvitationResponseDto {
+  message: string;
+  invitationId: string;
+}
+
 export interface InvitationDetailsDto {
   email: string;
   role: DecisionCollaboratorRole;
@@ -238,7 +248,7 @@ export interface PendingInvitationDto {
 
 // ─── Phase 7: Expert Contribution Types ─────────────────────────────────────
 
-export type ContributionStatus = 'draft' | 'submitted' | 'withdrawn';
+export type ContributionStatus = 'draft' | 'submitted' | 'withdrawn' | 'adopted' | 'rejected';
 
 export interface ContributionPredictionDto {
   statement?: string;
@@ -276,6 +286,11 @@ export interface DecisionContributionDto {
   prediction?: ContributionPredictionDto;
   evidenceReferences?: string[];
   status: ContributionStatus;
+  rejectionReason?: string;
+  rejectedAt?: string | null;
+  rejectedBy?: { id: string; name?: string; role?: string } | string | null;
+  adoptedAt?: string | null;
+  adoptedBy?: string | null;
   revision: number;
   history: ContributionRevisionSnapshotDto[];
   submittedAt: string | null;
@@ -292,6 +307,16 @@ export interface SaveContributionPayload {
   confidence?: number;
   prediction?: ContributionPredictionDto;
   evidenceReferences?: string[];
+}
+
+export interface AdoptContributionPayload {
+  confirmation?: boolean;
+  expectedVersion?: number;
+  selectedCriterionIds?: string[];
+}
+
+export interface RejectContributionPayload {
+  rejectionReason: string;
 }
 
 // ─── Phase 8: Evidence & Provenance Types ───────────────────────────────────

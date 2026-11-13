@@ -18,6 +18,17 @@ export const acceptInvitationSchema = z.object({
     .min(1, 'Invitation token is required'),
 });
 
+export const declineInvitationSchema = z
+  .object({
+    token: z.string().trim().min(1).optional(),
+    invitationId: z.string().trim().min(1).optional(),
+  })
+  .refine((data) => Boolean(data.token || data.invitationId), {
+    message: "Either 'token' or 'invitationId' must be provided",
+  });
+
+export type DeclineInvitationInput = z.infer<typeof declineInvitationSchema>;
+
 export const invitationStatusSchema = z.enum([
   'pending',
   'accepted',

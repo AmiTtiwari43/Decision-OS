@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import {
   createInvitationSchema,
   acceptInvitationSchema,
+  declineInvitationSchema,
   updateDecisionAccessGrantSchema,
   type DecisionCollaboratorRole,
 } from '../models/index.js';
@@ -14,6 +15,7 @@ import {
   updateAccessGrant,
   revokeAccessGrant,
   acceptInvitation,
+  declineInvitation,
   getInvitationDetails,
   listPendingInvitationsForUser,
 } from '../services/sharing.service.js';
@@ -334,6 +336,62 @@ export const sharingRoutes: FastifyPluginAsync = async (app: FastifyInstance) =>
 
       try {
         const result = await acceptInvitation(parsed.data.token, request.user);
+        return reply.status(200).send(result);
+      } catch (err) {
+        return handleSharingServiceError(err, request, reply);
+      }
+    }
+  );
+
+  // POST /api/invitations/decline — Authenticated recipient declines/rejects an invitation
+  app.post(
+    '/invitations/decline',
+    { preHandler: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const requestId = (request.id as string) || 'unknown';
+      const body = (request.body as Record<string, unknown>) || {};
+      const parsed = declineInvitationSchema.safeParse(body);
+
+      if (!parsed.success) {
+        const messages = parsed.error.errors.map(e => e.message).join('; ');
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: messages,
+          requestId,
+        });
+      }
+
+      try {
+        const result = await declineInvitation(parsed.data, request.user);
+        return reply.status(200).send(result);
+      } catch (err) {
+        return handleSharingServiceError(err, request, reply);
+      }
+    }
+  );
+
+  // POST /api/invitations/reject — Alias for declining an invitation
+  app.post(
+    '/invitations/reject',
+    { preHandler: [app.authenticate] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const requestId = (request.id as string) || 'unknown';
+      const body = (request.body as Record<string, unknown>) || {};
+      const parsed = declineInvitationSchema.safeParse(body);
+
+      if (!parsed.success) {
+        const messages = parsed.error.errors.map(e => e.message).join('; ');
+        return reply.status(400).send({
+          statusCode: 400,
+          error: 'Bad Request',
+          message: messages,
+          requestId,
+        });
+      }
+
+      try {
+        const result = await declineInvitation(parsed.data, request.user);
         return reply.status(200).send(result);
       } catch (err) {
         return handleSharingServiceError(err, request, reply);

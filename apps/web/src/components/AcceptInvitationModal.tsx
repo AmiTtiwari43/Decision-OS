@@ -28,8 +28,10 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [isAccepting, setIsAccepting] = useState(false);
+  const [isDeclining, setIsDeclining] = useState(false);
   const [acceptError, setAcceptError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [declineSuccess, setDeclineSuccess] = useState(false);
 
   useEffect(() => {
     if (isOpen && token) {
@@ -82,6 +84,32 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
       }
     } finally {
       setIsAccepting(false);
+    }
+  };
+
+  const handleDecline = async () => {
+    if (!isAuthenticated) {
+      onClose();
+      return;
+    }
+
+    setIsDeclining(true);
+    setAcceptError(null);
+
+    try {
+      await apiClient.declineInvitation({ token });
+      setDeclineSuccess(true);
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setAcceptError(err.message);
+      } else {
+        setAcceptError('Failed to decline invitation.');
+      }
+    } finally {
+      setIsDeclining(false);
     }
   };
 
@@ -138,6 +166,12 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
                 <CheckCircle2 className="w-10 h-10 text-signal mx-auto animate-bounce" />
                 <h4 className="text-base font-bold text-white">Invitation Accepted!</h4>
                 <p className="text-xs text-slate-400">Loading your shared decision workspace...</p>
+              </div>
+            ) : declineSuccess ? (
+              <div className="py-6 text-center space-y-2">
+                <CheckCircle2 className="w-10 h-10 text-slate-400 mx-auto" />
+                <h4 className="text-base font-bold text-white">Invitation Declined</h4>
+                <p className="text-xs text-slate-400">You have declined this decision invitation.</p>
               </div>
             ) : details ? (
               <div className="space-y-4">
@@ -202,20 +236,35 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
                       <span>Sign In to Accept</span>
                     </button>
                   ) : (
-                    <button
-                      onClick={handleAccept}
-                      disabled={isAccepting || isEmailMismatch}
-                      className="w-full py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                    >
-                      {isAccepting ? (
-                        <>
+                    <div className="flex items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={handleDecline}
+                        disabled={isAccepting || isDeclining}
+                        className="px-4 py-2.5 rounded-xl bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-slate-300 hover:text-rose-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50 transition-all"
+                      >
+                        {isDeclining ? (
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Accepting...</span>
-                        </>
-                      ) : (
-                        <span>Accept Invitation ({details.role})</span>
-                      )}
-                    </button>
+                        ) : (
+                          <span>Decline</span>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleAccept}
+                        disabled={isAccepting || isDeclining || isEmailMismatch}
+                        className="flex-1 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {isAccepting ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            <span>Accepting...</span>
+                          </>
+                        ) : (
+                          <span>Accept Invitation ({details.role})</span>
+                        )}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

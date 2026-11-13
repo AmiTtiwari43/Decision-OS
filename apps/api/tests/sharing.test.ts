@@ -390,6 +390,52 @@ describe('Phase 6 — Sharing, Invitations & Permission Enforcement', () => {
       expect(acceptRes.statusCode).toBe(410);
       expect(acceptRes.json().message).toContain('revoked');
     });
+
+    it('allows intended recipient to decline/reject an invitation with token', async () => {
+      const inviteRes = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/invitations`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { email: editorEmail, role: 'editor' },
+      });
+      const { token } = inviteRes.json();
+
+      const declineRes = await app.inject({
+        method: 'POST',
+        url: '/api/invitations/decline',
+        headers: { authorization: `Bearer ${editorToken}` },
+        payload: { token },
+      });
+      expect(declineRes.statusCode).toBe(200);
+      expect(declineRes.json().message).toContain('declined successfully');
+
+      // Attempting to accept after declining returns 410 Gone
+      const acceptRes = await app.inject({
+        method: 'POST',
+        url: '/api/invitations/accept',
+        headers: { authorization: `Bearer ${editorToken}` },
+        payload: { token },
+      });
+      expect(acceptRes.statusCode).toBe(410);
+    });
+
+    it('rejects declining if authenticated user email does not match recipient email (403)', async () => {
+      const inviteRes = await app.inject({
+        method: 'POST',
+        url: `/api/decisions/${decisionId}/invitations`,
+        headers: { authorization: `Bearer ${ownerToken}` },
+        payload: { email: editorEmail, role: 'editor' },
+      });
+      const { token } = inviteRes.json();
+
+      const declineRes = await app.inject({
+        method: 'POST',
+        url: '/api/invitations/decline',
+        headers: { authorization: `Bearer ${unrelatedToken}` },
+        payload: { token },
+      });
+      expect(declineRes.statusCode).toBe(403);
+    });
   });
 
   // ─── 4. ROLE × ACTION AUTHORIZATION MATRIX ───────────────────────────────────

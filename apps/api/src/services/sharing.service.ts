@@ -519,3 +519,55 @@ export async function listPendingInvitationsForUser(
   return invitationRepository.listPendingByEmail(email);
 }
 
+/**
+ * Declines/rejects an invitation by raw token or invitation ID.
+ * The requester must be the recipient of the invitation.
+ */
+export async function declineInvitation(
+  params: { token?: string; invitationId?: string },
+  requester: RequesterContext
+): Promise<{ message: string; invitationId: string }> {
+  let invitation: DecisionInvitationDocument | null = null;
+
+  if (params.token) {
+    const tokenHash = hashInvitationToken(params.token);
+    invitation = await invitationRepository.findByTokenHash(tokenHash);
+  } else if (params.invitationId && mongoose.isValidObjectId(params.invitationId)) {
+    invitation = await invitationRepository.findById(params.invitationId);
+  }
+
+  if (!invitation) {
+    throw new InvitationNotFoundError('Invitation not found or invalid token');
+  }
+
+  if (invitation.status === 'revoked') {
+    throw new InvitationRevokedError('This invitation has already been revoked or declined');
+  }
+
+  if (invitation.status === 'accepted') {
+    throw new ForbiddenError('Cannot decline an already accepted invitation');
+  }
+
+  if (new Date() > invitation.expiresAt) {
+    await invitationRepository.markExpired(invitation._id.toString());
+    throw new InvitationExpiredError('This invitation has expired');
+  }
+
+  // Recipient email verification: authenticated user email must match invitation email
+  if (requester.email && requester.email.toLowerCase().trim() !== invitation.email.toLowerCase().trim()) {
+    throw new InvitationRecipientMismatchError(
+      `This invitation was issued to '${invitation.email}', but you are signed in as '${requester.email}'`
+    );
+  }
+
+  const revoked = await invitationRepository.revoke(invitation._id.toString(), requester.id);
+  if (!revoked) {
+    throw new InvitationNotFoundError('Failed to decline invitation');
+  }
+
+  return {
+    message: 'Invitation declined successfully',
+    invitationId: invitation._id.toString(),
+  };
+}
+

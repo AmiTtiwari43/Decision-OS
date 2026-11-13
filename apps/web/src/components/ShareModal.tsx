@@ -287,7 +287,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                     <label className="block text-xs font-mono uppercase text-slate-300 font-semibold mb-1.5">
                       Permission Level
                     </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div
                         onClick={() => setRole('editor')}
                         className={`p-3 rounded-xl border cursor-pointer transition-all ${
@@ -304,6 +304,25 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                         </div>
                         <p className="text-xs text-slate-400 leading-relaxed">
                           Can calibrate criteria weights, enter option scores, and compute authoritative MCDA results.
+                        </p>
+                      </div>
+
+                      <div
+                        onClick={() => setRole('contributor')}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                          role === 'contributor'
+                            ? 'bg-signal/10 border-signal text-white shadow-glow-signal-sm'
+                            : 'bg-surface border-border text-slate-300 hover:border-slate-500'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-bold text-sm">Contributor</span>
+                          <span className="text-[10px] font-mono uppercase text-emerald-400 bg-emerald-500/15 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                            Expert
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Can submit independent expert recommendations, scores, and rationale for review.
                         </p>
                       </div>
 
@@ -491,6 +510,8 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                                 className={`text-[10px] font-mono px-1.5 py-0.5 rounded font-semibold uppercase ${
                                   c.role === 'editor'
                                     ? 'bg-signal/10 text-signal border border-signal/20'
+                                    : c.role === 'contributor'
+                                    ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                                     : 'bg-surface-subtle text-slate-400 border border-border'
                                 }`}
                               >
@@ -511,6 +532,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                             className="px-2.5 py-1 rounded-lg bg-surface-card border border-border text-xs text-slate-300 focus:outline-none cursor-pointer"
                           >
                             <option value="editor">Editor</option>
+                            <option value="contributor">Contributor</option>
                             <option value="viewer">Viewer</option>
                           </select>
 

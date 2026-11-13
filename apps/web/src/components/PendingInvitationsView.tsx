@@ -9,6 +9,7 @@ import {
   Key,
   Info,
   ArrowRight,
+  X,
 } from 'lucide-react';
 import {
   apiClient,
@@ -31,9 +32,35 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
 }) => {
   const [manualToken, setManualToken] = useState('');
   const [isAccepting, setIsAccepting] = useState(false);
+  const [decliningId, setDecliningId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const tokenInputRef = useRef<HTMLInputElement>(null);
+
+  const handleDeclineInvitation = async (inv: PendingInvitationDto) => {
+    setDecliningId(inv.id);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const candidateToken = (inv as any).token;
+      await apiClient.declineInvitation({
+        invitationId: inv.id,
+        token: typeof candidateToken === 'string' && candidateToken.trim() ? candidateToken.trim() : undefined,
+      });
+      setSuccessMessage('Invitation declined successfully.');
+      onRefresh();
+    } catch (err: unknown) {
+      if (err instanceof ApiClientError) {
+        setError(err.message || 'Failed to decline invitation.');
+      } else if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An unexpected error occurred while declining the invitation.');
+      }
+    } finally {
+      setDecliningId(null);
+    }
+  };
 
   const handleRedeemClick = (inv: PendingInvitationDto) => {
     // Populate the token only when the actual invitation response provides it and the flow permits it
@@ -106,7 +133,7 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
         <div className="space-y-1">
           <p className="font-semibold text-white">Cryptographic Access Control</p>
           <p className="text-slate-400 leading-relaxed">
-            Decision OS protects board-level deliberations with one-time hashed invitation tokens. If you received an invitation link via email or direct message, paste your token below to redeem collaborative access. Note: In accordance with Decision OS API v1 specification, invitations automatically expire at their deadline and backend decline operations are intentionally unsupported.
+            Decision OS protects board-level deliberations with one-time hashed invitation tokens. If you received an invitation link via email or direct message, paste your token below to redeem collaborative access or decline invitations you do not wish to join.
           </p>
         </div>
       </div>
@@ -244,16 +271,31 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
 
                   <div className="pt-3 border-t border-border flex items-center justify-between text-xs text-slate-400">
                     <span className="text-[11px] font-mono text-slate-500">
-                      {(inv as any).token ? 'Token available · Click to redeem' : 'Paste invitation token above'}
+                      {(inv as any).token ? 'Token available' : 'Redeem or decline'}
                     </span>
-                    <button
-                      onClick={() => handleRedeemClick(inv)}
-                      className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
-                      title="Focus redemption input"
-                    >
-                      <span>Redeem</span>
-                      <ArrowRight className="w-3 h-3 text-signal" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleDeclineInvitation(inv)}
+                        disabled={decliningId === inv.id}
+                        className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
+                        title="Decline this invitation"
+                      >
+                        {decliningId === inv.id ? (
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                        ) : (
+                          <X className="w-3 h-3 text-rose-400" />
+                        )}
+                        <span>Decline</span>
+                      </button>
+                      <button
+                        onClick={() => handleRedeemClick(inv)}
+                        className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Focus redemption input"
+                      >
+                        <span>Redeem</span>
+                        <ArrowRight className="w-3 h-3 text-signal" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               );

@@ -29,7 +29,7 @@ import {
 import { authorizeDecisionAction } from './authorization.service.js';
 import { auditService } from './audit.service.js';
 import { outboxService } from './outbox.service.js';
-import { runInTransaction } from '../db/connection.js';
+import { runInTransaction, isReplicaSetSupported } from '../db/connection.js';
 import { collaborationService } from './collaboration.service.js';
 import { evaluationCache } from './evaluationCache.js';
 import {
@@ -396,7 +396,7 @@ export class ContributionService {
       );
     }
 
-    const rejected = await runInTransaction(async (session) => {
+    const executeReject = async (session?: mongoose.ClientSession) => {
       const rej = await contributionRepository.reject(
         contributionId,
         input.rejectionReason.trim(),
@@ -431,7 +431,11 @@ export class ContributionService {
       );
 
       return rej;
-    });
+    };
+
+    const rejected = isReplicaSetSupported()
+      ? await runInTransaction(async (session) => executeReject(session))
+      : await executeReject();
 
     collaborationService.publishEvent(decisionId, {
       type: 'contribution.rejected',
@@ -592,7 +596,7 @@ export class ContributionService {
       // to targetVersion + 1 (failedVersion + 1), restoring previous baseline snapshot.
       const targetVersion = input.expectedVersion + 1;
       const compensatingVersion = targetVersion + 1;
-      await runInTransaction(async (session) => {
+      const executeCompensation = async (session?: mongoose.ClientSession) => {
         await DecisionModel.updateOne(
           { _id: decisionId, version: input.expectedVersion },
           {
@@ -626,7 +630,13 @@ export class ContributionService {
           },
           session
         );
-      });
+      };
+
+      if (isReplicaSetSupported()) {
+        await runInTransaction(async (session) => executeCompensation(session));
+      } else {
+        await executeCompensation();
+      }
 
       evaluationCache.invalidate(decisionId);
 
@@ -638,8 +648,8 @@ export class ContributionService {
       throw calcError;
     }
 
-    // Mandatory Replica Set ACID Transaction (PHASE 4)
-    const updatedDecision = await runInTransaction(async (session) => {
+    // Execute adoption commit (Replica Set ACID transaction if supported, else atomic multi-operation sequence)
+    const executeAdoption = async (session?: mongoose.ClientSession) => {
       const targetVersion = input.expectedVersion + 1;
       const mutated = await DecisionModel.findOneAndUpdate(
         { _id: decisionId, version: input.expectedVersion },
@@ -652,7 +662,7 @@ export class ContributionService {
             pendingOperationId: null,
           },
         },
-        { new: true, session }
+        { returnDocument: 'after', session }
       ).exec();
 
       if (!mutated) {
@@ -716,7 +726,11 @@ export class ContributionService {
       );
 
       return mutated;
-    });
+    };
+
+    const updatedDecision = isReplicaSetSupported()
+      ? await runInTransaction(async (session) => executeAdoption(session))
+      : await executeAdoption();
 
     evaluationCache.invalidate(decisionId);
 

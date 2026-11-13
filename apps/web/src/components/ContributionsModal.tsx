@@ -14,6 +14,10 @@ import {
   Undo2,
   Check,
   Award,
+  Ban,
+  History,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   apiClient,
@@ -72,6 +76,10 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
   // Round lock in-flight
   const [isTogglingLock, setIsTogglingLock] = useState(false);
   const [adoptingId, setAdoptingId] = useState<string | null>(null);
+  const [rejectingId, setRejectingId] = useState<string | null>(null);
+  const [rejectionReasonText, setRejectionReasonText] = useState<string>('');
+  const [isRejecting, setIsRejecting] = useState<boolean>(false);
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
   // Fetch my contribution
   const fetchMyContribution = useCallback(async () => {
@@ -262,19 +270,56 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
   // Handle adopting expert scores (Owner only)
   const handleAdopt = async (contributionId: string) => {
+    if (!decision?._id) return;
     setAdoptingId(contributionId);
+    setSubmissionsError(null);
     try {
-      const updated = await apiClient.adoptExpertScores(decision._id, contributionId);
+      const updated = await apiClient.adoptExpertScores(decision._id, contributionId, {
+        confirmation: true,
+        expectedVersion: decision.version || 1,
+      });
       if (onDecisionUpdated) {
         onDecisionUpdated(updated);
       }
       setFormSuccess('Expert scores successfully adopted into the authoritative decision model.');
+      await fetchSubmissions();
     } catch (err) {
       if (err instanceof ApiClientError) {
         setSubmissionsError(err.message);
+      } else {
+        setSubmissionsError('Failed to adopt expert scores.');
       }
     } finally {
       setAdoptingId(null);
+    }
+  };
+
+  // Handle rejecting a contribution with rationale (Owner only)
+  const handleReject = async (contributionId: string) => {
+    if (!decision?._id) return;
+    if (!rejectionReasonText.trim()) {
+      setSubmissionsError('Please provide a specific rationale for rejecting this contribution.');
+      return;
+    }
+
+    setIsRejecting(true);
+    setSubmissionsError(null);
+    try {
+      await apiClient.rejectContribution(decision._id, contributionId, {
+        rejectionReason: rejectionReasonText.trim(),
+      });
+      setFormSuccess('Contribution rejected.');
+      setRejectingId(null);
+      setRejectionReasonText('');
+      await fetchSubmissions();
+    } catch (err) {
+      if (err instanceof ApiClientError) {
+        setSubmissionsError(err.message);
+      } else {
+        setSubmissionsError('Failed to reject contribution.');
+      }
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -689,7 +734,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                     <Loader2 className="w-5 h-5 animate-spin text-signal" />
                     <span>Loading submissions...</span>
                   </div>
-                ) : submissions.filter((s) => s.status === 'submitted').length === 0 ? (
+                ) : submissions.filter((s) => s.status !== 'draft').length === 0 ? (
                   <div className="py-12 text-center text-xs text-slate-400 space-y-2">
                     <Users className="w-8 h-8 text-slate-600 mx-auto" />
                     <p className="font-medium text-slate-300">No submitted expert contributions yet.</p>
@@ -700,7 +745,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                 ) : (
                   <div className="space-y-4">
                     {submissions
-                      .filter((s) => s.status === 'submitted')
+                      .filter((s) => s.status !== 'draft')
                       .map((sub) => {
                         const contributor =
                           typeof sub.contributorId === 'object'
@@ -735,6 +780,21 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                 <span className="text-[10px] font-mono text-slate-400">
                                   Rev {sub.revision}
                                 </span>
+                                {sub.status === 'adopted' && (
+                                  <span className="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
+                                    <CheckCircle2 className="w-3 h-3" /> Adopted
+                                  </span>
+                                )}
+                                {sub.status === 'rejected' && (
+                                  <span className="text-[10px] font-mono bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30 flex items-center gap-1">
+                                    <Ban className="w-3 h-3" /> Rejected
+                                  </span>
+                                )}
+                                {sub.status === 'submitted' && (
+                                  <span className="text-[10px] font-mono bg-sky-500/15 text-sky-400 px-2 py-0.5 rounded border border-sky-500/30">
+                                    Submitted
+                                  </span>
+                                )}
                                 <span className="text-[10px] font-mono bg-signal/15 text-signal px-2 py-0.5 rounded border border-signal/30">
                                   Confidence: {Math.round(sub.confidence * 100)}%
                                 </span>
@@ -757,6 +817,16 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                   Rationale
                                 </span>
                                 {sub.recommendation.rationale}
+                              </div>
+                            )}
+
+                            {/* Rejection Alert if rejected */}
+                            {sub.status === 'rejected' && sub.rejectionReason && (
+                              <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+                                <span className="font-mono text-[10px] uppercase text-rose-400 block mb-0.5 font-bold">
+                                  Rejection Rationale
+                                </span>
+                                <span>{sub.rejectionReason}</span>
                               </div>
                             )}
 
@@ -802,23 +872,129 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                               </div>
                             )}
 
-                            {/* Owner Action: Adopt Scores */}
-                            {isOwner && (
-                              <div className="pt-2 flex justify-end">
+                            {/* Preserved Revision History */}
+                            {sub.history && sub.history.length > 0 && (
+                              <div className="pt-2 border-t border-border-subtle">
                                 <button
                                   type="button"
-                                  onClick={() => handleAdopt(sub.id)}
-                                  disabled={adoptingId === sub.id}
-                                  className="px-3.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-signal/40 text-signal text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
-                                  title="Adopt these scores into the authoritative decision model"
+                                  onClick={() =>
+                                    setExpandedHistoryId(expandedHistoryId === sub.id ? null : sub.id)
+                                  }
+                                  className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 hover:text-slate-200 cursor-pointer"
                                 >
-                                  {adoptingId === sub.id ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <History className="w-3 h-3 text-signal" />
+                                  <span>
+                                    Revision History ({sub.history.length} previous{' '}
+                                    {sub.history.length === 1 ? 'revision' : 'revisions'})
+                                  </span>
+                                  {expandedHistoryId === sub.id ? (
+                                    <ChevronUp className="w-3 h-3" />
                                   ) : (
-                                    <Award className="w-3.5 h-3.5" />
+                                    <ChevronDown className="w-3 h-3" />
                                   )}
-                                  <span>Adopt Expert Scores</span>
                                 </button>
+                                {expandedHistoryId === sub.id && (
+                                  <div className="mt-2 space-y-2 pl-3 border-l-2 border-border">
+                                    {sub.history.map((rev) => (
+                                      <div
+                                        key={rev.revision}
+                                        className="p-2 rounded bg-surface-subtle border border-border-subtle text-[11px] space-y-1"
+                                      >
+                                        <div className="flex items-center justify-between text-slate-400 font-mono text-[10px]">
+                                          <span>Revision {rev.revision}</span>
+                                          <span>{new Date(rev.submittedAt).toLocaleDateString()}</span>
+                                        </div>
+                                        <div className="text-slate-300">
+                                          Prefers:{' '}
+                                          <strong className="text-white">
+                                            {decision.options.find(
+                                              (o) => o.id === rev.recommendation.preferredOptionId
+                                            )?.name || rev.recommendation.preferredOptionId}
+                                          </strong>
+                                        </div>
+                                        {rev.recommendation.rationale && (
+                                          <p className="text-slate-400 italic text-[10px]">
+                                            "{rev.recommendation.rationale}"
+                                          </p>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Owner Actions: Adopt or Reject */}
+                            {isOwner && sub.status === 'submitted' && (
+                              <div className="pt-2 border-t border-border-subtle space-y-2">
+                                {rejectingId === sub.id ? (
+                                  <div className="p-3 rounded-xl bg-surface-subtle border border-rose-500/30 space-y-2">
+                                    <label className="block text-xs font-mono uppercase text-rose-300 font-semibold">
+                                      Rejection Rationale
+                                    </label>
+                                    <textarea
+                                      rows={2}
+                                      value={rejectionReasonText}
+                                      onChange={(e) => setRejectionReasonText(e.target.value)}
+                                      placeholder="Articulate why this recommendation cannot be adopted (e.g. invalid cost assumptions, out of scope)..."
+                                      className="w-full px-2.5 py-1.5 rounded-lg bg-surface border border-border text-xs text-slate-200 focus:outline-none focus:border-rose-400 resize-none"
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setRejectingId(null);
+                                          setRejectionReasonText('');
+                                        }}
+                                        className="px-3 py-1 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-300 cursor-pointer"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={isRejecting || !rejectionReasonText.trim()}
+                                        onClick={() => handleReject(sub.id)}
+                                        className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                                      >
+                                        {isRejecting ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : (
+                                          <Ban className="w-3 h-3" />
+                                        )}
+                                        <span>Confirm Rejection</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex justify-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setRejectingId(sub.id);
+                                        setRejectionReasonText('');
+                                      }}
+                                      className="px-3 py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-slate-400 hover:text-rose-300 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
+                                      title="Reject this contribution with rationale"
+                                    >
+                                      <Ban className="w-3.5 h-3.5" />
+                                      <span>Reject</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAdopt(sub.id)}
+                                      disabled={adoptingId === sub.id}
+                                      className="px-3.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-signal/40 text-signal text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
+                                      title="Adopt these scores into the authoritative decision model"
+                                    >
+                                      {adoptingId === sub.id ? (
+                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      ) : (
+                                        <Award className="w-3.5 h-3.5" />
+                                      )}
+                                      <span>Adopt Expert Scores</span>
+                                    </button>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
