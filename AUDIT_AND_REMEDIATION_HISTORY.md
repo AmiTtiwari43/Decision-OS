@@ -249,6 +249,7 @@ Batch 04 concludes the presentation milestone with zero functional regressions a
 ### 10.2 Milestone Acceptance Sign-Off Across All Protocol Batches
 - **Batch 02-R5 (Audit Integrity Closure)**: Commit `7639ee42f77c411c798e916ce7ee2dd40014c697` — Verified durable outbox reconciliation, REST recovery endpoints, and self-healing read access.
 - **Batch 03 (Collaboration, AI Advisory & Showcase)**: Commit `75a0d49699ae7c0b2b7df9af0d403768fb03124d` — Verified stakeholder deliberation threads, interactive governance showcase, multi-expert consensus, bias detection, and audit verification.
+- **Batch 03.3 (Decision History, Evidence and Audit Showcase)**: Verified decision history timeline with monotonic sequence numbers and state diffs, empirical evidence management with Rule #15 non-fabrication guarantee and coverage gap analysis, SHA-256 cryptographic chain verification with interactive tamper simulation, and comprehensive 11-component export packages (JSON, CSV with formula injection defense, printable HTML briefings).
 - **Batch 04 (Presentation Polish & Final Acceptance)**: Verified credentials autofill, test guard fallback, 100% test pass rate across engine, web, and API test suites, and clean production builds.
 
 ---
@@ -265,6 +266,9 @@ Batch 04 concludes the presentation milestone with zero functional regressions a
 | `AGENTS.md` | Core | Operational boundaries and instructions for Antigravity automated agents. |
 | `AUDIT_AND_REMEDIATION_HISTORY.md` | Reference | **(This Document)** Master consolidated audit register and certification history. |
 | `BATCH_02_CANONICAL_PRESENTATION_WALKTHROUGH.md` | Batch 02 | End-to-end presentation and verification walkthrough for Batch 02. |
+| `BATCH_03_1_COLLABORATION_ADVISORY_AUDIT_REPORT.md` | Batch 03.1 | Collaboration, advisory and audit integration closure report. |
+| `BATCH_03_2_AI_ADVISORY_EXPLAINABLE_RANKING_REPORT.md` | Batch 03.2 | AI advisory and explainable deterministic ranking (MDAR v1) closure report. |
+| `BATCH_03_3_DECISION_HISTORY_EVIDENCE_AUDIT_REPORT.md` | Batch 03.3 | Decision history timeline, evidence management, and audit export showcase report. |
 | `BATCH_4_V38_ARCHITECTURE_DECISION.md` | Batch 4 | Active Phase B.15 architecture decision record for Vault JWT role binding and coordination RS. |
 | `docs/API.md` | Documentation | REST API endpoint documentation and request/response DTO schemas. |
 | `docs/ARCHITECTURE.md` | Documentation | System component diagrams and interaction sequence flows. |

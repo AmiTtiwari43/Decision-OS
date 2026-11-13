@@ -1400,16 +1400,79 @@ export async function updateDecision(
     result = cleared ?? doc;
   }
 
+  // Detailed change detection for explainable decision audit history
+  const oldCriteria = (existing.criteria || []) as DecisionCriterion[];
+  const newCriteria = (result.criteria || []) as DecisionCriterion[];
+  const oldOptions = (existing.options || []) as DecisionOption[];
+  const newOptions = (result.options || []) as DecisionOption[];
+
+  const addedCriteria = newCriteria.filter(c => !oldCriteria.some(ec => ec.id === c.id));
+  const weightChanges = newCriteria.filter(c => {
+    const ec = oldCriteria.find(x => x.id === c.id);
+    return ec && ec.weight !== c.weight;
+  });
+  const addedOptions = newOptions.filter(o => !oldOptions.some(eo => eo.id === o.id));
+  const modifiedOptions = newOptions.filter(o => {
+    const eo = oldOptions.find(x => x.id === o.id);
+    return eo && (eo.name !== o.name || eo.description !== o.description);
+  });
+
+  let auditAction: import('../models/index.js').AuditAction = 'decision.updated';
+  let auditSummary = `Updated decision "${result.title}"`;
+
+  if (weightChanges.length > 0 && addedCriteria.length === 0 && addedOptions.length === 0) {
+    auditAction = 'criteria.weight_updated';
+    const detailStr = weightChanges
+      .map(w => {
+        const oldW = oldCriteria.find(x => x.id === w.id)?.weight;
+        return `${w.name} (${oldW}% -> ${w.weight}%)`;
+      })
+      .join(', ');
+    auditSummary = `Updated criteria weights: ${detailStr}`;
+  } else if (addedCriteria.length > 0 && addedOptions.length === 0) {
+    auditAction = 'criteria.added';
+    auditSummary = `Added criterion ${addedCriteria.map(c => `"${c.name}" (weight: ${c.weight}%)`).join(', ')}`;
+  } else if (addedOptions.length > 0) {
+    auditAction = 'option.added';
+    auditSummary = `Added alternative option ${addedOptions.map(o => `"${o.name}"`).join(', ')}`;
+  } else if (modifiedOptions.length > 0 && addedCriteria.length === 0 && addedOptions.length === 0 && weightChanges.length === 0) {
+    auditAction = 'option.updated';
+    auditSummary = `Updated alternative option details: ${modifiedOptions.map(o => `"${o.name}"`).join(', ')}`;
+  } else if (data.scores && Object.keys(data.scores).length > 0 && addedCriteria.length === 0 && addedOptions.length === 0 && weightChanges.length === 0) {
+    auditAction = 'score.updated';
+    auditSummary = `Updated score assessments for decision "${result.title}"`;
+  }
+
   // Audit event
   await auditService.recordEvent({
     decisionId: id,
     actor: requester,
-    action: 'decision.updated',
+    action: auditAction,
     entityType: 'decision',
     entityId: id,
-    summary: `Updated decision "${result.title}"`,
+    summary: auditSummary,
     diff: {
       changedFields: Object.keys(data),
+      before: {
+        title: existing.title,
+        criteriaCount: oldCriteria.length,
+        optionsCount: oldOptions.length,
+        weights: oldCriteria.reduce((acc, c) => ({ ...acc, [c.id]: c.weight }), {}),
+      },
+      after: {
+        title: result.title,
+        criteriaCount: newCriteria.length,
+        optionsCount: newOptions.length,
+        weights: newCriteria.reduce((acc, c) => ({ ...acc, [c.id]: c.weight }), {}),
+      },
+      weightChanges: weightChanges.length > 0 ? weightChanges.map(w => ({
+        criterionId: w.id,
+        name: w.name,
+        from: oldCriteria.find(x => x.id === w.id)?.weight,
+        to: w.weight,
+      })) : undefined,
+      addedCriteria: addedCriteria.length > 0 ? addedCriteria.map(c => ({ id: c.id, name: c.name, weight: c.weight })) : undefined,
+      addedOptions: addedOptions.length > 0 ? addedOptions.map(o => ({ id: o.id, name: o.name })) : undefined,
     },
   });
 

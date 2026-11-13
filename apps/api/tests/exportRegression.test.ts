@@ -20,6 +20,9 @@ vi.mock('../src/repositories/index.js', () => ({
   predictionRepository: {
     listByDecision: vi.fn().mockResolvedValue([]),
   },
+  auditRepository: {
+    getAllForDecision: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('../src/services/authorization.service.js', () => ({

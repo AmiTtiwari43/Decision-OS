@@ -989,7 +989,10 @@ export interface AuditEventDto {
     before?: Record<string, unknown> | null;
     after?: Record<string, unknown> | null;
     changedFields?: string[];
+    [key: string]: unknown;
   } | null;
+  sequenceNumber?: number;
+  originalTimestamp?: string;
   timestamp: string;
   eventHash: string;
   previousEventHash: string;

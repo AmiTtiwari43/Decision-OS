@@ -72,14 +72,15 @@ export function computeCanonicalEventHash(event: {
   schemaVersion: number;
   sequenceNumber?: number;
 }): string {
-  const origTs =
-    event.originalTimestamp instanceof Date
-      ? event.originalTimestamp.toISOString()
-      : new Date(event.originalTimestamp).toISOString();
   const appendTs =
     event.timestamp instanceof Date
       ? event.timestamp.toISOString()
       : new Date(event.timestamp).toISOString();
+  const origTs = event.originalTimestamp
+    ? event.originalTimestamp instanceof Date
+      ? event.originalTimestamp.toISOString()
+      : new Date(event.originalTimestamp).toISOString()
+    : appendTs;
 
   const payloadToHash: Record<string, unknown> = {
     action: event.action,

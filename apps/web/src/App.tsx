@@ -258,8 +258,11 @@ function AppContent() {
             {/* Real Scenario Case Studies */}
             <CaseStudies onOpenSandbox={() => setIsSandboxOpen(true)} />
 
-            {/* 4-Stage Decision Evolution Timeline */}
-            <DecisionHistoryTimeline onOpenSandbox={() => setIsSandboxOpen(true)} />
+            {/* Decision Evolution & Immutable Audit Timeline */}
+            <DecisionHistoryTimeline
+              onOpenSandbox={() => setIsSandboxOpen(true)}
+              onOpenAudit={() => setIsAuditOpen(true)}
+            />
 
             {/* Mathematical Transparency Section */}
             <TransparencySection />

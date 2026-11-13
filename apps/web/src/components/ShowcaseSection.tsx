@@ -42,6 +42,8 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
   const [isVerifyingChain, setIsVerifyingChain] = useState<boolean>(false);
   const [isChainVerified, setIsChainVerified] = useState<boolean>(true);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+  const [isSimulatingTamper, setIsSimulatingTamper] = useState<boolean>(false);
+  const [tamperDetected, setTamperDetected] = useState<boolean>(false);
 
   const personas = {
     cto: {
@@ -80,9 +82,25 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
     setIsVerifyingChain(true);
     setTimeout(() => {
       setIsVerifyingChain(false);
-      setIsChainVerified(true);
-      sound.playCelebrate();
+      if (isSimulatingTamper) {
+        setIsChainVerified(false);
+        setTamperDetected(true);
+      } else {
+        setIsChainVerified(true);
+        setTamperDetected(false);
+        sound.playCelebrate();
+      }
     }, 600);
+  };
+
+  const handleToggleTamper = () => {
+    sound.playTick();
+    const nextState = !isSimulatingTamper;
+    setIsSimulatingTamper(nextState);
+    if (!nextState) {
+      setIsChainVerified(true);
+      setTamperDetected(false);
+    }
   };
 
   const handleCopyHash = (hash: string) => {
@@ -474,10 +492,10 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
               <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-border">
                 <div>
                   <span className="text-xs font-mono uppercase tracking-wider text-sky-400 font-bold">
-                    Cryptographic Integrity & Defense-in-Depth
+                    Cryptographic Integrity &amp; Defense-in-Depth
                   </span>
                   <h3 className="text-2xl font-bold text-white mt-1">
-                    SHA-256 Hash Chaining & Tamper Evidence
+                    SHA-256 Hash Chaining &amp; Tamper Evidence
                   </h3>
                   <p className="text-sm text-slate-400 mt-1 max-w-xl">
                     Every mutation, weight adjustment, and score update generates an immutable cryptographic block chained from genesis via SHA-256. If any database record is altered out-of-band, downstream verification fails immediately.
@@ -485,106 +503,239 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
                 </div>
 
                 {/* Chain Status Pill */}
-                <div className="flex items-center gap-3 bg-surface p-4 rounded-2xl border border-sky-500/30">
-                  <div className="p-3 rounded-xl bg-sky-500/15 text-sky-400">
+                <div
+                  className={`flex items-center gap-3 p-4 rounded-2xl border transition-all ${
+                    tamperDetected
+                      ? 'bg-rose-500/10 border-rose-500/40 text-rose-300'
+                      : 'bg-surface border-sky-500/30'
+                  }`}
+                >
+                  <div
+                    className={`p-3 rounded-xl ${
+                      tamperDetected ? 'bg-rose-500/20 text-rose-400' : 'bg-sky-500/15 text-sky-400'
+                    }`}
+                  >
                     <ShieldCheck className="w-6 h-6" />
                   </div>
                   <div>
                     <div className="text-xs text-slate-400 font-mono">Cryptographic Chain</div>
                     <div className="text-lg font-bold text-white flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                      <span>{isChainVerified ? '100% Intact' : 'Verification In Flight'}</span>
+                      {tamperDetected ? (
+                        <>
+                          <AlertTriangle className="w-4 h-4 text-rose-400" />
+                          <span className="text-rose-400">Integrity Violation</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          <span>{isChainVerified ? '100% Intact' : 'Verifying...'}</span>
+                        </>
+                      )}
                     </div>
-                    <div className="text-[11px] text-sky-400 font-mono">Merkle Root: e3b0c442...</div>
+                    <div className="text-[11px] font-mono text-slate-400">
+                      {tamperDetected ? (
+                        <span className="text-rose-400">Broken at Node #003</span>
+                      ) : (
+                        'Merkle Head: sha256-d5e6f1a2...'
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>
 
+              {/* Tamper Detection Banner */}
+              {tamperDetected && (
+                <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300 font-mono space-y-1">
+                  <div className="flex items-center gap-2 font-bold text-rose-200">
+                    <AlertTriangle className="w-4 h-4 text-rose-400" />
+                    <span>Cryptographic Verification Alert: Hash Linkage Mismatch Detected</span>
+                  </div>
+                  <div>
+                    Out-of-band record mutation detected at <strong>Block #003 (evidence.created)</strong>. Computed SHA-256 hash does not match next block&apos;s previousHash. Server verification status: <strong>REJECTED</strong>.
+                  </div>
+                </div>
+              )}
+
               {/* Live Hash Chain Blocks */}
               <div className="space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-400 font-mono">
-                  <span>Cryptographic Audit Event Stream:</span>
-                  <button
-                    onClick={handleVerifyChain}
-                    disabled={isVerifyingChain}
-                    className="px-3 py-1 rounded-lg bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    {isVerifyingChain ? (
-                      <span>Verifying Hashes...</span>
-                    ) : (
-                      <>
-                        <ShieldCheck className="w-3.5 h-3.5" />
-                        <span>Verify Chain Now</span>
-                      </>
-                    )}
-                  </button>
-                  {onOpenAudit && (
+                <div className="flex items-center justify-between text-xs text-slate-400 font-mono flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <span>Cryptographic Audit Event Stream:</span>
                     <button
-                      onClick={onOpenAudit}
-                      className="px-3 py-1 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-300 text-xs font-mono transition-all cursor-pointer"
+                      onClick={handleToggleTamper}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                        isSimulatingTamper
+                          ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+                          : 'bg-surface hover:bg-surface-subtle text-slate-300 border border-border'
+                      }`}
                     >
-                      Audit Terminal (⌘K)
+                      {isSimulatingTamper ? 'Restore Pristine DB' : 'Simulate Out-of-Band Tamper'}
                     </button>
-                  )}
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleVerifyChain}
+                      disabled={isVerifyingChain}
+                      className="px-3 py-1 rounded-lg bg-sky-500/20 text-sky-300 hover:bg-sky-500/30 border border-sky-500/40 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      {isVerifyingChain ? (
+                        <span>Verifying Hashes...</span>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-3.5 h-3.5" />
+                          <span>Verify Chain Now</span>
+                        </>
+                      )}
+                    </button>
+                    {onOpenAudit && (
+                      <button
+                        onClick={onOpenAudit}
+                        className="px-3 py-1 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-300 text-xs font-mono transition-all cursor-pointer"
+                      >
+                        Audit Terminal (⌘K)
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-3 font-mono text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 font-mono text-xs">
                   {[
                     {
                       block: '#001 (Genesis)',
                       action: 'decision.created',
                       actor: 'elena@lead.org',
-                      hash: 'sha256-genesis-0000000000000000',
+                      hash: 'sha256-a1b2c3d4e5f60001',
                       prev: 'GENESIS',
+                      status: 'normal',
                     },
                     {
                       block: '#002',
                       action: 'criteria.weight_updated',
                       actor: 'elena@lead.org',
-                      hash: 'sha256-8f2a1b9c3d4e5f6a7b8c9d0e',
-                      prev: 'sha256-genesis',
+                      hash: 'sha256-b2c3d4e5f6a10002',
+                      prev: 'sha256-a1b2c3d4...',
+                      status: 'normal',
                     },
                     {
                       block: '#003',
-                      action: 'contribution.adopted',
+                      action: 'evidence.created',
                       actor: 'marcus@lead.org',
-                      hash: 'sha256-4c3bea418f17f2a1b9c3d4e5',
-                      prev: 'sha256-8f2a1b9c',
+                      hash: isSimulatingTamper
+                        ? 'sha256-tampered-corrupted-hash'
+                        : 'sha256-c3d4e5f6a1b20003',
+                      prev: 'sha256-b2c3d4e5...',
+                      status: isSimulatingTamper ? 'corrupted' : 'normal',
                     },
                     {
-                      block: '#004 (Head)',
+                      block: '#004',
+                      action: 'contribution.adopted',
+                      actor: 'elena@lead.org',
+                      hash: 'sha256-d4e5f6a1b2c30004',
+                      prev: isSimulatingTamper ? 'sha256-c3d4e5f6... (MISMATCH)' : 'sha256-c3d4e5f6...',
+                      status: isSimulatingTamper ? 'broken' : 'normal',
+                    },
+                    {
+                      block: '#005',
+                      action: 'ai.analysis_generated',
+                      actor: 'system.ai_analyst',
+                      hash: 'sha256-e5f6a1b2c3d40005',
+                      prev: 'sha256-d4e5f6a1...',
+                      status: 'normal',
+                    },
+                    {
+                      block: '#006 (Head)',
                       action: 'decision.analyzed',
                       actor: 'system.engine_v1',
-                      hash: 'sha256-238175f214c7ec8d135e5c5f',
-                      prev: 'sha256-4c3bea41',
+                      hash: 'sha256-f6a1b2c3d4e50006',
+                      prev: 'sha256-e5f6a1b2...',
+                      status: 'normal',
                     },
-                  ].map((b, idx) => (
-                    <div
-                      key={b.block}
-                      className="p-3.5 rounded-xl bg-surface border border-border space-y-2 relative"
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-sky-400 text-[11px]">{b.block}</span>
-                        <span className="text-[10px] text-slate-500">Node {idx + 1}</span>
+                  ].map((b, idx) => {
+                    const isCorrupt = b.status === 'corrupted';
+                    const isBroken = b.status === 'broken';
+
+                    return (
+                      <div
+                        key={b.block}
+                        className={`p-3.5 rounded-xl border space-y-2 relative transition-all ${
+                          isCorrupt
+                            ? 'bg-rose-500/10 border-rose-500/60 shadow-lg shadow-rose-500/10'
+                            : isBroken
+                            ? 'bg-amber-500/10 border-amber-500/40'
+                            : 'bg-surface border-border hover:border-border-strong'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span
+                            className={`font-bold text-[11px] ${
+                              isCorrupt ? 'text-rose-400' : isBroken ? 'text-amber-400' : 'text-sky-400'
+                            }`}
+                          >
+                            {b.block}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {isCorrupt ? 'TAMPERED' : `Node ${idx + 1}`}
+                          </span>
+                        </div>
+                        <div className="text-white font-bold text-xs truncate">{b.action}</div>
+                        <div className="text-[11px] text-slate-400 truncate">By {b.actor}</div>
+                        <div className="pt-2 border-t border-border-subtle flex items-center justify-between text-[10px]">
+                          <span
+                            className={`truncate max-w-[130px] ${
+                              isCorrupt ? 'text-rose-300 font-bold' : 'text-slate-500'
+                            }`}
+                          >
+                            {b.hash}
+                          </span>
+                          <button
+                            onClick={() => handleCopyHash(b.hash)}
+                            className="text-slate-400 hover:text-white"
+                            title="Copy SHA-256 hash"
+                          >
+                            {copiedHash === b.hash ? (
+                              <Check className="w-3 h-3 text-signal" />
+                            ) : (
+                              <Hash className="w-3 h-3" />
+                            )}
+                          </button>
+                        </div>
                       </div>
-                      <div className="text-white font-bold text-xs truncate">{b.action}</div>
-                      <div className="text-[11px] text-slate-400 truncate">By {b.actor}</div>
-                      <div className="pt-2 border-t border-border-subtle flex items-center justify-between text-[10px]">
-                        <span className="text-slate-500 truncate max-w-[120px]">{b.hash}</span>
-                        <button
-                          onClick={() => handleCopyHash(b.hash)}
-                          className="text-slate-400 hover:text-white"
-                          title="Copy SHA-256 hash"
-                        >
-                          {copiedHash === b.hash ? (
-                            <Check className="w-3 h-3 text-signal" />
-                          ) : (
-                            <Hash className="w-3 h-3" />
-                          )}
-                        </button>
-                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Evidence Provenance & Missing Gaps Card */}
+              <div className="p-5 rounded-2xl bg-surface border border-sky-500/20 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border pb-3">
+                  <div className="flex items-center gap-2 text-xs font-bold text-sky-300">
+                    <FileText className="w-4 h-4 text-sky-400" />
+                    <span>Evidence Provenance &amp; Missing Evidence Safeguards</span>
+                  </div>
+                  <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                    Rule #15 Grounding Invariant
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                  <div className="p-3.5 rounded-xl bg-surface-card border border-border space-y-2">
+                    <div className="font-semibold text-white flex items-center gap-1.5">
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>Self-Reported Citation Transparency</span>
                     </div>
-                  ))}
+                    <p className="text-slate-400 leading-relaxed text-[11px]">
+                      Citations attached to options or criteria are explicitly tagged as <strong>Unverified Citations</strong>. Decision OS forbids fabricating external verification badges to maintain boardroom transparency.
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-surface-card border border-border space-y-2">
+                    <div className="font-semibold text-white flex items-center gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                      <span>Missing Evidence Gap Identification</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed text-[11px]">
+                      Export packages and deliberation modals actively compute coverage gaps. Decision makers are warned when options or high-sensitivity criteria lack supporting empirical citations.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -596,13 +747,15 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
                   </div>
                   <div>
                     <div className="text-xs font-bold text-white">Boardroom Defense Export Formats</div>
-                    <div className="text-[11px] text-slate-400">Export deterministic mathematical briefings with verifiable cryptographic hashes</div>
+                    <div className="text-[11px] text-slate-400">
+                      Export deterministic mathematical briefings with 11 guaranteed audit components &amp; hash chain proofs
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
                     <FileCode className="w-3.5 h-3.5 text-signal" />
-                    <span>JSON Proof</span>
+                    <span>JSON Package</span>
                   </span>
                   <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
                     <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
@@ -610,7 +763,7 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
                   </span>
                   <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
                     <FileText className="w-3.5 h-3.5 text-purple-400" />
-                    <span>PDF Briefing</span>
+                    <span>Printable HTML</span>
                   </span>
                 </div>
               </div>

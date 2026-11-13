@@ -63,6 +63,38 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
   const [isExporting, setIsExporting] = useState<ExportFormat | null>(null);
   const [exportSuccessMsg, setExportSuccessMsg] = useState<string | null>(null);
 
+  // Helper for color-coding action categories
+  const getActionBadgeClass = (action: string) => {
+    if (action.startsWith('criteria.') || action === 'criteria.weight_updated') {
+      return 'bg-sky-500/10 text-sky-400 border-sky-500/20';
+    }
+    if (action.startsWith('option.')) {
+      return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+    }
+    if (action.startsWith('score.') || action.includes('synthetic')) {
+      return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+    }
+    if (action.startsWith('contribution.')) {
+      return 'bg-teal-500/10 text-teal-400 border-teal-500/20';
+    }
+    if (action.startsWith('ai.')) {
+      return 'bg-purple-500/10 text-purple-400 border-purple-500/20';
+    }
+    if (action.startsWith('evidence.')) {
+      return 'bg-blue-500/10 text-blue-400 border-blue-500/20';
+    }
+    if (action.startsWith('sharing.')) {
+      return 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+    }
+    if (action.startsWith('snapshot.')) {
+      return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+    }
+    if (action.startsWith('export.')) {
+      return 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+    }
+    return 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20';
+  };
+
   const fetchAuditData = useCallback(async () => {
     if (!decision?._id) return;
     setIsLoading(true);
@@ -276,77 +308,108 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
             {activeTab === 'history' && (
               <div className="space-y-6">
                 {/* Chain Verification Card */}
-                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
+                <div
+                  className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                    chainResult?.isValid
+                      ? 'bg-slate-950/60 border-slate-800'
+                      : 'bg-rose-500/10 border-rose-500/30'
+                  }`}
+                >
+                  <div className="flex items-start sm:items-center space-x-3">
                     <div
                       className={`p-2 rounded-lg ${
                         chainResult?.isValid
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                          : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                       }`}
                     >
                       <ShieldCheck className="w-5 h-5" />
                     </div>
                     <div>
-                      <div className="flex items-center space-x-2">
+                      <div className="flex items-center space-x-2 flex-wrap">
                         <span className="text-sm font-semibold text-white">
                           SHA-256 Hash Chain Integrity
                         </span>
                         {chainResult?.isValid ? (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
-                            Chain Verified
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>Chain Verified (100% Intact)</span>
                           </span>
                         ) : (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-400 border border-rose-500/20 font-medium">
-                            Chain Broken
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium flex items-center gap-1">
+                            <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
+                            <span>Chain Integrity Violation</span>
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-400 mt-0.5">
+                      <p className="text-xs text-slate-400 mt-1">
                         {chainResult?.totalEventsChecked || 0} events cryptographically linked &bull;
                         Head:{' '}
                         <code className="text-indigo-400">
                           {chainResult?.headHash ? chainResult.headHash.slice(0, 16) + '...' : 'Genesis'}
                         </code>
+                        {chainResult?.verifiedAt && (
+                          <span className="text-[11px] text-slate-500 ml-2">
+                            Verified at {new Date(chainResult.verifiedAt).toLocaleTimeString()}
+                          </span>
+                        )}
                       </p>
+                      {chainResult && !chainResult.isValid && (
+                        <div className="mt-2 text-xs text-rose-300 font-mono bg-rose-950/70 p-2.5 rounded-lg border border-rose-800/80 space-y-1">
+                          <div><strong>Integrity Error:</strong> {chainResult.reason || 'Cryptographic hash linkage mismatch detected'}</div>
+                          {chainResult.brokenAtEventId && (
+                            <div><strong>Compromised Event ID:</strong> <code>{chainResult.brokenAtEventId}</code></div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <button
                     onClick={handleVerifyChain}
                     disabled={isVerifyingChain}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg flex items-center space-x-1.5 transition border border-slate-700 disabled:opacity-50"
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg flex items-center space-x-1.5 transition border border-slate-700 disabled:opacity-50 shrink-0 self-start sm:self-auto cursor-pointer"
                   >
                     {isVerifyingChain ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                     ) : (
                       <RefreshCw className="w-3.5 h-3.5" />
                     )}
-                    <span>Re-verify</span>
+                    <span>Re-verify Now</span>
                   </button>
                 </div>
 
                 {/* Filter Controls */}
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
                   <div className="flex flex-wrap gap-1.5 text-xs">
-                    {['all', 'decision', 'contribution', 'evidence', 'ai', 'sharing', 'prediction', 'snapshot'].map(
-                      cat => (
-                        <button
-                          key={cat}
-                          onClick={() => {
-                            setActionFilter(cat);
-                            setPage(1);
-                          }}
-                          className={`px-3 py-1.5 rounded-lg capitalize font-medium transition ${
-                            actionFilter === cat
-                              ? 'bg-indigo-600 text-white'
-                              : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      )
-                    )}
+                    {[
+                      { key: 'all', label: 'All Events' },
+                      { key: 'decision', label: 'Decision' },
+                      { key: 'criteria', label: 'Criteria & Weights' },
+                      { key: 'option', label: 'Alternatives' },
+                      { key: 'score', label: 'Scores' },
+                      { key: 'sharing', label: 'Roles & Invites' },
+                      { key: 'contribution', label: 'Contributions' },
+                      { key: 'ai', label: 'AI Advisory' },
+                      { key: 'evidence', label: 'Evidence' },
+                      { key: 'snapshot', label: 'Milestones' },
+                      { key: 'export', label: 'Exports' },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        onClick={() => {
+                          setActionFilter(key);
+                          setPage(1);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                          actionFilter === key
+                            ? 'bg-indigo-600 text-white'
+                            : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
                   </div>
 
                   <span className="text-xs text-slate-400">
@@ -367,19 +430,34 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   <div className="space-y-3">
                     {auditEvents.map(event => {
                       const isExpanded = expandedEventId === event.eventId;
+                      const isCompromised = Boolean(chainResult && !chainResult.isValid && chainResult.brokenAtEventId === event.eventId);
+                      const seqNum = event.sequenceNumber !== undefined ? `#${String(event.sequenceNumber).padStart(3, '0')}` : '#---';
+
                       return (
                         <div
                           key={event.eventId}
-                          className="p-3.5 bg-slate-950/40 border border-slate-800 rounded-xl hover:border-slate-700 transition space-y-2"
+                          className={`p-3.5 rounded-xl border transition space-y-2 ${
+                            isCompromised
+                              ? 'bg-rose-500/10 border-rose-500/40'
+                              : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                          }`}
                         >
-                          <div className="flex items-start justify-between">
-                            <div className="flex items-center space-x-2">
-                              <span className="text-xs font-semibold px-2 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                          <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
+                            <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                                {seqNum}
+                              </span>
+                              <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${getActionBadgeClass(event.action)}`}>
                                 {event.action}
                               </span>
+                              {isCompromised && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                  COMPROMISED EVENT
+                                </span>
+                              )}
                               <span className="text-xs font-medium text-slate-200">{event.summary}</span>
                             </div>
-                            <span className="text-[11px] text-slate-500 whitespace-nowrap">
+                            <span className="text-[11px] text-slate-500 whitespace-nowrap font-mono shrink-0">
                               {new Date(event.timestamp).toLocaleString()}
                             </span>
                           </div>
@@ -395,21 +473,29 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                               </span>
                             </div>
 
-                            {(event.diff || event.previousEventHash) && (
-                              <button
-                                onClick={() => setExpandedEventId(isExpanded ? null : event.eventId)}
-                                className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-0.5"
-                              >
-                                <span>{isExpanded ? 'Hide details' : 'View details'}</span>
-                                <ChevronRight
-                                  className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
-                                />
-                              </button>
-                            )}
+                            <button
+                              onClick={() => setExpandedEventId(isExpanded ? null : event.eventId)}
+                              className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-0.5 cursor-pointer"
+                            >
+                              <span>{isExpanded ? 'Hide details' : 'View details'}</span>
+                              <ChevronRight
+                                className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`}
+                              />
+                            </button>
                           </div>
 
                           {isExpanded && (
                             <div className="mt-2 p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs space-y-2 font-mono">
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                                <div>
+                                  <span className="text-slate-500">Sequence:</span>{' '}
+                                  <strong className="text-slate-200">{event.sequenceNumber || 1}</strong>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Entity:</span>{' '}
+                                  <span className="text-slate-300">{event.entityType} ({event.entityId})</span>
+                                </div>
+                              </div>
                               <div>
                                 <span className="text-slate-500">Event ID:</span>{' '}
                                 <span className="text-slate-300">{event.eventId}</span>
@@ -424,7 +510,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                               </div>
                               {event.diff && (
                                 <div className="mt-2 pt-2 border-t border-slate-800">
-                                  <span className="text-slate-500 block mb-1">State Diff:</span>
+                                  <span className="text-slate-500 block mb-1">State Diff / Change Details:</span>
                                   <pre className="text-slate-300 text-[11px] overflow-x-auto p-2 bg-slate-950 rounded">
                                     {JSON.stringify(event.diff, null, 2)}
                                   </pre>
@@ -749,13 +835,55 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   </div>
                 </div>
 
+                {/* 11 Guaranteed Export Package Components Checklist */}
+                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                      <span>11 Guaranteed Export Components (JSON • CSV • HTML)</span>
+                    </span>
+                    <span className="text-[11px] font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded">
+                      Complete Audit Coverage
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                    {[
+                      { num: '01', title: 'Decision Metadata', desc: 'Title, scope, methodology & timestamps' },
+                      { num: '02', title: 'Alternatives', desc: 'Candidate options & descriptions' },
+                      { num: '03', title: 'Criteria & Weights', desc: 'Directions, locked status & normalized weights' },
+                      { num: '04', title: 'Score Matrix', desc: 'Option scores across every criterion' },
+                      { num: '05', title: 'Final Rankings', desc: 'Authoritative MCDA utility & ranks' },
+                      { num: '06', title: 'Sensitivity Findings', desc: 'Tipping points & flip boundaries' },
+                      { num: '07', title: 'Expert Contributions', desc: 'Multi-stakeholder weight inputs' },
+                      { num: '08', title: 'Advisory Suggestions', desc: 'Clearly labeled non-authoritative (Rule #14)' },
+                      { num: '09', title: 'Evidence References', desc: 'Citations (unverified) & missing gaps' },
+                      { num: '10', title: 'Audit History', desc: 'Full chronological mutation timeline' },
+                      { num: '11', title: 'Integrity Verification', desc: 'SHA-256 hash chaining result & Merkle head' },
+                    ].map(item => (
+                      <div
+                        key={item.num}
+                        className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-start gap-2"
+                      >
+                        <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">
+                          {item.num}
+                        </span>
+                        <div>
+                          <div className="font-semibold text-slate-200 text-[11px]">{item.title}</div>
+                          <div className="text-[10px] text-slate-400 leading-tight">{item.desc}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-1">
                   <div className="flex items-center space-x-1.5 text-slate-300 font-medium">
                     <ShieldCheck className="w-4 h-4 text-indigo-400" />
                     <span>Security & Reproducibility Notice</span>
                   </div>
                   <p>
-                    Exports reflect authoritative server calculations at the time of export. Unsubmitted contributor drafts and sensitive credentials are never exported.
+                    Exports reflect authoritative server calculations at the time of export. Unsubmitted contributor drafts and sensitive credentials are never exported. Spreadsheet exports apply formula injection sanitization to all cell values.
                   </p>
                 </div>
               </div>

@@ -10,6 +10,7 @@ import {
   Plus,
   Loader2,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   ShieldCheck,
   Filter,
@@ -29,7 +30,7 @@ export interface EvidenceModalProps {
   decision: DecisionDto | null;
 }
 
-type Tab = 'browse' | 'create';
+type Tab = 'browse' | 'coverage' | 'create';
 
 export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   isOpen,
@@ -105,6 +106,21 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
     } else {
       setTargetId('');
     }
+  };
+
+  // Missing evidence calculation across options and criteria
+  const missingOptions = (decision?.options || []).filter(
+    (opt) => !evidenceList.some((e) => e.targetType === 'option' && e.targetId === opt.id)
+  );
+  const missingCriteria = (decision?.criteria || []).filter(
+    (crit) => !evidenceList.some((e) => e.targetType === 'criterion' && e.targetId === crit.id)
+  );
+  const totalMissingGaps = missingOptions.length + missingCriteria.length;
+
+  const handleQuickAttach = (type: EvidenceTargetType, id: string) => {
+    handleTargetTypeChange(type);
+    setTargetId(id);
+    setActiveTab('create');
   };
 
   // Submit Evidence
@@ -256,6 +272,27 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 Browse Evidence ({evidenceList.length})
               </button>
 
+              <button
+                onClick={() => setActiveTab('coverage')}
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                  activeTab === 'coverage'
+                    ? 'bg-blue-600 text-white'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+              >
+                {totalMissingGaps > 0 ? (
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                )}
+                <span>Coverage &amp; Gaps</span>
+                {totalMissingGaps > 0 && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono">
+                    {totalMissingGaps} missing
+                  </span>
+                )}
+              </button>
+
               {!isViewer && (
                 <button
                   onClick={() => setActiveTab('create')}
@@ -306,6 +343,22 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
             {/* BROWSE TAB */}
             {activeTab === 'browse' && (
               <div className="space-y-4">
+                {totalMissingGaps > 0 && (
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-200">
+                    <div className="flex items-center gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>
+                        <strong>Evidence Gaps Identified:</strong> {missingOptions.length} option(s) and {missingCriteria.length} criterion/a lack supporting empirical evidence citations.
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setActiveTab('coverage')}
+                      className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold border border-amber-500/40 transition shrink-0"
+                    >
+                      View Gaps &amp; Coverage
+                    </button>
+                  </div>
+                )}
                 {isLoading ? (
                   <div className="py-16 text-center text-slate-400 space-y-3">
                     <Loader2 className="w-8 h-8 animate-spin mx-auto text-blue-500" />
@@ -360,6 +413,9 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                                 </span>
                                 <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 font-mono">
                                   {item.type.toUpperCase()}
+                                </span>
+                                <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                                  Unverified Citation
                                 </span>
                                 {item.publicationDate && (
                                   <span className="text-[11px] text-slate-500">
@@ -448,6 +504,140 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                     })}
                   </div>
                 )}
+              </div>
+            )}
+
+            {/* COVERAGE & GAPS TAB */}
+            {activeTab === 'coverage' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Empirical Evidence Grounding &amp; Coverage</h3>
+                  <p className="text-xs text-slate-400">
+                    Identify missing evidence across decision options and criteria. All citations are human-supplied references.
+                  </p>
+                </div>
+
+                {/* Options Coverage */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Options / Alternative Candidates
+                    </h4>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {decision?.options?.length ? `${decision.options.length - missingOptions.length}/${decision.options.length} covered` : '0'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {decision?.options?.map((opt) => {
+                      const count = evidenceList.filter((e) => e.targetType === 'option' && e.targetId === opt.id).length;
+                      const hasEv = count > 0;
+                      return (
+                        <div
+                          key={opt.id}
+                          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                            hasEv
+                              ? 'bg-slate-950/40 border-slate-800'
+                              : 'bg-amber-500/5 border-amber-500/30'
+                          }`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              {hasEv ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              )}
+                              <span className="text-xs font-bold text-white">{opt.name}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono pl-6">
+                              {hasEv ? (
+                                <span className="text-emerald-400 font-semibold">{count} citation(s) attached</span>
+                              ) : (
+                                <span className="text-amber-300 font-semibold">Missing evidence (0 citations)</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {!isViewer && !hasEv && (
+                            <button
+                              onClick={() => handleQuickAttach('option', opt.id)}
+                              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold rounded-lg border border-amber-500/30 transition shrink-0"
+                            >
+                              Attach Evidence
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Criteria Coverage */}
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                      Criteria &amp; Dimensions
+                    </h4>
+                    <span className="text-[11px] text-slate-400 font-mono">
+                      {decision?.criteria?.length ? `${decision.criteria.length - missingCriteria.length}/${decision.criteria.length} covered` : '0'}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {decision?.criteria?.map((crit) => {
+                      const count = evidenceList.filter((e) => e.targetType === 'criterion' && e.targetId === crit.id).length;
+                      const hasEv = count > 0;
+                      return (
+                        <div
+                          key={crit.id}
+                          className={`p-3.5 rounded-xl border flex items-center justify-between gap-3 ${
+                            hasEv
+                              ? 'bg-slate-950/40 border-slate-800'
+                              : 'bg-amber-500/5 border-amber-500/30'
+                          }`}
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              {hasEv ? (
+                                <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              ) : (
+                                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+                              )}
+                              <span className="text-xs font-bold text-white">{crit.name}</span>
+                              <span className="text-[10px] text-slate-500 font-mono">({crit.weight}%)</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono pl-6">
+                              {hasEv ? (
+                                <span className="text-emerald-400 font-semibold">{count} citation(s) attached</span>
+                              ) : (
+                                <span className="text-amber-300 font-semibold">Missing evidence (0 citations)</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {!isViewer && !hasEv && (
+                            <button
+                              onClick={() => handleQuickAttach('criterion', crit.id)}
+                              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold rounded-lg border border-amber-500/30 transition shrink-0"
+                            >
+                              Attach Evidence
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Grounding & Verification Standard Notice */}
+                <div className="p-4 rounded-xl bg-slate-950/80 border border-slate-800 space-y-2 text-xs text-slate-400">
+                  <div className="flex items-center gap-2 text-slate-200 font-semibold">
+                    <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                    <span>Rule #15 Verification Invariant</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    Decision OS strictly presents all evidence records with authentic provenance. Citations provide reference context for human evaluation and never alter mathematical MCDA weights or rankings. Verification status is never fabricated or artificially assumed.
+                  </p>
+                </div>
               </div>
             )}
 
