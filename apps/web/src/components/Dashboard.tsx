@@ -58,12 +58,14 @@ export interface DashboardProps {
   onOpenStudio: (decision: DecisionDto) => void;
   onOpenAudit?: () => void;
   onViewProductTour?: () => void;
+  refreshTrigger?: number;
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({
   onOpenStudio,
   onOpenAudit,
   onViewProductTour,
+  refreshTrigger,
 }) => {
   const { user } = useAuth();
 
@@ -142,6 +144,13 @@ export const Dashboard: React.FC<DashboardProps> = ({
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
+
+  // Silently reload dashboard records when returning from studio or external trigger
+  useEffect(() => {
+    if (refreshTrigger !== undefined && refreshTrigger > 0) {
+      loadDashboardData(true);
+    }
+  }, [refreshTrigger, loadDashboardData]);
 
   // Handle starter template quick-creation from empty state
   const handleQuickCreateFromTemplate = async (templateId: string) => {
@@ -464,10 +473,16 @@ export const Dashboard: React.FC<DashboardProps> = ({
           isLoading={isLoading}
           onRefresh={() => loadDashboardData(true)}
           onAccepted={async (decisionId) => {
-            await loadDashboardData(true);
-            const found = decisions.find((d) => d._id === decisionId);
-            if (found) {
-              onOpenStudio(found);
+            try {
+              const acceptedDoc = await apiClient.getDecision(decisionId);
+              await loadDashboardData(true);
+              onOpenStudio(acceptedDoc);
+            } catch {
+              await loadDashboardData(true);
+              const found = decisions.find((d) => d._id === decisionId);
+              if (found) {
+                onOpenStudio(found);
+              }
             }
           }}
         />
@@ -886,7 +901,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
               />
             )}
 
-            {activeFeatureModal.feature === 'audit' && (
+            {(activeFeatureModal.feature === 'audit' || activeFeatureModal.feature === 'export') && (
               <AuditExportModal
                 key={`audit-${activeFeatureModal.decision._id}`}
                 isOpen={true}

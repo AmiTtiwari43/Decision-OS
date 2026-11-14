@@ -1,4 +1,4 @@
-import { useState, useEffect, Suspense, lazy } from 'react';
+import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { ProblemSection } from './components/ProblemSection';
@@ -35,6 +35,7 @@ function AppContent() {
   const [isAuditOpen, setIsAuditOpen] = useState(false);
   const [isWorkspaceAnalyticsOpen, setIsWorkspaceAnalyticsOpen] = useState(false);
   const [incomingInviteToken, setIncomingInviteToken] = useState<string | null>(null);
+  const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
   const decisionModel = useDecisionModel();
 
@@ -83,6 +84,33 @@ function AppContent() {
       // URL parsing failed safely
     }
   }, [loadDecision]);
+
+  // Synchronize decisionId in URL search params so browser refresh re-opens the active decision
+  useEffect(() => {
+    try {
+      const url = new URL(window.location.href);
+      if (isSandboxOpen && decisionId) {
+        if (url.searchParams.get('decisionId') !== decisionId) {
+          url.searchParams.set('decisionId', decisionId);
+          window.history.replaceState({}, '', url.toString());
+        }
+      } else if (!isSandboxOpen && url.searchParams.has('decisionId')) {
+        url.searchParams.delete('decisionId');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } catch {
+      // safe fallback
+    }
+  }, [isSandboxOpen, decisionId]);
+
+  // Trigger silent dashboard refresh when closing studio after edits
+  const prevSandboxOpenRef = useRef(isSandboxOpen);
+  useEffect(() => {
+    if (prevSandboxOpenRef.current && !isSandboxOpen) {
+      setDashboardRefreshTrigger((prev) => prev + 1);
+    }
+    prevSandboxOpenRef.current = isSandboxOpen;
+  }, [isSandboxOpen]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -163,6 +191,7 @@ function AppContent() {
             }}
             onOpenAudit={() => setIsAuditOpen(true)}
             onViewProductTour={() => setActiveView('marketing')}
+            refreshTrigger={dashboardRefreshTrigger}
           />
         ) : (
           <>
@@ -307,10 +336,28 @@ function AppContent() {
         {incomingInviteToken != null && (
           <AcceptInvitationModal
             isOpen={incomingInviteToken != null}
-            onClose={() => setIncomingInviteToken(null)}
+            onClose={() => {
+              setIncomingInviteToken(null);
+              try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('inviteToken');
+                url.searchParams.delete('token');
+                window.history.replaceState({}, '', url.toString());
+              } catch {
+                // safe fallback
+              }
+            }}
             token={incomingInviteToken}
             onAccepted={async (newDecisionId) => {
               setIncomingInviteToken(null);
+              try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('inviteToken');
+                url.searchParams.delete('token');
+                window.history.replaceState({}, '', url.toString());
+              } catch {
+                // safe fallback
+              }
               await loadDecision(newDecisionId);
               setIsSandboxOpen(true);
             }}

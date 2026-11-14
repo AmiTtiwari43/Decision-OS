@@ -46,7 +46,16 @@ export const Navbar: React.FC<NavbarProps> = ({
     >
       <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2">
         {/* Brand Logo in Header Navbar Top Left */}
-        <a href="#" className="flex items-center gap-2.5 group shrink-0">
+        <a
+          href="#"
+          onClick={(e) => {
+            if (isAuthenticated && onSelectView) {
+              e.preventDefault();
+              onSelectView('app');
+            }
+          }}
+          className="flex items-center gap-2.5 group shrink-0"
+        >
           <Logo size="md" />
           <div className="flex items-center gap-1.5">
             <span className="font-bold tracking-tight text-base sm:text-lg text-slate-100 group-hover:text-white transition-colors">
