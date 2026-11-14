@@ -65,6 +65,7 @@ function AppContent() {
 
   // Support direct URL retrieval via ?decisionId=<mongoId> or ?inviteToken=<token>
   useEffect(() => {
+    if (isInitializing) return;
     try {
       const params = new URLSearchParams(window.location.search);
       const urlId = params.get('decisionId');
@@ -83,7 +84,7 @@ function AppContent() {
     } catch {
       // URL parsing failed safely
     }
-  }, [loadDecision]);
+  }, [loadDecision, isInitializing]);
 
   // Synchronize decisionId in URL search params so browser refresh re-opens the active decision
   useEffect(() => {

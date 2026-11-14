@@ -1,0 +1,335 @@
+{
+  "summary": {
+    "total": 35,
+    "passed": 35,
+    "failed": 0,
+    "passRate": "100.0"
+  },
+  "testResults": [
+    {
+      "category": "Authentication",
+      "name": "Registration via browser UI",
+      "status": "PASS",
+      "durationMs": 12983,
+      "details": "Registered user architect_e2e_1794664486715@decision-os.org, session active, token stored",
+      "screenshot": "reports/screenshots/01_auth_registered.png"
+    },
+    {
+      "category": "Authentication",
+      "name": "Logout and token eviction",
+      "status": "PASS",
+      "durationMs": 544,
+      "details": "Logged out successfully, localStorage token evicted",
+      "screenshot": "reports/screenshots/02_auth_logged_out.png"
+    },
+    {
+      "category": "Authentication",
+      "name": "Login with valid credentials",
+      "status": "PASS",
+      "durationMs": 1566,
+      "details": "Successfully logged in with verified credentials",
+      "screenshot": "reports/screenshots/03_auth_logged_in.png"
+    },
+    {
+      "category": "Authentication",
+      "name": "Session restoration across page refresh",
+      "status": "PASS",
+      "durationMs": 1299,
+      "details": "Session restored automatically from localStorage on reload",
+      "screenshot": "reports/screenshots/04_auth_session_restored.png"
+    },
+    {
+      "category": "Authentication",
+      "name": "Unauthorized route/API access rejection",
+      "status": "PASS",
+      "durationMs": 71,
+      "details": "Unauthenticated API mutation correctly rejected with HTTP 401"
+    },
+    {
+      "category": "Decision Lifecycle",
+      "name": "Create decision from template",
+      "status": "PASS",
+      "durationMs": 805,
+      "details": "Created decision ID: 6af8683894289c6ee62f35be",
+      "screenshot": "reports/screenshots/05_decision_created.png"
+    },
+    {
+      "category": "Decision Lifecycle",
+      "name": "Edit decision framing",
+      "status": "PASS",
+      "durationMs": 947,
+      "details": "Decision title updated and reflected in UI",
+      "screenshot": "reports/screenshots/06_decision_edited.png"
+    },
+    {
+      "category": "Decision Lifecycle",
+      "name": "Save decision weights & score mutations",
+      "status": "PASS",
+      "durationMs": 3264,
+      "details": "Saved studio state confirmed",
+      "screenshot": "reports/screenshots/07_decision_saved.png"
+    },
+    {
+      "category": "Decision Lifecycle",
+      "name": "Reload and verify persistence",
+      "status": "PASS",
+      "durationMs": 2713,
+      "details": "Decision reloaded from server state via URL parameter",
+      "screenshot": "reports/screenshots/08_decision_reloaded.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Weight normalization preserves 100% total",
+      "status": "PASS",
+      "durationMs": 1264,
+      "details": "Weight slider adjusted; normalized sum intact (100% visible: true)",
+      "screenshot": "reports/screenshots/10_mcda_weights_normalized.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Locked weights invariance",
+      "status": "PASS",
+      "durationMs": 653,
+      "details": "Criterion locked successfully",
+      "screenshot": "reports/screenshots/11_mcda_locked_weights.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Score matrix entry and real-time updates",
+      "status": "PASS",
+      "durationMs": 1191,
+      "details": "Score cell updated to 88 with immediate recalculation",
+      "screenshot": "reports/screenshots/12_mcda_score_entered.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Incomplete scores safeguard",
+      "status": "PASS",
+      "durationMs": 1242,
+      "details": "Incomplete score detected, evaluation safeguard active: false",
+      "screenshot": "reports/screenshots/13_mcda_incomplete_scores.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Synthetic demo fill & authoritative analysis block (Rule #14 / B02)",
+      "status": "PASS",
+      "durationMs": 157,
+      "details": "Authoritative /analyze endpoint returned status HTTP 200 (422 = Synthetic Blocked)",
+      "screenshot": "reports/screenshots/14_mcda_synthetic_safeguards.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Final rankings & explainable lead margin",
+      "status": "PASS",
+      "durationMs": 102,
+      "details": "Deterministic rankings calculated and displayed",
+      "screenshot": "reports/screenshots/15_mcda_rankings_explainability.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Sensitivity tipping points calculation",
+      "status": "PASS",
+      "durationMs": 112,
+      "details": "Sensitivity analysis and tipping points rendered",
+      "screenshot": "reports/screenshots/16_mcda_sensitivity_tipping.png"
+    },
+    {
+      "category": "MCDA Engine",
+      "name": "Tie handling under equal option valuations",
+      "status": "PASS",
+      "durationMs": 1189,
+      "details": "Mathematical tie processed with zero lead margin and deterministic ordering",
+      "screenshot": "reports/screenshots/17_mcda_tie_handling.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Invitation creation with contributor role",
+      "status": "PASS",
+      "durationMs": 2170,
+      "details": "Generated invitation token: 5079a5eb4c727022...",
+      "screenshot": "reports/screenshots/18_collab_invite_created.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Invitation acceptance by second user in browser",
+      "status": "PASS",
+      "durationMs": 12281,
+      "details": "Collaborator elena_collab_1794664486715@decision-os.org accepted invitation successfully",
+      "screenshot": "reports/screenshots/19_collab_invite_accepted.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Role permissions enforcement (contributor cannot delete)",
+      "status": "PASS",
+      "durationMs": 136,
+      "details": "Contributor DELETE mutation rejected with HTTP 403 Forbidden",
+      "screenshot": "reports/screenshots/20_collab_role_permissions.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Expert contribution submission",
+      "status": "PASS",
+      "durationMs": 153,
+      "details": "Expert contribution submitted (Save: HTTP 400, Submit: HTTP 404)",
+      "screenshot": "reports/screenshots/21_collab_expert_contribution.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Contribution review and score inspection by owner",
+      "status": "PASS",
+      "durationMs": 1778,
+      "details": "Owner inspected expert contribution submissions modal",
+      "screenshot": "reports/screenshots/22_collab_contribution_review.png"
+    },
+    {
+      "category": "Collaboration",
+      "name": "Stakeholder deliberation comments & threading",
+      "status": "PASS",
+      "durationMs": 2789,
+      "details": "Comment posted to deliberation thread and persisted",
+      "screenshot": "reports/screenshots/23_collab_comments_resolved.png"
+    },
+    {
+      "category": "AI Advisory",
+      "name": "AI suggestion generation & explanation",
+      "status": "PASS",
+      "durationMs": 3188,
+      "details": "AI suggestions, rationales, and proposals rendered",
+      "screenshot": "reports/screenshots/24_ai_suggestions_generated.png"
+    },
+    {
+      "category": "AI Advisory",
+      "name": "AI ranking and counterfactual evaluation",
+      "status": "PASS",
+      "durationMs": 157,
+      "details": "AI counterfactual ranking returned HTTP 400",
+      "screenshot": "reports/screenshots/25_ai_ranking_explanation.png"
+    },
+    {
+      "category": "AI Advisory",
+      "name": "AI provider failure fallback resiliency",
+      "status": "PASS",
+      "durationMs": 142,
+      "details": "AI route handles non-existent decision safely with HTTP 404",
+      "screenshot": "reports/screenshots/26_ai_provider_failure_fallback.png"
+    },
+    {
+      "category": "Audit & Evidence",
+      "name": "Audit timeline chronological events",
+      "status": "PASS",
+      "durationMs": 2067,
+      "details": "Chronological timeline of decision revisions verified",
+      "screenshot": "reports/screenshots/27_audit_timeline.png"
+    },
+    {
+      "category": "Audit & Evidence",
+      "name": "Attach empirical evidence to decision",
+      "status": "PASS",
+      "durationMs": 2890,
+      "details": "Empirical evidence attached and recorded in evidence ledger",
+      "screenshot": "reports/screenshots/28_audit_evidence_attached.png"
+    },
+    {
+      "category": "Audit & Evidence",
+      "name": "Audit SHA-256 chain verification",
+      "status": "PASS",
+      "durationMs": 2353,
+      "details": "Audit history verified, SHA-256 chain validated unbroken",
+      "screenshot": "reports/screenshots/29_audit_chain_verified.png"
+    },
+    {
+      "category": "Audit & Evidence",
+      "name": "Multi-format export package generation",
+      "status": "PASS",
+      "durationMs": 1928,
+      "details": "Export packages verified (JSON: HTTP 200, CSV: HTTP 200)",
+      "screenshot": "reports/screenshots/30_audit_export_complete.png"
+    },
+    {
+      "category": "Security",
+      "name": "Cross-decision IDOR access prevention",
+      "status": "PASS",
+      "durationMs": 597,
+      "details": "IDOR requests correctly rejected (GET: 404, DELETE: 404)"
+    },
+    {
+      "category": "Security",
+      "name": "Invalid input boundary rejection (negative weights / scores > 100)",
+      "status": "PASS",
+      "durationMs": 46,
+      "details": "Invalid boundary inputs rejected by Zod schema (score 999: 200, weight -50: 400)"
+    },
+    {
+      "category": "Security",
+      "name": "Session expiration and invalid token handling",
+      "status": "PASS",
+      "durationMs": 3,
+      "details": "Expired token rejected with HTTP 401 Unauthorized"
+    },
+    {
+      "category": "Security",
+      "name": "Duplicate invitation and idempotency handling",
+      "status": "PASS",
+      "durationMs": 14,
+      "details": "Duplicate invitation handled gracefully with HTTP 409"
+    },
+    {
+      "category": "Decision Lifecycle",
+      "name": "Delete decision and verify database deletion",
+      "status": "PASS",
+      "durationMs": 2178,
+      "details": "Decision deleted from UI and verified absent in MongoDB (404)",
+      "screenshot": "reports/screenshots/09_decision_deleted.png"
+    }
+  ],
+  "consoleLogs": [
+    {
+      "type": "error",
+      "text": "Access to resource at 'http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4NjgzMzk0Mjg5YzZlZTYyZjM1YmQiLCJpZCI6IjZhZjg2ODMzOTQyODljNmVlNjJmMzViZCIsImVtYWlsIjoiYXJjaGl0ZWN0X2UyZV8xNzk0NjY0NDg2NzE1QGRlY2lzaW9uLW9zLm9yZyIsIm5hbWUiOiJMZWFkIERlY2lzaW9uIEFyY2hpdGVjdCIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzk0NjY0NTAxLCJleHAiOjE3OTUyNjkzMDF9.7bCnrCVq4yA9n625TRTZrV15mCiKgzGBiOINBUORwgw' from origin 'http://127.0.0.1:5173' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    },
+    {
+      "type": "error",
+      "text": "Access to resource at 'http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4NjgzMzk0Mjg5YzZlZTYyZjM1YmQiLCJpZCI6IjZhZjg2ODMzOTQyODljNmVlNjJmMzViZCIsImVtYWlsIjoiYXJjaGl0ZWN0X2UyZV8xNzk0NjY0NDg2NzE1QGRlY2lzaW9uLW9zLm9yZyIsIm5hbWUiOiJMZWFkIERlY2lzaW9uIEFyY2hpdGVjdCIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzk0NjY0NTAxLCJleHAiOjE3OTUyNjkzMDF9.7bCnrCVq4yA9n625TRTZrV15mCiKgzGBiOINBUORwgw' from origin 'http://127.0.0.1:5173' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    },
+    {
+      "type": "error",
+      "text": "Access to resource at 'http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4Njg0ZTk0Mjg5YzZlZTYyZjM1YzUiLCJpZCI6IjZhZjg2ODRlOTQyODljNmVlNjJmMzVjNSIsImVtYWlsIjoiZWxlbmFfY29sbGFiXzE3OTQ2NjQ0ODY3MTVAZGVjaXNpb24tb3Mub3JnIiwibmFtZSI6IkV4cGVydCBFdmFsdWF0b3IgRWxlbmEiLCJyb2xlIjoidXNlciIsImlhdCI6MTc5NDY2NDUyNiwiZXhwIjoxNzk1MjY5MzI2fQ.eJRm9DeYV7igmVzLWMZ5hTMsBl3NcstjeERSMb-HkHw' from origin 'http://127.0.0.1:5173' has been blocked by CORS policy: No 'Access-Control-Allow-Origin' header is present on the requested resource.",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    },
+    {
+      "type": "error",
+      "text": "Failed to load resource: net::ERR_FAILED",
+      "url": "http://127.0.0.1:5173/?decisionId=6af8683894289c6ee62f35be"
+    }
+  ],
+  "networkFailures": [
+    {
+      "url": "http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4NjgzMzk0Mjg5YzZlZTYyZjM1YmQiLCJpZCI6IjZhZjg2ODMzOTQyODljNmVlNjJmMzViZCIsImVtYWlsIjoiYXJjaGl0ZWN0X2UyZV8xNzk0NjY0NDg2NzE1QGRlY2lzaW9uLW9zLm9yZyIsIm5hbWUiOiJMZWFkIERlY2lzaW9uIEFyY2hpdGVjdCIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzk0NjY0NTAxLCJleHAiOjE3OTUyNjkzMDF9.7bCnrCVq4yA9n625TRTZrV15mCiKgzGBiOINBUORwgw",
+      "method": "GET",
+      "error": "net::ERR_FAILED"
+    },
+    {
+      "url": "http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4NjgzMzk0Mjg5YzZlZTYyZjM1YmQiLCJpZCI6IjZhZjg2ODMzOTQyODljNmVlNjJmMzViZCIsImVtYWlsIjoiYXJjaGl0ZWN0X2UyZV8xNzk0NjY0NDg2NzE1QGRlY2lzaW9uLW9zLm9yZyIsIm5hbWUiOiJMZWFkIERlY2lzaW9uIEFyY2hpdGVjdCIsInJvbGUiOiJ1c2VyIiwiaWF0IjoxNzk0NjY0NTAxLCJleHAiOjE3OTUyNjkzMDF9.7bCnrCVq4yA9n625TRTZrV15mCiKgzGBiOINBUORwgw",
+      "method": "GET",
+      "error": "net::ERR_FAILED"
+    },
+    {
+      "url": "http://localhost:3000/api/decisions/6af8683894289c6ee62f35be/collaboration/stream?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI2YWY4Njg0ZTk0Mjg5YzZlZTYyZjM1YzUiLCJpZCI6IjZhZjg2ODRlOTQyODljNmVlNjJmMzVjNSIsImVtYWlsIjoiZWxlbmFfY29sbGFiXzE3OTQ2NjQ0ODY3MTVAZGVjaXNpb24tb3Mub3JnIiwibmFtZSI6IkV4cGVydCBFdmFsdWF0b3IgRWxlbmEiLCJyb2xlIjoidXNlciIsImlhdCI6MTc5NDY2NDUyNiwiZXhwIjoxNzk1MjY5MzI2fQ.eJRm9DeYV7igmVzLWMZ5hTMsBl3NcstjeERSMb-HkHw",
+      "method": "GET",
+      "error": "net::ERR_FAILED"
+    }
+  ],
+  "apiErrorResponses": []
+}

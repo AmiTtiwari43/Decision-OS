@@ -119,6 +119,16 @@ export class DecisionApiClient {
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? resolveApiUrl()).replace(/\/+$/, '');
     this.timeoutMs = options.timeoutMs ?? 15000;
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('decision_os_token');
+        if (stored) {
+          this.token = stored;
+        }
+      } catch {
+        // storage disabled or restricted
+      }
+    }
   }
 
   private onUnauthorizedCallback?: () => void;
@@ -143,6 +153,16 @@ export class DecisionApiClient {
    * Retrieves the current in-memory bearer token.
    */
   getToken(): string | null {
+    if (!this.token && typeof window !== 'undefined') {
+      try {
+        const stored = window.localStorage.getItem('decision_os_token');
+        if (stored) {
+          this.token = stored;
+        }
+      } catch {
+        // Storage access restricted or disabled
+      }
+    }
     return this.token;
   }
 
@@ -158,8 +178,9 @@ export class DecisionApiClient {
     if (!headers.has('Accept')) {
       headers.set('Accept', 'application/json');
     }
-    if (this.token && !headers.has('Authorization')) {
-      headers.set('Authorization', `Bearer ${this.token}`);
+    const currentToken = this.getToken();
+    if (currentToken && !headers.has('Authorization')) {
+      headers.set('Authorization', `Bearer ${currentToken}`);
     }
 
     const controller = new AbortController();

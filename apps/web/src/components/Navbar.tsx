@@ -25,7 +25,6 @@ export const Navbar: React.FC<NavbarProps> = ({
   const { user, isAuthenticated, logout, openAuthModal } = useAuth();
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const handleScroll = () => {
       setScrolled(window.scrollY > 20);
     };
@@ -35,7 +34,6 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   // Close mobile menu on Esc key
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isMobileMenuOpen) {
         setIsMobileMenuOpen(false);

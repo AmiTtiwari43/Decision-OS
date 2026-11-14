@@ -24,6 +24,7 @@
     "lint:engine": "npm run lint --workspace=@decision-os/decision-engine"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.12"
+    "@vitest/coverage-v8": "^4.1.12",
+    "playwright": "^1.65.1"
   }
 }

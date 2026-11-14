@@ -34,7 +34,6 @@ export const CreateDecisionModal: React.FC<CreateDecisionModalProps> = ({
 
   // Keyboard navigation: Escape key closes modal
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen && !isSubmitting) {
         onClose();

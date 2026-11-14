@@ -176,7 +176,7 @@ export const RadarChart: React.FC<RadarChartProps> = ({
                     const score = option.scores[c.id] || 50;
                     const { x, y } = getCoordinates(i, score);
                     return (
-                      <motion.circle
+                      <circle
                         key={c.id}
                         cx={x}
                         cy={y}
@@ -184,8 +184,6 @@ export const RadarChart: React.FC<RadarChartProps> = ({
                         fill={option.color}
                         stroke="#08090A"
                         strokeWidth="1.5"
-                        animate={{ cx: x, cy: y }}
-                        transition={{ type: 'spring', stiffness: 220, damping: 25 }}
                       />
                     );
                   })}

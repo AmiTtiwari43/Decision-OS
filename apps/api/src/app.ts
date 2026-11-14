@@ -54,9 +54,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   }
 
   // CORS
+  const configuredOrigins = currentEnv.CORS_ORIGIN.split(',').map(o => o.trim());
+  const allowedOrigins = Array.from(new Set([
+    ...configuredOrigins,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+  ]));
+
   await app.register(cors, {
-    origin: currentEnv.CORS_ORIGIN.split(',').map(o => o.trim()),
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+    exposedHeaders: ['x-request-id'],
+    credentials: true,
   });
 
   // Echo request ID in response header

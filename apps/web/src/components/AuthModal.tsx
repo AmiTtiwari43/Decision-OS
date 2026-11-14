@@ -22,7 +22,6 @@ export const AuthModal: React.FC = () => {
 
   // Keyboard navigation: Escape key closes auth dialog
   useEffect(() => {
-    if (typeof window === 'undefined') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isAuthModalOpen) {
         closeAuthModal();
