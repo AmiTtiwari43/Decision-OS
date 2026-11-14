@@ -202,12 +202,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
           aria-modal="true"
           aria-labelledby="expert-calibration-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-slate-100"
+          className="relative w-full max-w-5xl bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-slate-100"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-950/60">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
+              <div className="p-2 bg-accent-indigo/10 border border-accent-indigo/30 rounded-lg text-accent-indigo">
                 <Target className="w-5 h-5" />
               </div>
               <div>
@@ -215,7 +215,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                   <h2 id="expert-calibration-title" className="text-lg font-bold text-white tracking-wide">
                     Expert Calibration & Prediction Intelligence
                   </h2>
-                  <span className="px-2 py-0.5 text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-700 rounded">
+                  <span className="px-2 py-0.5 text-xs font-semibold bg-accent-indigo/10 text-accent-indigo border border-accent-indigo/20 rounded font-mono">
                     Methodology v1.0.0
                   </span>
                 </div>
@@ -231,13 +231,13 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 disabled={isLoading}
                 title="Refresh Calibration Intelligence"
                 aria-label="Refresh calibration intelligence"
-                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-surface-subtle transition cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-surface-subtle transition cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -249,16 +249,16 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
           <div
             role="tablist"
             aria-label="Calibration views"
-            className="flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/40 overflow-x-auto scrollbar-none"
+            className="flex items-center justify-between px-6 border-b border-border-subtle bg-surface-subtle/50 overflow-x-auto scrollbar-none"
           >
             <div className="flex space-x-4">
               <button
                 role="tab"
                 aria-selected={activeTab === 'calibration'}
                 onClick={() => setActiveTab('calibration')}
-                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none ${
                   activeTab === 'calibration'
-                    ? 'border-indigo-500 text-indigo-400'
+                    ? 'border-accent-indigo text-accent-indigo'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -269,9 +269,9 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 role="tab"
                 aria-selected={activeTab === 'predictions'}
                 onClick={() => setActiveTab('predictions')}
-                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none ${
                   activeTab === 'predictions'
-                    ? 'border-indigo-500 text-indigo-400'
+                    ? 'border-accent-indigo text-accent-indigo'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
                 }`}
               >
@@ -296,8 +296,8 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
             {isLoading && !calibrationData && (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 space-y-3">
-                <Loader2 className="w-8 h-8 animate-spin text-indigo-400" />
-                <p className="text-sm">Calculating empirical calibration metrics...</p>
+                <Loader2 className="w-8 h-8 animate-spin text-accent-indigo" />
+                <p className="text-sm font-mono">Calculating empirical calibration metrics...</p>
               </div>
             )}
 
@@ -306,7 +306,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
               <div className="space-y-6">
                 {/* Safeguard Alert for Sample Size */}
                 {!calibrationData.hasSufficientSample && (
-                  <div className="p-4 bg-amber-950/40 border border-amber-800/80 rounded-xl flex items-start space-x-3 text-amber-200 text-sm">
+                  <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-xl flex items-start space-x-3 text-amber-200 text-sm">
                     <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
                     <div>
                       <h4 className="font-semibold text-amber-300">
@@ -322,12 +322,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 {/* KPI Cards */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   {/* Brier Score Card */}
-                  <div className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-xl">
+                  <div className="p-4 bg-surface border border-border rounded-xl">
                     <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
                       <span>Brier Score (Probabilistic Error)</span>
-                      <TrendingUp className="w-4 h-4 text-indigo-400" />
+                      <TrendingUp className="w-4 h-4 text-accent-indigo" />
                     </div>
-                    <div className="text-2xl font-bold text-white tracking-tight">
+                    <div className="text-2xl font-bold text-white tracking-tight font-mono">
                       {calibrationData.brierScore !== null ? calibrationData.brierScore : 'N/A'}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1">
@@ -336,12 +336,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                   </div>
 
                   {/* Expected Calibration Error */}
-                  <div className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-xl">
+                  <div className="p-4 bg-surface border border-border rounded-xl">
                     <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
                       <span>Expected Calibration Error (ECE)</span>
                       <Target className="w-4 h-4 text-emerald-400" />
                     </div>
-                    <div className="text-2xl font-bold text-white tracking-tight">
+                    <div className="text-2xl font-bold text-white tracking-tight font-mono">
                       {calibrationData.expectedCalibrationError !== null
                         ? calibrationData.expectedCalibrationError
                         : 'N/A'}
@@ -352,12 +352,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                   </div>
 
                   {/* Verified Observations */}
-                  <div className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-xl">
+                  <div className="p-4 bg-surface border border-border rounded-xl">
                     <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
                       <span>Verified Forecasts</span>
                       <ShieldCheck className="w-4 h-4 text-sky-400" />
                     </div>
-                    <div className="text-2xl font-bold text-white tracking-tight">
+                    <div className="text-2xl font-bold text-white tracking-tight font-mono">
                       {calibrationData.verifiedCount}
                       <span className="text-sm font-normal text-slate-400 ml-1.5">
                         / {calibrationData.totalPredictions} total
@@ -369,12 +369,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                   </div>
 
                   {/* Climatology Skill Score */}
-                  <div className="p-4 bg-slate-800/60 border border-slate-700/80 rounded-xl">
+                  <div className="p-4 bg-surface border border-border rounded-xl">
                     <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
                       <span>Brier Skill Score (BSS)</span>
                       <Award className="w-4 h-4 text-purple-400" />
                     </div>
-                    <div className="text-2xl font-bold text-white tracking-tight">
+                    <div className="text-2xl font-bold text-white tracking-tight font-mono">
                       {calibrationData.climatologyBss !== null
                         ? `${Math.round(calibrationData.climatologyBss * 100)}%`
                         : 'N/A'}
@@ -386,11 +386,11 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 </div>
 
                 {/* Reliability Diagram: Calibration Bins Table */}
-                <div className="p-4 bg-slate-800/40 border border-slate-700/80 rounded-xl space-y-3">
+                <div className="p-4 bg-surface border border-border rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
-                        <BarChart3 className="w-4 h-4 text-indigo-400" />
+                        <BarChart3 className="w-4 h-4 text-accent-indigo" />
                         <span>Reliability Diagram &bull; Calibration Bins</span>
                       </h3>
                       <p className="text-xs text-slate-400 mt-0.5">
@@ -401,7 +401,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs text-left">
-                      <thead className="bg-slate-900/60 text-slate-400 uppercase text-[10px] tracking-wider">
+                      <thead className="bg-surface-subtle text-slate-400 uppercase text-[10px] tracking-wider">
                         <tr>
                           <th className="px-3 py-2">Probability Range</th>
                           <th className="px-3 py-2">Forecast Count</th>
@@ -410,19 +410,19 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           <th className="px-3 py-2">Calibration Gap (|p̄ - ō|)</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-800">
+                      <tbody className="divide-y divide-border-subtle">
                         {calibrationData.calibrationBins.map(bin => (
-                          <tr key={bin.binIndex} className="hover:bg-slate-800/40 transition">
-                            <td className="px-3 py-2 font-mono text-indigo-300 font-medium">
+                          <tr key={bin.binIndex} className="hover:bg-surface-subtle/50 transition">
+                            <td className="px-3 py-2 font-mono text-accent-indigo font-medium">
                               {bin.range}
                             </td>
-                            <td className="px-3 py-2 text-slate-200">
+                            <td className="px-3 py-2 text-slate-200 font-mono">
                               {bin.count}
                             </td>
-                            <td className="px-3 py-2 text-slate-300">
+                            <td className="px-3 py-2 text-slate-300 font-mono">
                               {bin.count > 0 ? `${Math.round(bin.meanPredictedProbability * 100)}%` : '—'}
                             </td>
-                            <td className="px-3 py-2 text-slate-300">
+                            <td className="px-3 py-2 text-slate-300 font-mono">
                               {bin.count > 0 ? `${Math.round(bin.observedFrequency * 100)}%` : '—'}
                             </td>
                             <td className="px-3 py-2 font-mono">
@@ -451,7 +451,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                 {/* Domain Breakdown */}
                 {calibrationData.domainBreakdown.length > 0 && (
-                  <div className="p-4 bg-slate-800/40 border border-slate-700/80 rounded-xl space-y-3">
+                  <div className="p-4 bg-surface border border-border rounded-xl space-y-3">
                     <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
                       <Layers className="w-4 h-4 text-sky-400" />
                       <span>Domain Performance Segregation</span>
@@ -463,7 +463,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                       {calibrationData.domainBreakdown.map(dom => (
                         <div
                           key={dom.domain}
-                          className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg flex flex-col justify-between"
+                          className="p-3 bg-surface-card border border-border-subtle rounded-lg flex flex-col justify-between"
                         >
                           <div className="flex items-center justify-between">
                             <span className="text-xs font-semibold uppercase tracking-wider text-slate-300">
@@ -475,7 +475,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           </div>
                           <div className="mt-2 flex items-baseline justify-between">
                             <span className="text-xs text-slate-400">Brier Score:</span>
-                            <span className="text-sm font-bold font-mono text-indigo-400">
+                            <span className="text-sm font-bold font-mono text-accent-indigo">
                               {dom.brierScore}
                             </span>
                           </div>
@@ -486,7 +486,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 )}
 
                 {/* Separated Performance Dimensions (Participant Profiles) */}
-                <div className="p-4 bg-slate-800/40 border border-slate-700/80 rounded-xl space-y-3">
+                <div className="p-4 bg-surface border border-border rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-sm font-semibold text-white flex items-center space-x-2">
@@ -503,22 +503,22 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                     {calibrationData.expertProfiles.map(prof => (
                       <div
                         key={prof.contributorId}
-                        className="p-3.5 bg-slate-900/60 border border-slate-800 rounded-lg space-y-3"
+                        className="p-3.5 bg-surface-card border border-border-subtle rounded-lg space-y-3"
                       >
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-sm text-white">
                             {prof.contributorName}
                           </span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                          <span className="text-xs px-2 py-0.5 rounded bg-surface border border-border text-slate-300 font-mono">
                             {prof.experience.verifiedPredictions} verified forecasts
                           </span>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                           {/* Calibration */}
-                          <div className="p-2 bg-slate-800/40 rounded border border-slate-800">
+                          <div className="p-2 bg-surface rounded border border-border-subtle">
                             <span className="text-slate-400 block text-[10px] uppercase">Calibration</span>
-                            <span className="font-mono font-semibold text-indigo-300">
+                            <span className="font-mono font-semibold text-accent-indigo">
                               {prof.calibration.hasSufficientSample
                                 ? `BS: ${prof.calibration.brierScore}`
                                 : 'Sample < 3'}
@@ -526,25 +526,25 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           </div>
 
                           {/* Experience */}
-                          <div className="p-2 bg-slate-800/40 rounded border border-slate-800">
+                          <div className="p-2 bg-surface rounded border border-border-subtle">
                             <span className="text-slate-400 block text-[10px] uppercase">Experience</span>
-                            <span className="text-slate-200">
+                            <span className="text-slate-200 font-mono">
                               {prof.experience.totalContributions} contr. &bull; {prof.experience.totalPredictions} preds
                             </span>
                           </div>
 
                           {/* Evidence Quality */}
-                          <div className="p-2 bg-slate-800/40 rounded border border-slate-800">
+                          <div className="p-2 bg-surface rounded border border-border-subtle">
                             <span className="text-slate-400 block text-[10px] uppercase">Evidence Citations</span>
-                            <span className="text-emerald-400 font-semibold">
+                            <span className="text-emerald-400 font-semibold font-mono">
                               {prof.evidenceQuality.citationsProvided} citations
                             </span>
                           </div>
 
                           {/* Popularity (Social Signal) */}
-                          <div className="p-2 bg-slate-800/40 rounded border border-slate-800">
+                          <div className="p-2 bg-surface rounded border border-border-subtle">
                             <span className="text-slate-400 block text-[10px] uppercase">Social Consensus</span>
-                            <span className="text-slate-300">
+                            <span className="text-slate-300 font-mono">
                               {prof.popularity.preferredOptionAgreementRate !== null
                                 ? `${Math.round(prof.popularity.preferredOptionAgreementRate * 100)}% agreement`
                                 : 'N/A'}
@@ -561,17 +561,17 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 </div>
 
                 {/* Mathematical Transparency Documentation */}
-                <div className="p-3.5 bg-slate-950/60 border border-slate-800 rounded-lg text-xs space-y-1 text-slate-400">
+                <div className="p-3.5 bg-surface border border-border rounded-lg text-xs space-y-1 text-slate-400">
                   <div className="font-semibold text-slate-300 text-[11px] uppercase tracking-wider">
                     Mathematical Governance & Formula Transparency
                   </div>
-                  <div className="font-mono text-[11px] text-indigo-300">
+                  <div className="font-mono text-[11px] text-accent-indigo">
                     Brier Score: {calibrationData.formulaDocumentation.brierScore}
                   </div>
-                  <div className="font-mono text-[11px] text-indigo-300">
+                  <div className="font-mono text-[11px] text-accent-indigo">
                     ECE: {calibrationData.formulaDocumentation.ece}
                   </div>
-                  <div className="font-mono text-[11px] text-indigo-300">
+                  <div className="font-mono text-[11px] text-accent-indigo">
                     BSS: {calibrationData.formulaDocumentation.bss}
                   </div>
                 </div>
@@ -584,15 +584,15 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 {/* Actions Bar */}
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center space-x-2">
-                    <span className="text-xs text-slate-400">Status:</span>
+                    <span className="text-xs text-slate-400 font-mono">Status:</span>
                     {['all', 'awaiting_outcome', 'verified', 'disputed'].map(st => (
                       <button
                         key={st}
                         onClick={() => setStatusFilter(st)}
                         className={`px-2.5 py-1 text-xs rounded-lg transition capitalize ${
                           statusFilter === st
-                            ? 'bg-indigo-600 text-white font-medium shadow-sm'
-                            : 'bg-slate-800 text-slate-400 hover:text-white'
+                            ? 'bg-accent-indigo text-slate-950 font-bold shadow-glow-indigo-sm'
+                            : 'bg-surface border border-border text-slate-400 hover:text-white'
                         }`}
                       >
                         {st.replace('_', ' ')}
@@ -602,7 +602,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                   <button
                     onClick={() => setIsCreatingPrediction(prev => !prev)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
+                    className="px-3 py-1.5 bg-signal hover:bg-signal-light text-slate-950 text-xs font-bold rounded-lg shadow-glow-signal-sm transition flex items-center space-x-1.5"
                   >
                     <Target className="w-3.5 h-3.5" />
                     <span>{isCreatingPrediction ? 'Cancel' : 'Submit Prospective Forecast'}</span>
@@ -613,14 +613,14 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 {isCreatingPrediction && (
                   <form
                     onSubmit={handleCreatePrediction}
-                    className="p-4 bg-slate-800/80 border border-indigo-500/40 rounded-xl space-y-4"
+                    className="p-4 bg-surface border border-border rounded-xl space-y-4"
                   >
-                    <div className="flex items-center justify-between border-b border-slate-700 pb-2">
+                    <div className="flex items-center justify-between border-b border-border-subtle pb-2">
                       <h4 className="text-sm font-semibold text-white flex items-center space-x-2">
-                        <Target className="w-4 h-4 text-indigo-400" />
+                        <Target className="w-4 h-4 text-accent-indigo" />
                         <span>Submit Prospective Forecast</span>
                       </h4>
-                      <span className="text-xs text-amber-300">
+                      <span className="text-xs text-amber-300 font-mono">
                         Must precede real-world outcome
                       </span>
                     </div>
@@ -633,7 +633,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                         value={statement}
                         onChange={e => setStatement(e.target.value)}
                         placeholder="e.g. Option Alpha will process over 50,000 requests/second under sustained load."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-surface-subtle border border-border rounded-lg p-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-accent-indigo"
                         rows={2}
                         required
                       />
@@ -642,7 +642,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-xs text-slate-300 block mb-1">
-                          Probability: <span className="font-bold text-indigo-400">{Math.round(probability * 100)}%</span>
+                          Probability: <span className="font-bold text-accent-indigo font-mono">{Math.round(probability * 100)}%</span>
                         </label>
                         <input
                           type="range"
@@ -651,7 +651,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           step="0.05"
                           value={probability}
                           onChange={e => setProbability(parseFloat(e.target.value))}
-                          className="w-full accent-indigo-500"
+                          className="w-full accent-accent-indigo"
                         />
                       </div>
 
@@ -664,7 +664,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           value={targetDate}
                           onChange={e => setTargetDate(e.target.value)}
                           min={new Date(Date.now() + 86400000).toISOString().split('T')[0]}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-xs text-white focus:outline-none focus:border-accent-indigo"
                           required
                         />
                       </div>
@@ -676,7 +676,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                         <select
                           value={domain}
                           onChange={e => setDomain(e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-xs text-white focus:outline-none focus:border-accent-indigo"
                         >
                           <option value="engineering">Engineering</option>
                           <option value="finance">Finance</option>
@@ -697,7 +697,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                         value={evidenceRef}
                         onChange={e => setEvidenceRef(e.target.value)}
                         placeholder="https://..."
-                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-accent-indigo"
                       />
                     </div>
 
@@ -712,7 +712,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                       <button
                         type="submit"
                         disabled={isSubmittingPred}
-                        className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-lg shadow transition flex items-center space-x-1.5"
+                        className="px-4 py-1.5 bg-signal hover:bg-signal-light text-slate-950 text-xs font-bold rounded-lg shadow-glow-signal-sm transition flex items-center space-x-1.5"
                       >
                         {isSubmittingPred ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
                         <span>Submit Prospective Forecast</span>
@@ -732,7 +732,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                     {filteredPredictions.map(p => (
                       <div
                         key={p.predictionId}
-                        className="p-4 bg-slate-800/40 border border-slate-700/80 rounded-xl space-y-3"
+                        className="p-4 bg-surface border border-border rounded-xl space-y-3"
                       >
                         <div className="flex items-start justify-between">
                           <div className="space-y-1">
@@ -741,12 +741,12 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                                 {p.statement}
                               </span>
                               <span
-                                className={`text-[10px] font-semibold px-2 py-0.5 rounded capitalize ${
+                                className={`text-[10px] font-semibold px-2 py-0.5 rounded capitalize font-mono ${
                                   p.status === 'verified'
-                                    ? 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
                                     : p.status === 'disputed'
-                                    ? 'bg-red-950 text-red-300 border border-red-700'
-                                    : 'bg-amber-950 text-amber-300 border border-amber-700'
+                                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                                    : 'bg-amber-500/10 text-amber-300 border border-amber-500/20'
                                 }`}
                               >
                                 {p.status.replace('_', ' ')}
@@ -766,7 +766,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                           <div className="text-right">
                             <span className="text-xs text-slate-400 block">Stated Probability</span>
-                            <span className="text-lg font-bold font-mono text-indigo-400">
+                            <span className="text-lg font-bold font-mono text-accent-indigo">
                               {Math.round(p.probability * 100)}%
                             </span>
                           </div>
@@ -774,18 +774,18 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                         {/* Outcome Details */}
                         {p.outcome && (
-                          <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-lg text-xs space-y-1.5">
+                          <div className="p-3 bg-surface-card border border-border-subtle rounded-lg text-xs space-y-1.5">
                             <div className="flex items-center justify-between">
                               <span className="font-semibold text-slate-300 flex items-center space-x-1.5">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                                 <span>
                                   Observed Outcome:{' '}
-                                  <strong className={p.outcome.observedOutcome === 1 ? 'text-emerald-400' : 'text-red-400'}>
+                                  <strong className={p.outcome.observedOutcome === 1 ? 'text-emerald-400' : 'text-rose-400'}>
                                     {p.outcome.observedOutcome === 1 ? 'Event Occurred (1)' : 'Event Did Not Occur (0)'}
                                   </strong>
                                 </span>
                               </span>
-                              <span className="text-[11px] text-slate-500">
+                              <span className="text-[11px] text-slate-500 font-mono">
                                 Verified by {p.outcome.verifiedByName || 'Authorized User'} on{' '}
                                 {new Date(p.outcome.outcomeDate).toLocaleDateString()}
                               </span>
@@ -794,7 +794,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                               Verification Source: <span className="text-slate-300 font-mono">{p.outcome.verificationSource}</span>
                             </div>
                             {p.outcome.disputeReason && (
-                              <div className="p-2 bg-red-950/40 border border-red-900 rounded text-red-300 text-[11px]">
+                              <div className="p-2 bg-rose-500/10 border border-rose-500/20 rounded text-rose-300 text-[11px]">
                                 Disputed: {p.outcome.disputeReason}
                               </div>
                             )}
@@ -802,11 +802,11 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                         )}
 
                         {/* Outcome & Dispute Action Drawers */}
-                        <div className="flex items-center justify-end space-x-2 pt-1 border-t border-slate-800 text-xs">
+                        <div className="flex items-center justify-end space-x-2 pt-1 border-t border-border-subtle text-xs">
                           {p.status === 'awaiting_outcome' && (
                             <button
                               onClick={() => setRecordingPredictionId(p.predictionId)}
-                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition flex items-center space-x-1"
+                              className="px-3 py-1 bg-surface hover:bg-surface-subtle border border-border text-slate-200 rounded transition flex items-center space-x-1 cursor-pointer"
                             >
                               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
                               <span>Record Verified Outcome</span>
@@ -816,7 +816,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                           {p.status === 'verified' && (
                             <button
                               onClick={() => setDisputingPredictionId(p.predictionId)}
-                              className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded transition flex items-center space-x-1 text-red-300 hover:text-red-200"
+                              className="px-3 py-1 bg-surface hover:bg-surface-subtle border border-border text-slate-200 rounded transition flex items-center space-x-1 text-rose-300 hover:text-rose-200 cursor-pointer"
                             >
                               <AlertTriangle className="w-3.5 h-3.5" />
                               <span>Dispute Outcome</span>
@@ -826,7 +826,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                         {/* Record Outcome Drawer */}
                         {recordingPredictionId === p.predictionId && (
-                          <div className="p-3 bg-slate-900 border border-emerald-800/60 rounded-lg space-y-3 mt-2">
+                          <div className="p-3 bg-surface-card border border-emerald-500/30 rounded-lg space-y-3 mt-2">
                             <h5 className="font-semibold text-xs text-emerald-300">
                               Record Verified Real-World Outcome
                             </h5>
@@ -836,7 +836,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                                 <select
                                   value={observedOutcome}
                                   onChange={e => setObservedOutcome(parseInt(e.target.value, 10))}
-                                  className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-white"
+                                  className="w-full bg-surface-subtle border border-border rounded p-1.5 text-white"
                                 >
                                   <option value={1}>1 — Event Occurred as Predicted</option>
                                   <option value={0}>0 — Event Did Not Occur</option>
@@ -848,7 +848,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                                   type="date"
                                   value={outcomeDate}
                                   onChange={e => setOutcomeDate(e.target.value)}
-                                  className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-white"
+                                  className="w-full bg-surface-subtle border border-border rounded p-1.5 text-white"
                                 />
                               </div>
                             </div>
@@ -861,7 +861,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                                 value={verificationSource}
                                 onChange={e => setVerificationSource(e.target.value)}
                                 placeholder="e.g. Audit log #214, Datadog metric report, Third-party benchmark URL"
-                                className="w-full bg-slate-950 border border-slate-700 rounded p-1.5 text-xs text-white placeholder-slate-500"
+                                className="w-full bg-surface-subtle border border-border rounded p-1.5 text-xs text-white placeholder-slate-500"
                               />
                             </div>
                             <div className="flex justify-end space-x-2">
@@ -874,7 +874,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                               <button
                                 onClick={() => handleRecordOutcome(p.predictionId)}
                                 disabled={isSavingOutcome || !verificationSource.trim()}
-                                className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded"
+                                className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded shadow-sm"
                               >
                                 {isSavingOutcome ? 'Saving...' : 'Confirm Outcome'}
                               </button>
@@ -884,15 +884,15 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
                         {/* Dispute Drawer */}
                         {disputingPredictionId === p.predictionId && (
-                          <div className="p-3 bg-slate-900 border border-red-800/60 rounded-lg space-y-3 mt-2">
-                            <h5 className="font-semibold text-xs text-red-300">
+                          <div className="p-3 bg-surface-card border border-rose-500/30 rounded-lg space-y-3 mt-2">
+                            <h5 className="font-semibold text-xs text-rose-300">
                               Dispute Outcome Verification
                             </h5>
                             <textarea
                               value={disputeReason}
                               onChange={e => setDisputeReason(e.target.value)}
                               placeholder="Document the technical or empirical reason this verified outcome is disputed..."
-                              className="w-full bg-slate-950 border border-slate-700 rounded p-2 text-xs text-white placeholder-slate-500"
+                              className="w-full bg-surface-subtle border border-border rounded p-2 text-xs text-white placeholder-slate-500"
                               rows={2}
                             />
                             <div className="flex justify-end space-x-2">
@@ -905,7 +905,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                               <button
                                 onClick={() => handleDispute(p.predictionId)}
                                 disabled={isSavingDispute || !disputeReason.trim()}
-                                className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white text-xs font-semibold rounded"
+                                className="px-3 py-1 bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold rounded"
                               >
                                 {isSavingDispute ? 'Saving...' : 'Submit Dispute'}
                               </button>

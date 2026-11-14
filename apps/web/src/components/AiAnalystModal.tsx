@@ -260,7 +260,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
         case 'risk_mitigation':
           return { label: 'Risk Mitigation', bg: 'bg-rose-500/15 text-rose-300 border-rose-500/30' };
         default:
-          return { label: 'Advisory Note', bg: 'bg-neutral-800 text-neutral-300 border-neutral-700' };
+          return { label: 'Advisory Note', bg: 'bg-surface-subtle text-slate-300 border-border' };
       }
     };
 
@@ -269,7 +269,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     return (
       <div
         key={s.id}
-        className="rounded-xl bg-neutral-900 border border-neutral-800 overflow-hidden text-xs transition-all hover:border-neutral-700/80"
+        className="rounded-xl bg-surface border border-border overflow-hidden text-xs transition-all hover:border-border-strong"
       >
         {/* Card Header & Summary Bar */}
         <div className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-3">
@@ -285,16 +285,16 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                 <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold uppercase tracking-wider ${badge.bg}`}>
                   {badge.label}
                 </span>
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 font-mono border border-neutral-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-surface-subtle text-slate-300 font-mono border border-border">
                   Priority Score: {s.rankingScore}/100
                 </span>
-                <span className="text-[10px] text-neutral-400">
+                <span className="text-[10px] text-slate-400">
                   {Math.round(s.confidence * 100)}% Confidence • {s.uncertaintyLevel} uncertainty
                 </span>
               </div>
 
-              <h4 className="text-sm font-semibold text-neutral-100">{s.title}</h4>
-              <p className="text-xs text-neutral-300 leading-relaxed">{s.explanation}</p>
+              <h4 className="text-sm font-semibold text-white">{s.title}</h4>
+              <p className="text-xs text-slate-300 leading-relaxed">{s.explanation}</p>
             </div>
           </div>
 
@@ -302,7 +302,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           <div className="flex items-center gap-2 shrink-0 md:self-start pt-2 md:pt-0">
             {s.category === 'criterion' && (
               criterionExists ? (
-                <span className="text-[11px] px-2.5 py-1 rounded bg-neutral-800 text-neutral-500 font-medium">
+                <span className="text-[11px] px-2.5 py-1 rounded bg-surface-subtle border border-border text-slate-500 font-medium">
                   Already in Model
                 </span>
               ) : (
@@ -315,7 +315,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                     }
                   }}
                   disabled={!canEdit || isAdoptingCriterion}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-signal hover:bg-signal-light text-slate-950 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-glow-signal-sm"
                   title={canEdit ? 'Adopt this criterion into the decision model' : 'Only decision owners or editors can adopt criteria'}
                 >
                   {isAdoptingCriterion ? (
@@ -330,7 +330,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
             {s.category === 'alternative' && (
               optionExists ? (
-                <span className="text-[11px] px-2.5 py-1 rounded bg-neutral-800 text-neutral-500 font-medium">
+                <span className="text-[11px] px-2.5 py-1 rounded bg-surface-subtle border border-border text-slate-500 font-medium">
                   Already in Model
                 </span>
               ) : (
@@ -343,7 +343,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                     }
                   }}
                   disabled={!canEdit || isAdoptingOption}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent-indigo hover:bg-indigo-400 text-slate-950 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                   title={canEdit ? 'Add this alternative option into the decision model' : 'Only decision owners or editors can add options'}
                 >
                   {isAdoptingOption ? (
@@ -358,7 +358,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
             <button
               onClick={() => toggleSuggestionExpand(s.id)}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-medium transition"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white font-medium transition cursor-pointer"
               title="Toggle ranking explainability"
             >
               <span className="text-[11px]">{isExpanded ? 'Hide Details' : 'Explain Rank'}</span>
@@ -369,28 +369,28 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
         {/* Explainability Drawer */}
         {isExpanded && (
-          <div className="px-4 pb-4 pt-2 border-t border-neutral-800/80 bg-neutral-950/60 space-y-3">
+          <div className="px-4 pb-4 pt-2 border-t border-border bg-surface-card space-y-3">
             {/* Why This Rank */}
             <div className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/15 space-y-1">
               <div className="flex items-center gap-1.5 text-purple-300 font-semibold text-[11px] uppercase tracking-wider">
                 <Award className="w-3.5 h-3.5" />
                 <span>Deterministic Ranking Explanation</span>
               </div>
-              <p className="text-xs text-neutral-200">{s.whyThisRank}</p>
+              <p className="text-xs text-slate-200">{s.whyThisRank}</p>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               {/* Influencing Criteria */}
-              <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
+              <div className="p-3 rounded-lg bg-surface border border-border space-y-1">
                 <div className="flex items-center gap-1.5 text-cyan-400 font-semibold text-[11px] uppercase tracking-wider">
                   <Scale className="w-3.5 h-3.5" />
                   <span>Influencing Criteria</span>
                 </div>
-                <p className="text-neutral-300">{s.criteriaInfluence}</p>
+                <p className="text-slate-300">{s.criteriaInfluence}</p>
                 {s.relevantCriteria.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-1">
                     {s.relevantCriteria.map(c => (
-                      <span key={c.id} className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-cyan-300 font-mono">
+                      <span key={c.id} className="text-[10px] px-2 py-0.5 rounded bg-surface-subtle border border-border text-cyan-300 font-mono">
                         {c.name}
                       </span>
                     ))}
@@ -399,16 +399,16 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               </div>
 
               {/* Supporting Evidence */}
-              <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
+              <div className="p-3 rounded-lg bg-surface border border-border space-y-1">
                 <div className="flex items-center gap-1.5 text-amber-400 font-semibold text-[11px] uppercase tracking-wider">
                   <FileQuestion className="w-3.5 h-3.5" />
                   <span>Supporting Evidence</span>
                 </div>
-                <p className="text-neutral-300">{s.evidenceSupport}</p>
+                <p className="text-slate-300">{s.evidenceSupport}</p>
                 {s.supportingEvidence.length > 0 && (
                   <div className="flex flex-wrap gap-1 pt-1">
                     {s.supportingEvidence.map(e => (
-                      <span key={e.id} className="text-[10px] px-2 py-0.5 rounded bg-neutral-800 text-amber-300 font-mono">
+                      <span key={e.id} className="text-[10px] px-2 py-0.5 rounded bg-surface-subtle border border-border text-amber-300 font-mono">
                         {e.title}
                       </span>
                     ))}
@@ -420,11 +420,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
             {/* Assumptions & What Could Change */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
               {s.assumptionsMade.length > 0 && (
-                <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
-                  <span className="font-semibold text-neutral-300 uppercase tracking-wider text-[11px]">
+                <div className="p-3 rounded-lg bg-surface border border-border space-y-1">
+                  <span className="font-semibold text-slate-300 uppercase tracking-wider text-[11px]">
                     Assumptions Made:
                   </span>
-                  <ul className="space-y-1 pl-4 list-disc text-neutral-400">
+                  <ul className="space-y-1 pl-4 list-disc text-slate-400">
                     {s.assumptionsMade.map((a, i) => (
                       <li key={i}>{a}</li>
                     ))}
@@ -433,8 +433,8 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               )}
 
               {s.missingInformation.length > 0 && (
-                <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
-                  <span className="font-semibold text-neutral-300 uppercase tracking-wider text-[11px]">
+                <div className="p-3 rounded-lg bg-surface border border-border space-y-1">
+                  <span className="font-semibold text-slate-300 uppercase tracking-wider text-[11px]">
                     Missing Information:
                   </span>
                   <ul className="space-y-1 pl-4 list-disc text-amber-300/80">
@@ -447,48 +447,48 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
             </div>
 
             {/* What Could Change Recommendation */}
-            <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 text-xs text-neutral-300 space-y-1">
+            <div className="p-2.5 rounded-lg bg-surface border border-border text-xs text-slate-300 space-y-1">
               <span className="font-semibold text-indigo-300 text-[11px] uppercase tracking-wider">
                 What Could Change This Recommendation:
               </span>
-              <p className="text-neutral-400">{s.whatCouldChangeRecommendation}</p>
+              <p className="text-slate-400">{s.whatCouldChangeRecommendation}</p>
             </div>
 
             {/* Potential Bias or Limitations */}
             {s.potentialBiasOrLimitations.length > 0 && (
-              <div className="p-2.5 rounded-lg bg-neutral-900/80 border border-neutral-800 text-xs text-neutral-400 space-y-1">
-                <span className="font-semibold text-neutral-400 text-[11px] uppercase tracking-wider">
+              <div className="p-2.5 rounded-lg bg-surface border border-border text-xs text-slate-400 space-y-1">
+                <span className="font-semibold text-slate-400 text-[11px] uppercase tracking-wider">
                   Potential Bias or Limitations:
                 </span>
-                <p className="text-neutral-500 italic">{s.potentialBiasOrLimitations.join(' • ')}</p>
+                <p className="text-slate-500 italic">{s.potentialBiasOrLimitations.join(' • ')}</p>
               </div>
             )}
 
             {/* Formula & Score Breakdown */}
-            <div className="p-2.5 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 space-y-1.5 font-mono">
-              <div className="flex items-center justify-between text-neutral-300">
+            <div className="p-2.5 rounded-lg bg-surface border border-border text-[11px] text-slate-400 space-y-1.5 font-mono">
+              <div className="flex items-center justify-between text-slate-300">
                 <span className="font-bold">Ranking Methodology (MDAR v1):</span>
                 <span>Total Score: {s.rankingScore}/100</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center pt-1 text-[10px]">
-                <div className="p-1.5 rounded bg-neutral-800/60">
-                  <div className="text-neutral-500">Relevance</div>
-                  <div className="text-neutral-200 font-bold">{s.scoreBreakdown.criteriaRelevance}/100</div>
+                <div className="p-1.5 rounded bg-surface-subtle border border-border-subtle">
+                  <div className="text-slate-500">Relevance</div>
+                  <div className="text-slate-200 font-bold">{s.scoreBreakdown.criteriaRelevance}/100</div>
                 </div>
-                <div className="p-1.5 rounded bg-neutral-800/60">
-                  <div className="text-neutral-500">Evidence</div>
-                  <div className="text-neutral-200 font-bold">{s.scoreBreakdown.evidenceGrounding}/100</div>
+                <div className="p-1.5 rounded bg-surface-subtle border border-border-subtle">
+                  <div className="text-slate-500">Evidence</div>
+                  <div className="text-slate-200 font-bold">{s.scoreBreakdown.evidenceGrounding}/100</div>
                 </div>
-                <div className="p-1.5 rounded bg-neutral-800/60">
-                  <div className="text-neutral-500">Sensitivity</div>
-                  <div className="text-neutral-200 font-bold">{s.scoreBreakdown.sensitivityUrgency}/100</div>
+                <div className="p-1.5 rounded bg-surface-subtle border border-border-subtle">
+                  <div className="text-slate-500">Sensitivity</div>
+                  <div className="text-slate-200 font-bold">{s.scoreBreakdown.sensitivityUrgency}/100</div>
                 </div>
-                <div className="p-1.5 rounded bg-neutral-800/60">
-                  <div className="text-neutral-500">Confidence</div>
-                  <div className="text-neutral-200 font-bold">{s.scoreBreakdown.confidenceScore}/100</div>
+                <div className="p-1.5 rounded bg-surface-subtle border border-border-subtle">
+                  <div className="text-slate-500">Confidence</div>
+                  <div className="text-slate-200 font-bold">{s.scoreBreakdown.confidenceScore}/100</div>
                 </div>
-                <div className="p-1.5 rounded bg-neutral-800/60">
-                  <div className="text-neutral-500">Deductions</div>
+                <div className="p-1.5 rounded bg-surface-subtle border border-border-subtle">
+                  <div className="text-slate-500">Deductions</div>
                   <div className="text-rose-400 font-bold">-{s.scoreBreakdown.penalties} pts</div>
                 </div>
               </div>
@@ -504,7 +504,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -515,22 +515,22 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           aria-modal="true"
           aria-labelledby="ai-analyst-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden"
+          className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-surface-card border border-border rounded-2xl shadow-2xl overflow-hidden text-slate-100"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-800/80 bg-neutral-900/60">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-400">
                 <Sparkles className="w-5 h-5" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 id="ai-analyst-title" className="text-lg font-semibold text-neutral-100">AI Decision Analyst</h2>
+                  <h2 id="ai-analyst-title" className="text-lg font-semibold text-white">AI Decision Analyst</h2>
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300">
                     Advisory • Non-Authoritative
                   </span>
                 </div>
-                <p className="text-xs text-neutral-400">
+                <p className="text-xs text-slate-400">
                   Evidence-aware insights, trade-offs, and critical gaps for &ldquo;{decision?.title}&rdquo;
                 </p>
               </div>
@@ -540,7 +540,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               <button
                 onClick={() => fetchAnalysis(capability)}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-surface hover:bg-surface-subtle border border-border transition disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Regenerate analysis"
                 aria-label="Regenerate analysis"
               >
@@ -549,7 +549,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none"
+                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-surface-subtle border border-transparent hover:border-border transition cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -561,7 +561,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           <div
             role="tablist"
             aria-label="AI Analyst capabilities"
-            className="flex items-center gap-1 px-6 py-2.5 border-b border-neutral-800 bg-neutral-900/30 overflow-x-auto text-xs scrollbar-none"
+            className="flex items-center gap-1 px-6 py-2.5 border-b border-border-subtle bg-surface-subtle/50 overflow-x-auto text-xs scrollbar-none"
           >
             {[
               { id: 'all', label: 'All Overview', icon: Brain },
@@ -583,11 +583,10 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                   aria-selected={isActive}
                   onClick={() => handleTabChange(tab.id as AiCapability)}
                   disabled={isLoading}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none ${
-                    isActive
-                      ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
-                      : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60'
-                  }`}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${isActive
+                      ? 'bg-accent-indigo/20 text-accent-indigo border border-accent-indigo/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-surface'
+                    }`}
                 >
                   <Icon className="w-3.5 h-3.5" />
                   <span>{tab.label}</span>
@@ -626,13 +625,13 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               <div className="p-3 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 mb-3">
                 <ShieldAlert className="w-8 h-8" />
               </div>
-              <h3 className="text-sm font-semibold text-neutral-200 mb-1">AI Analyst Unavailable</h3>
-              <p className="text-xs text-neutral-400 max-w-md mb-4">
+              <h3 className="text-sm font-semibold text-slate-200 mb-1">AI Analyst Unavailable</h3>
+              <p className="text-xs text-slate-400 max-w-md mb-4">
                 The backend AI provider is currently offline or not configured with an API key. You can continue using deterministic MCDA engine evaluations and collaborative features.
               </p>
               <button
                 onClick={() => fetchAnalysis(capability)}
-                className="px-4 py-2 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-xs font-medium text-neutral-200 transition"
+                className="px-4 py-2 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs font-medium text-slate-200 transition cursor-pointer"
               >
                 Check Again
               </button>
@@ -644,8 +643,8 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
             {isLoading ? (
               <div className="py-20 flex flex-col items-center justify-center gap-3">
                 <Loader2 className="w-8 h-8 text-purple-400 animate-spin" />
-                <p className="text-sm text-neutral-300 font-medium">Synthesizing Evidence-Aware Advisory Analysis...</p>
-                <p className="text-xs text-neutral-500 max-w-sm text-center">
+                <p className="text-sm text-slate-300 font-medium">Synthesizing Evidence-Aware Advisory Analysis...</p>
+                <p className="text-xs text-slate-500 max-w-sm text-center">
                   Extracting MCDA calculations, analyzing sensitivity tipping points, ranking suggestions deterministically, and checking empirical citations.
                 </p>
               </div>
@@ -653,27 +652,27 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               <>
                 {/* RANKED ADVICE (PRIMARY EXPLAINABLE RANKING VIEW) */}
                 {(capability === 'all' || capability === 'ranked_suggestions') && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-3">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-purple-400 text-xs font-semibold uppercase tracking-wider">
                         <Award className="w-4 h-4" />
                         <span>Explainable Advisory Recommendation Ranking</span>
                       </div>
-                      <span className="text-[11px] text-neutral-400">
+                      <span className="text-[11px] text-slate-400">
                         Multi-Factor Deterministic Advisory Ranking (MDAR v1)
                       </span>
                     </div>
 
-                    <div className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 text-[11px] text-neutral-400 flex items-start gap-2">
+                    <div className="p-3 rounded-lg bg-surface-card border border-border-subtle text-[11px] text-slate-400 flex items-start gap-2">
                       <Info className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
                       <div>
-                        <strong className="text-neutral-200">Advisory Non-Authoritative Guarantee: </strong>
+                        <strong className="text-slate-200">Advisory Non-Authoritative Guarantee: </strong>
                         Suggestions are prioritized using transparent multi-factor scoring (Criterion weight relevance, empirical grounding, sensitivity tipping points, stated heuristic confidence). They do NOT alter or replace canonical MCDA engine calculations.
                       </div>
                     </div>
 
                     {!analysis.output.rankedSuggestions || analysis.output.rankedSuggestions.length === 0 ? (
-                      <p className="text-xs text-neutral-400 italic py-2">
+                      <p className="text-xs text-slate-400 italic py-2">
                         No actionable advisory suggestions generated for this decision state.
                       </p>
                     ) : (
@@ -686,12 +685,12 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Executive Summary Card */}
                 {(capability === 'all' || capability === 'executive_summary') && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-2">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-2">
                     <div className="flex items-center gap-2 text-purple-400 text-xs font-semibold uppercase tracking-wider">
                       <Scale className="w-4 h-4" />
                       <span>Executive Briefing</span>
                     </div>
-                    <p className="text-sm text-neutral-200 leading-relaxed whitespace-pre-wrap">
+                    <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-wrap">
                       {analysis.output.executiveSummary}
                     </p>
                   </div>
@@ -699,7 +698,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Trade-offs & Risks Card */}
                 {(capability === 'all' || capability === 'tradeoff_analysis') && analysis.output.tradeoffAnalysis && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-3">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
                     <div className="flex items-center gap-2 text-indigo-400 text-xs font-semibold uppercase tracking-wider">
                       <Layers className="w-4 h-4" />
                       <span>Trade-off Analysis & Deterministic Engine Facts</span>
@@ -714,8 +713,8 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                     {analysis.output.tradeoffAnalysis.keyTradeoffs.length > 0 && (
                       <div className="space-y-1.5">
-                        <span className="text-xs font-medium text-neutral-300">Key Trade-offs:</span>
-                        <ul className="space-y-1 pl-4 list-disc text-xs text-neutral-400">
+                        <span className="text-xs font-medium text-slate-300">Key Trade-offs:</span>
+                        <ul className="space-y-1 pl-4 list-disc text-xs text-slate-400">
                           {analysis.output.tradeoffAnalysis.keyTradeoffs.map((item, i) => (
                             <li key={i}>{item}</li>
                           ))}
@@ -724,9 +723,9 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                     )}
 
                     {analysis.output.tradeoffAnalysis.sensitivityNotes.length > 0 && (
-                      <div className="space-y-1.5 pt-2 border-t border-neutral-800/60">
-                        <span className="text-xs font-medium text-neutral-300">Sensitivity & Tipping Points:</span>
-                        <ul className="space-y-1 pl-4 list-disc text-xs text-neutral-400">
+                      <div className="space-y-1.5 pt-2 border-t border-border-subtle">
+                        <span className="text-xs font-medium text-slate-300">Sensitivity & Tipping Points:</span>
+                        <ul className="space-y-1 pl-4 list-disc text-xs text-slate-400">
                           {analysis.output.tradeoffAnalysis.sensitivityNotes.map((item, i) => (
                             <li key={i}>{item}</li>
                           ))}
@@ -736,7 +735,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                     {/* Operational Risks & Mitigations */}
                     {analysis.output.tradeoffAnalysis.risks && analysis.output.tradeoffAnalysis.risks.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-neutral-800/60">
+                      <div className="space-y-2 pt-2 border-t border-border-subtle">
                         <span className="text-xs font-medium text-rose-300 flex items-center gap-1.5">
                           <AlertTriangle className="w-3.5 h-3.5" />
                           <span>Identified Risks & Mitigations:</span>
@@ -750,7 +749,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                                   {r.severity}
                                 </span>
                               </div>
-                              <p className="text-[11px] text-neutral-400"><strong>Mitigation:</strong> {r.mitigation}</p>
+                              <p className="text-[11px] text-slate-400"><strong>Mitigation:</strong> {r.mitigation}</p>
                             </div>
                           ))}
                         </div>
@@ -761,14 +760,14 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Evidence Gaps Card */}
                 {(capability === 'all' || capability === 'evidence_gaps') && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-3">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
                     <div className="flex items-center gap-2 text-amber-400 text-xs font-semibold uppercase tracking-wider">
                       <FileQuestion className="w-4 h-4" />
                       <span>Evidence & Empirical Gaps</span>
                     </div>
 
                     {analysis.output.evidenceGaps.length === 0 ? (
-                      <p className="text-xs text-neutral-400 italic">
+                      <p className="text-xs text-slate-400 italic">
                         No critical evidence gaps detected for current options and criteria.
                       </p>
                     ) : (
@@ -776,15 +775,15 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                         {analysis.output.evidenceGaps.map((gap, i) => (
                           <div
                             key={i}
-                            className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1 text-xs"
+                            className="p-3 rounded-lg bg-surface-card border border-border space-y-1 text-xs"
                           >
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-neutral-200">{gap.targetName}</span>
-                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 uppercase font-mono">
+                              <span className="font-semibold text-slate-200">{gap.targetName}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border text-slate-400 uppercase font-mono">
                                 {gap.targetType}
                               </span>
                             </div>
-                            <p className="text-neutral-400">{gap.gapDescription}</p>
+                            <p className="text-slate-400">{gap.gapDescription}</p>
                             <div className="pt-1 text-[11px] text-amber-300/90 flex items-start gap-1">
                               <ArrowRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                               <span>{gap.recommendation}</span>
@@ -798,19 +797,19 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Suggested Alternatives Card */}
                 {(capability === 'all' || capability === 'suggest_alternatives') && analysis.output.suggestedAlternatives && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-3">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-purple-400 text-xs font-semibold uppercase tracking-wider">
                         <Lightbulb className="w-4 h-4" />
                         <span>Alternative Suggestions (Unexplored Options)</span>
                       </div>
-                      <span className="text-[11px] text-neutral-500">
+                      <span className="text-[11px] text-slate-500">
                         Requires human confirmation to adopt
                       </span>
                     </div>
 
                     {analysis.output.suggestedAlternatives.length === 0 ? (
-                      <p className="text-xs text-neutral-400 italic">
+                      <p className="text-xs text-slate-400 italic">
                         No alternative options suggested for this decision.
                       </p>
                     ) : (
@@ -824,23 +823,23 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                           return (
                             <div
                               key={alt.id}
-                              className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 space-y-2 text-xs"
+                              className="p-3.5 rounded-xl bg-surface-card border border-border space-y-2 text-xs"
                             >
                               <div className="flex items-start justify-between gap-3">
                                 <div>
-                                  <h4 className="font-semibold text-neutral-100">{alt.name}</h4>
-                                  <p className="text-neutral-400">{alt.description}</p>
+                                  <h4 className="font-semibold text-white">{alt.name}</h4>
+                                  <p className="text-slate-400">{alt.description}</p>
                                 </div>
                                 <div className="shrink-0">
                                   {alreadyExists ? (
-                                    <span className="text-[11px] text-neutral-500 font-medium px-2 py-1 rounded bg-neutral-800/80">
+                                    <span className="text-[11px] text-slate-500 font-medium px-2 py-1 rounded bg-surface border border-border">
                                       Already Present
                                     </span>
                                   ) : (
                                     <button
                                       onClick={() => handleAdoptOption(alt)}
                                       disabled={!canEdit || isAdopting}
-                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-accent-indigo hover:bg-indigo-400 text-slate-950 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                                       title={canEdit ? 'Add this option into decision model' : 'Only decision owners or editors can add options'}
                                     >
                                       {isAdopting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
@@ -850,12 +849,12 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                                 </div>
                               </div>
 
-                              <p className="text-[11px] text-neutral-400 italic">
+                              <p className="text-[11px] text-slate-400 italic">
                                 <strong>Rationale: </strong>{alt.rationale}
                               </p>
 
                               {alt.tradeoffs && (
-                                <p className="text-[11px] text-neutral-400">
+                                <p className="text-[11px] text-slate-400">
                                   <strong>Trade-offs: </strong>{alt.tradeoffs}
                                 </p>
                               )}
@@ -869,19 +868,19 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Suggested Criteria Proposals Card */}
                 {(capability === 'all' || capability === 'suggest_criteria') && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-3">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-3">
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2 text-cyan-400 text-xs font-semibold uppercase tracking-wider">
+                      <div className="flex items-center gap-2 text-accent-cyan text-xs font-semibold uppercase tracking-wider">
                         <Plus className="w-4 h-4" />
                         <span>Advisory Suggested Criteria (Proposals)</span>
                       </div>
-                      <span className="text-[11px] text-neutral-500">
+                      <span className="text-[11px] text-slate-400">
                         Requires human confirmation to adopt
                       </span>
                     </div>
 
                     {analysis.output.suggestedCriteria.length === 0 ? (
-                      <p className="text-xs text-neutral-400 italic">
+                      <p className="text-xs text-slate-400 italic">
                         No additional criteria proposed at this time.
                       </p>
                     ) : (
@@ -895,34 +894,34 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                           return (
                             <div
                               key={proposal.id}
-                              className="p-3.5 rounded-xl bg-neutral-900 border border-neutral-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
+                              className="p-3.5 rounded-xl bg-surface-card border border-border-subtle hover:border-border transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs"
                             >
                               <div className="space-y-1 flex-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-semibold text-neutral-100">{proposal.name}</span>
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-cyan-400 font-mono">
+                                  <span className="font-semibold text-white">{proposal.name}</span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border-subtle text-accent-cyan font-mono">
                                     Suggested Weight: {proposal.suggestedWeight}%
                                   </span>
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-neutral-800 text-neutral-400 uppercase">
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border-subtle text-slate-400 uppercase">
                                     {proposal.direction}
                                   </span>
                                 </div>
-                                <p className="text-neutral-400">{proposal.description}</p>
-                                <p className="text-[11px] text-neutral-500 italic">
+                                <p className="text-slate-300">{proposal.description}</p>
+                                <p className="text-[11px] text-slate-400 italic">
                                   Rationale: {proposal.rationale}
                                 </p>
                               </div>
 
                               <div className="shrink-0">
                                 {alreadyExists ? (
-                                  <span className="text-[11px] text-neutral-500 font-medium px-2 py-1 rounded bg-neutral-800/80">
+                                  <span className="text-[11px] text-slate-400 font-medium px-2 py-1 rounded bg-surface border border-border-subtle">
                                     Already Present
                                   </span>
                                 ) : (
                                   <button
                                     onClick={() => handleAdoptCriterion(proposal)}
                                     disabled={!canEdit || isAdopting}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-signal hover:bg-signal-light text-slate-950 transition disabled:opacity-40 disabled:cursor-not-allowed shadow-glow-signal-sm"
                                     title={
                                       canEdit
                                         ? 'Adopt this criterion into the decision model'
@@ -948,13 +947,13 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                 {/* Expert Perspectives & Recommendations Card */}
                 {(capability === 'all' || capability === 'expert_perspectives') && (
-                  <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-4">
+                  <div className="p-4 rounded-xl bg-surface border border-border space-y-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2 text-emerald-400 text-xs font-semibold uppercase tracking-wider">
                         <Brain className="w-4 h-4" />
                         <span>Expert Perspectives Synthesis & Recommendations</span>
                       </div>
-                      <span className="text-[11px] text-neutral-400">
+                      <span className="text-[11px] text-slate-400">
                         {analysis.output.expertSummary?.totalContributionsAnalyzed || 0} contribution(s) analyzed
                       </span>
                     </div>
@@ -962,9 +961,9 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                     {analysis.output.expertSummary && (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                         {analysis.output.expertSummary.consensusAreas.length > 0 && (
-                          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/15 space-y-1.5">
+                          <div className="p-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 space-y-1.5">
                             <span className="font-semibold text-emerald-300">Consensus & Alignment:</span>
-                            <ul className="space-y-1 pl-4 list-disc text-neutral-300">
+                            <ul className="space-y-1 pl-4 list-disc text-slate-300">
                               {analysis.output.expertSummary.consensusAreas.map((item, i) => (
                                 <li key={i}>{item}</li>
                               ))}
@@ -973,9 +972,9 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                         )}
 
                         {analysis.output.expertSummary.divergenceAreas.length > 0 && (
-                          <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/15 space-y-1.5">
+                          <div className="p-3 rounded-lg bg-amber-500/5 border border-amber-500/20 space-y-1.5">
                             <span className="font-semibold text-amber-300">Divergence & Key Debates:</span>
-                            <ul className="space-y-1 pl-4 list-disc text-neutral-300">
+                            <ul className="space-y-1 pl-4 list-disc text-slate-300">
                               {analysis.output.expertSummary.divergenceAreas.map((item, i) => (
                                 <li key={i}>{item}</li>
                               ))}
@@ -987,22 +986,22 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
                     {/* Recommendations for Additional Expert Input */}
                     {analysis.output.expertRecommendations && analysis.output.expertRecommendations.length > 0 && (
-                      <div className="space-y-2 pt-2 border-t border-neutral-800/60 text-xs">
+                      <div className="space-y-2 pt-2 border-t border-border-subtle text-xs">
                         <span className="font-medium text-emerald-300 flex items-center gap-1.5">
                           <UserCheck className="w-3.5 h-3.5" />
                           <span>Recommended Additional Expert Disciplines to Engage:</span>
                         </span>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                           {analysis.output.expertRecommendations.map((exp, i) => (
-                            <div key={i} className="p-3 rounded-lg bg-neutral-900 border border-neutral-800 space-y-1">
+                            <div key={i} className="p-3 rounded-lg bg-surface-card border border-border-subtle space-y-1">
                               <div className="flex items-center justify-between">
-                                <span className="font-semibold text-neutral-200">{exp.domain}</span>
+                                <span className="font-semibold text-slate-200">{exp.domain}</span>
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-mono">
                                   Role: {exp.role}
                                 </span>
                               </div>
-                              <p className="text-neutral-400">{exp.rationale}</p>
-                              <div className="text-[11px] text-neutral-500">
+                              <p className="text-slate-300">{exp.rationale}</p>
+                              <div className="text-[11px] text-slate-400">
                                 <strong>Expected Contribution: </strong>{exp.expectedContribution}
                               </div>
                             </div>
@@ -1017,11 +1016,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                 {(capability === 'all' || capability === 'assumptions_questions') && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {analysis.output.assumptions.length > 0 && (
-                      <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-2">
-                        <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                      <div className="p-4 rounded-xl bg-surface border border-border space-y-2">
+                        <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                           Critical Assumptions
                         </span>
-                        <ul className="space-y-1.5 pl-4 list-disc text-xs text-neutral-400">
+                        <ul className="space-y-1.5 pl-4 list-disc text-xs text-slate-400">
                           {analysis.output.assumptions.map((item, i) => (
                             <li key={i}>{item}</li>
                           ))}
@@ -1030,11 +1029,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                     )}
 
                     {analysis.output.followUpQuestions.length > 0 && (
-                      <div className="p-4 rounded-xl bg-neutral-900/60 border border-neutral-800/80 space-y-2">
-                        <span className="text-xs font-semibold text-neutral-300 uppercase tracking-wider">
+                      <div className="p-4 rounded-xl bg-surface border border-border space-y-2">
+                        <span className="text-xs font-semibold text-slate-300 uppercase tracking-wider">
                           Targeted Clarification Questions
                         </span>
-                        <ul className="space-y-1.5 pl-4 list-disc text-xs text-neutral-400">
+                        <ul className="space-y-1.5 pl-4 list-disc text-xs text-slate-400">
                           {analysis.output.followUpQuestions.map((item, i) => (
                             <li key={i}>{item}</li>
                           ))}
@@ -1048,15 +1047,15 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           </div>
 
           {/* Footer Transparency Notice */}
-          <div className="px-6 py-3 border-t border-neutral-800 bg-neutral-900/60 flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-neutral-400">
+          <div className="px-6 py-3 border-t border-border bg-surface flex flex-col sm:flex-row items-center justify-between gap-2 text-[11px] text-slate-400 font-mono">
             <div>
               <span>Provider: </span>
-              <span className="font-mono text-neutral-300">{analysis?.provider || 'server-configured'}</span>
+              <span className="font-mono text-slate-300">{analysis?.provider || 'server-configured'}</span>
               <span className="mx-2">•</span>
               <span>Model: </span>
-              <span className="font-mono text-neutral-300">{analysis?.model || 'standard'}</span>
+              <span className="font-mono text-slate-300">{analysis?.model || 'standard'}</span>
             </div>
-            <div className="text-neutral-500 text-center sm:text-right">
+            <div className="text-slate-500 text-center sm:text-right">
               MCDA mathematical scores are strictly computed by the canonical backend engine.
             </div>
           </div>

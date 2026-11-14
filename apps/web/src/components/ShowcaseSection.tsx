@@ -155,7 +155,7 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
               }}
               className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'ai'
-                  ? 'bg-purple-500 text-white shadow-lg shadow-purple-500/20'
+                  ? 'bg-accent-indigo text-slate-950 font-bold shadow-glow-indigo-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -171,7 +171,7 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
               }}
               className={`flex items-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'audit'
-                  ? 'bg-sky-500 text-white shadow-lg shadow-sky-500/20'
+                  ? 'bg-accent-cyan text-slate-950 font-bold shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
             >

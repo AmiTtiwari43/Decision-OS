@@ -215,7 +215,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
@@ -226,12 +226,12 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
           aria-modal="true"
           aria-labelledby="audit-export-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+          className="relative w-full max-w-5xl bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/50">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
             <div className="flex items-center space-x-3">
-              <div className="p-2 bg-indigo-500/10 text-indigo-400 rounded-xl">
+              <div className="p-2 bg-accent-indigo/10 text-accent-indigo border border-accent-indigo/20 rounded-xl">
                 <History className="w-5 h-5" />
               </div>
               <div>
@@ -246,7 +246,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               <button
                 onClick={fetchAuditData}
                 disabled={isLoading}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-surface-subtle transition cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none"
                 title="Refresh history"
                 aria-label="Refresh audit history"
               >
@@ -254,7 +254,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               </button>
               <button
                 onClick={onClose}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-surface-subtle transition cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none"
                 aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
@@ -266,22 +266,22 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
           <div
             role="tablist"
             aria-label="Audit views"
-            className="flex border-b border-slate-800 bg-slate-950/50 px-6 gap-6 text-sm overflow-x-auto scrollbar-none"
+            className="flex border-b border-border-subtle bg-surface-subtle/50 px-6 gap-6 text-sm overflow-x-auto scrollbar-none"
           >
             <button
               role="tab"
               aria-selected={activeTab === 'history'}
               onClick={() => setActiveTab('history')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none ${
                 activeTab === 'history'
-                  ? 'border-indigo-500 text-indigo-400'
+                  ? 'border-accent-indigo text-accent-indigo'
                   : 'border-transparent text-slate-400 hover:text-slate-300'
               }`}
             >
               <History className="w-4 h-4" />
               <span>Audit Timeline</span>
               {totalEvents > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border-subtle text-slate-300 font-mono">
                   {totalEvents}
                 </span>
               )}
@@ -290,16 +290,16 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               role="tab"
               aria-selected={activeTab === 'snapshots'}
               onClick={() => setActiveTab('snapshots')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none ${
                 activeTab === 'snapshots'
-                  ? 'border-indigo-500 text-indigo-400'
+                  ? 'border-accent-indigo text-accent-indigo'
                   : 'border-transparent text-slate-400 hover:text-slate-300'
               }`}
             >
               <Camera className="w-4 h-4" />
               <span>Snapshots & Milestones</span>
               {snapshots.length > 0 && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-surface border border-border-subtle text-slate-300 font-mono">
                   {snapshots.length}
                 </span>
               )}
@@ -308,9 +308,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               role="tab"
               aria-selected={activeTab === 'export'}
               onClick={() => setActiveTab('export')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-accent-indigo focus-visible:outline-none ${
                 activeTab === 'export'
-                  ? 'border-indigo-500 text-indigo-400'
+                  ? 'border-accent-indigo text-accent-indigo'
                   : 'border-transparent text-slate-400 hover:text-slate-300'
               }`}
             >
@@ -342,7 +342,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                 <div
                   className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                     chainResult?.isValid
-                      ? 'bg-slate-950/60 border-slate-800'
+                      ? 'bg-surface border-border'
                       : 'bg-rose-500/10 border-rose-500/30'
                   }`}
                 >
@@ -362,12 +362,12 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                           SHA-256 Hash Chain Integrity
                         </span>
                         {chainResult?.isValid ? (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium flex items-center gap-1 font-mono">
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                             <span>Chain Verified (100% Intact)</span>
                           </span>
                         ) : (
-                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium flex items-center gap-1">
+                          <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 font-medium flex items-center gap-1 font-mono">
                             <AlertCircle className="w-3.5 h-3.5 text-rose-400" />
                             <span>Chain Integrity Violation</span>
                           </span>
@@ -376,7 +376,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                       <p className="text-xs text-slate-400 mt-1">
                         {chainResult?.totalEventsChecked || 0} events cryptographically linked &bull;
                         Head:{' '}
-                        <code className="text-indigo-400">
+                        <code className="text-accent-indigo font-mono">
                           {chainResult?.headHash ? chainResult.headHash.slice(0, 16) + '...' : 'Genesis'}
                         </code>
                         {chainResult?.verifiedAt && (
@@ -399,7 +399,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   <button
                     onClick={handleVerifyChain}
                     disabled={isVerifyingChain}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg flex items-center space-x-1.5 transition border border-slate-700 disabled:opacity-50 shrink-0 self-start sm:self-auto cursor-pointer"
+                    className="px-3 py-1.5 bg-surface hover:bg-surface-subtle text-slate-200 text-xs rounded-lg flex items-center space-x-1.5 transition border border-border disabled:opacity-50 shrink-0 self-start sm:self-auto cursor-pointer"
                   >
                     {isVerifyingChain ? (
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -434,8 +434,8 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                         }}
                         className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                           actionFilter === key
-                            ? 'bg-indigo-600 text-white'
-                            : 'bg-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-700'
+                            ? 'bg-accent-indigo text-slate-950 font-bold shadow-glow-indigo-sm'
+                            : 'bg-surface border border-border text-slate-400 hover:text-slate-200 hover:border-border-strong'
                         }`}
                       >
                         {label}
@@ -443,7 +443,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     ))}
                   </div>
 
-                  <span className="text-xs text-slate-400">
+                  <span className="text-xs text-slate-400 font-mono">
                     Showing {auditEvents.length} of {totalEvents} events
                   </span>
                 </div>
@@ -470,19 +470,19 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                           className={`p-3.5 rounded-xl border transition space-y-2 ${
                             isCompromised
                               ? 'bg-rose-500/10 border-rose-500/40'
-                              : 'bg-slate-950/40 border-slate-800 hover:border-slate-700'
+                              : 'bg-surface border border-border hover:border-border-strong'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-2 flex-wrap sm:flex-nowrap">
                             <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-slate-800 text-slate-300 border border-slate-700">
+                              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-surface-subtle text-slate-300 border border-border">
                                 {seqNum}
                               </span>
                               <span className={`text-xs font-semibold px-2 py-0.5 rounded border ${getActionBadgeClass(event.action)}`}>
                                 {event.action}
                               </span>
                               {isCompromised && (
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/40 font-mono">
                                   COMPROMISED EVENT
                                 </span>
                               )}
@@ -506,7 +506,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
 
                             <button
                               onClick={() => setExpandedEventId(isExpanded ? null : event.eventId)}
-                              className="text-[11px] text-indigo-400 hover:text-indigo-300 flex items-center space-x-0.5 cursor-pointer"
+                              className="text-[11px] text-accent-indigo hover:text-accent-indigo/80 flex items-center space-x-0.5 cursor-pointer font-mono"
                             >
                               <span>{isExpanded ? 'Hide details' : 'View details'}</span>
                               <ChevronRight
@@ -516,7 +516,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                           </div>
 
                           {isExpanded && (
-                            <div className="mt-2 p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs space-y-2 font-mono">
+                            <div className="mt-2 p-3 bg-surface-card border border-border rounded-lg text-xs space-y-2 font-mono">
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
                                 <div>
                                   <span className="text-slate-500">Sequence:</span>{' '}
@@ -540,9 +540,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                                 <span className="text-slate-300">{event.eventHash}</span>
                               </div>
                               {event.diff && (
-                                <div className="mt-2 pt-2 border-t border-slate-800">
+                                <div className="mt-2 pt-2 border-t border-border-subtle">
                                   <span className="text-slate-500 block mb-1">State Diff / Change Details:</span>
-                                  <pre className="text-slate-300 text-[11px] overflow-x-auto p-2 bg-slate-950 rounded">
+                                  <pre className="text-slate-300 text-[11px] overflow-x-auto p-2 bg-background border border-border-subtle rounded">
                                     {JSON.stringify(event.diff, null, 2)}
                                   </pre>
                                 </div>
@@ -561,15 +561,15 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     <button
                       onClick={() => setPage(p => Math.max(1, p - 1))}
                       disabled={page <= 1}
-                      className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-lg disabled:opacity-40"
+                      className="px-3 py-1.5 bg-surface border border-border text-slate-300 text-xs rounded-lg hover:bg-surface-subtle disabled:opacity-40"
                     >
                       Previous
                     </button>
-                    <span className="text-xs text-slate-400">Page {page}</span>
+                    <span className="text-xs text-slate-400 font-mono">Page {page}</span>
                     <button
                       onClick={() => setPage(p => p + 1)}
                       disabled={!hasMore}
-                      className="px-3 py-1.5 bg-slate-800 text-slate-300 text-xs rounded-lg disabled:opacity-40"
+                      className="px-3 py-1.5 bg-surface border border-border text-slate-300 text-xs rounded-lg hover:bg-surface-subtle disabled:opacity-40"
                     >
                       Next
                     </button>
@@ -590,7 +590,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   </div>
                   <button
                     onClick={() => setIsCapturingSnapshot(!isCapturingSnapshot)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg flex items-center space-x-1.5 transition"
+                    className="px-3 py-1.5 bg-accent-indigo hover:bg-indigo-400 text-slate-950 text-xs font-bold rounded-lg flex items-center space-x-1.5 transition shadow-glow-indigo-sm"
                   >
                     <Camera className="w-3.5 h-3.5" />
                     <span>Capture Milestone</span>
@@ -601,7 +601,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                 {isCapturingSnapshot && (
                   <form
                     onSubmit={handleCreateSnapshot}
-                    className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3"
+                    className="p-4 bg-surface border border-border rounded-xl space-y-3"
                   >
                     <h4 className="text-xs font-semibold text-white">Create Historical Milestone Snapshot</h4>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -610,7 +610,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                         <select
                           value={snapshotReason}
                           onChange={e => setSnapshotReason(e.target.value as 'milestone' | 'manual')}
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-xs text-white focus:border-accent-indigo focus:ring-1 focus:ring-accent-indigo/30"
                         >
                           <option value="milestone">Stakeholder Milestone</option>
                           <option value="manual">Manual Snapshot</option>
@@ -623,7 +623,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                           value={snapshotNote}
                           onChange={e => setSnapshotNote(e.target.value)}
                           placeholder="e.g. Q4 Executive Signoff"
-                          className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-white"
+                          className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-xs text-white placeholder-slate-500 focus:border-accent-indigo focus:ring-1 focus:ring-accent-indigo/30"
                         />
                       </div>
                     </div>
@@ -638,7 +638,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                       <button
                         type="submit"
                         disabled={isSubmittingSnapshot}
-                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs rounded-lg flex items-center space-x-1.5"
+                        className="px-3 py-1.5 bg-signal hover:bg-signal-light text-slate-950 font-bold text-xs rounded-lg flex items-center space-x-1.5 shadow-glow-signal-sm"
                       >
                         {isSubmittingSnapshot && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                         <span>Capture Snapshot</span>
@@ -657,21 +657,21 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     {snapshots.map(s => (
                       <div
                         key={s.snapshotId}
-                        className="p-4 bg-slate-950/40 border border-slate-800 rounded-xl hover:border-slate-700 transition flex items-center justify-between"
+                        className="p-4 bg-surface border border-border rounded-xl hover:border-border-strong transition flex items-center justify-between"
                       >
                         <div>
                           <div className="flex items-center space-x-2">
-                            <span className="text-xs font-bold px-2 py-0.5 rounded bg-slate-800 text-indigo-400">
+                            <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-accent-indigo/10 text-accent-indigo border border-accent-indigo/20">
                               v{s.version}
                             </span>
                             <span className="text-sm font-semibold text-white">{s.title}</span>
-                            <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 capitalize">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-surface-subtle border border-border text-slate-300 font-mono capitalize">
                               {s.snapshotReason}
                             </span>
                           </div>
                           <p className="text-xs text-slate-400 mt-1">
                             {s.snapshotNote || 'No milestone note'} &bull; Engine:{' '}
-                            <code className="text-slate-300">
+                            <code className="text-slate-300 font-mono">
                               {s.analysis?.engineVersion || 'uncalculated'}
                             </code>
                           </p>
@@ -690,7 +690,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
 
                         <button
                           onClick={() => setSelectedSnapshot(selectedSnapshot?.snapshotId === s.snapshotId ? null : s)}
-                          className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg border border-slate-700 transition"
+                          className="px-3 py-1.5 bg-surface hover:bg-surface-subtle text-slate-200 text-xs rounded-lg border border-border transition"
                         >
                           {selectedSnapshot?.snapshotId === s.snapshotId ? 'Close' : 'View Snapshot'}
                         </button>
@@ -701,8 +701,8 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
 
                 {/* Selected Snapshot Inspector */}
                 {selectedSnapshot && (
-                  <div className="p-4 bg-slate-950/80 border border-slate-800 rounded-xl space-y-4 font-mono text-xs">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                  <div className="p-4 bg-surface-card border border-border rounded-xl space-y-4 font-mono text-xs">
+                    <div className="flex items-center justify-between border-b border-border pb-2">
                       <span className="font-bold text-white text-sm">
                         Snapshot v{selectedSnapshot.version} &bull; {selectedSnapshot.title}
                       </span>
@@ -761,7 +761,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                         {selectedSnapshot.analysis?.evaluations?.map(r => (
                           <div
                             key={r.optionId}
-                            className="flex justify-between p-1.5 bg-slate-900 rounded border border-slate-800"
+                            className="flex justify-between p-1.5 bg-surface rounded border border-border-subtle"
                           >
                             <span>
                               {r.rank !== null && r.rank !== undefined ? `#${r.rank}` : 'Unranked'} {r.optionName}
@@ -788,9 +788,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* JSON Export Card */}
-                  <div className="p-5 bg-slate-950/40 border border-slate-800 rounded-xl space-y-4 flex flex-col justify-between hover:border-slate-700 transition">
+                  <div className="p-5 bg-surface border border-border rounded-xl space-y-4 flex flex-col justify-between hover:border-border-strong transition">
                     <div className="space-y-2">
-                      <div className="p-2.5 bg-indigo-500/10 text-indigo-400 rounded-lg w-fit">
+                      <div className="p-2.5 bg-accent-indigo/10 text-accent-indigo border border-accent-indigo/20 rounded-lg w-fit">
                         <FileCode className="w-5 h-5" />
                       </div>
                       <h4 className="text-sm font-semibold text-white">Full JSON Package</h4>
@@ -802,7 +802,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     <button
                       onClick={() => handleExportDownload('json')}
                       disabled={isExporting !== null}
-                      className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50"
+                      className="w-full py-2 bg-accent-indigo hover:bg-indigo-400 text-slate-950 text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50 shadow-glow-indigo-sm"
                     >
                       {isExporting === 'json' ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -814,9 +814,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   </div>
 
                   {/* CSV Export Card */}
-                  <div className="p-5 bg-slate-950/40 border border-slate-800 rounded-xl space-y-4 flex flex-col justify-between hover:border-slate-700 transition">
+                  <div className="p-5 bg-surface border border-border rounded-xl space-y-4 flex flex-col justify-between hover:border-border-strong transition">
                     <div className="space-y-2">
-                      <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-lg w-fit">
+                      <div className="p-2.5 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-lg w-fit">
                         <FileSpreadsheet className="w-5 h-5" />
                       </div>
                       <h4 className="text-sm font-semibold text-white">Spreadsheet CSV Matrix</h4>
@@ -828,7 +828,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     <button
                       onClick={() => handleExportDownload('csv')}
                       disabled={isExporting !== null}
-                      className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50"
+                      className="w-full py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50 shadow-sm"
                     >
                       {isExporting === 'csv' ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -840,9 +840,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   </div>
 
                   {/* HTML Printable Briefing */}
-                  <div className="p-5 bg-slate-950/40 border border-slate-800 rounded-xl space-y-4 flex flex-col justify-between hover:border-slate-700 transition">
+                  <div className="p-5 bg-surface border border-border rounded-xl space-y-4 flex flex-col justify-between hover:border-border-strong transition">
                     <div className="space-y-2">
-                      <div className="p-2.5 bg-cyan-500/10 text-cyan-400 rounded-lg w-fit">
+                      <div className="p-2.5 bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/20 rounded-lg w-fit">
                         <FileText className="w-5 h-5" />
                       </div>
                       <h4 className="text-sm font-semibold text-white">Printable Briefing (HTML)</h4>
@@ -854,7 +854,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     <button
                       onClick={() => handleExportDownload('html')}
                       disabled={isExporting !== null}
-                      className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-medium rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50"
+                      className="w-full py-2 bg-accent-cyan hover:bg-cyan-400 text-slate-950 text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 transition disabled:opacity-50 shadow-sm"
                     >
                       {isExporting === 'html' ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -867,7 +867,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                 </div>
 
                 {/* 11 Guaranteed Export Package Components Checklist */}
-                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl space-y-3">
+                <div className="p-4 bg-surface border border-border rounded-xl space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400" />
@@ -894,9 +894,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                     ].map(item => (
                       <div
                         key={item.num}
-                        className="p-2.5 rounded-lg bg-slate-900 border border-slate-800 flex items-start gap-2"
+                        className="p-2.5 rounded-lg bg-surface-card border border-border-subtle flex items-start gap-2"
                       >
-                        <span className="text-[10px] font-mono font-bold text-indigo-400 bg-indigo-500/10 px-1.5 py-0.5 rounded">
+                        <span className="text-[10px] font-mono font-bold text-accent-indigo bg-accent-indigo/10 px-1.5 py-0.5 rounded">
                           {item.num}
                         </span>
                         <div>
@@ -908,9 +908,9 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                   </div>
                 </div>
 
-                <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl text-xs text-slate-400 space-y-1">
+                <div className="p-4 bg-surface border border-border rounded-xl text-xs text-slate-400 space-y-1">
                   <div className="flex items-center space-x-1.5 text-slate-300 font-medium">
-                    <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                    <ShieldCheck className="w-4 h-4 text-accent-indigo" />
                     <span>Security & Reproducibility Notice</span>
                   </div>
                   <p>

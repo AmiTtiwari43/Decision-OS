@@ -15,7 +15,7 @@ const steps = [
     label: 'Scattered Information',
     description: 'Messy notes, compensation spreadsheets, Glassdoor reviews, and conflicting advice from mentors.',
     color: 'text-slate-400',
-    border: 'border-slate-800',
+    border: 'border-border',
   },
   {
     icon: Shuffle,
