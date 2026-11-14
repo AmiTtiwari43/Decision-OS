@@ -311,4 +311,96 @@ export const templateDatasets: DecisionDataset[] = [
       },
     ],
   },
+  {
+    id: 'enterprise-cloud',
+    title: 'Enterprise Cloud Provider Decision',
+    question: 'Which cloud provider provides the optimal architecture and cost balance?',
+    context: 'Evaluating primary cloud hosting infrastructure for 2027 enterprise migration.',
+    criteria: [
+      {
+        id: 'crit-tech',
+        name: 'Technical Architecture',
+        shortName: 'Tech Arch',
+        description: 'Developer experience, API maturity, and container runtime',
+        category: 'growth',
+        defaultWeight: 60,
+      },
+      {
+        id: 'crit-cost',
+        name: 'Cost Efficiency',
+        shortName: 'Cost Eff',
+        description: 'Compute pricing and reserved instance discount structures',
+        category: 'finance',
+        defaultWeight: 40,
+      },
+    ],
+    options: [
+      {
+        id: 'opt-alpha',
+        name: 'Option Alpha (Specialized)',
+        badge: 'Top Tier Architecture',
+        tagline: 'Top Tier Architecture',
+        description: 'Specialized enterprise cloud provider with market-leading container performance and developer tooling.',
+        color: '#38BDF8',
+        accentBorder: 'border-sky-500',
+        scores: {
+          'crit-tech': 90,
+          'crit-cost': 70,
+        },
+        strengths: [
+          'Sub-millisecond global edge networking and container orchestration',
+          'Extensive developer ecosystem and modern API maturity',
+        ],
+        vulnerabilities: [
+          'Higher baseline pricing for compute and network egress',
+        ],
+      },
+      {
+        id: 'opt-beta',
+        name: 'Option Beta (Cost-Optimized)',
+        badge: 'Frugal Infrastructure',
+        tagline: 'Budget-friendly baseline',
+        description: 'Frugal, cost-optimized enterprise infrastructure offering aggressive committed-use discounts.',
+        color: '#B8FF5A',
+        accentBorder: 'border-signal',
+        scores: {
+          'crit-tech': 70,
+          'crit-cost': 90,
+        },
+        strengths: [
+          '40% lower compute and data egress costs via reserved instances',
+          'Predictable budget allocation and financial predictability',
+        ],
+        vulnerabilities: [
+          'Slower release velocity for bleeding-edge managed cloud services',
+        ],
+      },
+    ],
+    scenarios: [
+      {
+        id: 'baseline-locked',
+        name: 'Baseline Architecture Priority',
+        badge: 'Baseline (60/40)',
+        tagline: 'Technical Architecture at 60%, Cost Efficiency at 40%',
+        description: 'Option Alpha wins by 4.0 points (82.0 vs 78.0).',
+        weights: { 'crit-tech': 60, 'crit-cost': 40 },
+      },
+      {
+        id: 'tie-breakeven',
+        name: 'Tipping Breakeven Tie',
+        badge: 'Breakeven (50/50)',
+        tagline: 'Both options tie at exactly 80.0 points',
+        description: 'At 50% cost efficiency, mathematical parity is achieved.',
+        weights: { 'crit-tech': 50, 'crit-cost': 50 },
+      },
+      {
+        id: 'cost-dominant',
+        name: 'Cost-Dominant Strategy',
+        badge: 'Cost Sensitive (40/60)',
+        tagline: 'Option Beta wins decisively',
+        description: 'Above 50% cost efficiency, Option Beta takes the lead.',
+        weights: { 'crit-tech': 40, 'crit-cost': 60 },
+      },
+    ],
+  },
 ];

@@ -10,6 +10,7 @@ import {
   MapPin,
   Code2,
   Sparkles,
+  Cloud,
 } from 'lucide-react';
 import { apiClient, ApiClientError, type DecisionDto, type CreateDecisionPayload } from '../api/index.js';
 import { templateDatasets } from '../data/decisionData.js';
@@ -166,6 +167,7 @@ export const CreateDecisionModal: React.FC<CreateDecisionModalProps> = ({
     'job-offer': <Briefcase className="w-4 h-4 text-signal" />,
     'city-relocation': <MapPin className="w-4 h-4 text-sky-400" />,
     'frontend-architecture': <Code2 className="w-4 h-4 text-emerald-400" />,
+    'enterprise-cloud': <Cloud className="w-4 h-4 text-sky-400" />,
   };
 
   return (

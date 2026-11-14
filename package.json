@@ -21,7 +21,9 @@
     "lint:api": "npm run lint --workspace=@decision-os/api",
     "build:engine": "npm run build --workspace=@decision-os/decision-engine",
     "test:engine": "npm run test --workspace=@decision-os/decision-engine",
-    "lint:engine": "npm run lint --workspace=@decision-os/decision-engine"
+    "lint:engine": "npm run lint --workspace=@decision-os/decision-engine",
+    "demo:reset": "npx tsx scripts/demo_reset.ts",
+    "demo:verify": "npx tsx scripts/canonical_presentation_verification.ts"
   },
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.12",

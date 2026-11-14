@@ -39,6 +39,7 @@ To streamline development and preserve complete historical integrity without fil
 | **[`DEVELOPMENT_GUIDELINES.md`](./DEVELOPMENT_GUIDELINES.md)** | Consolidated engineering protocol, quality contracts, verify gate sequence, git conventions, product rules, and Antigravity prompts. |
 | **[`ARCHITECTURE_SPECIFICATION.md`](./ARCHITECTURE_SPECIFICATION.md)** | Monorepo layout, Tiered Dual-Topology Model (Replica Set vs Embedded Outbox), lease fencing (`$$NOW`), failure state matrix, and 48-endpoint API matrix. |
 | **[`AUDIT_AND_REMEDIATION_HISTORY.md`](./AUDIT_AND_REMEDIATION_HISTORY.md)** | Complete chronological history of independent audits, remediations, and architectural certifications from Phase 0 Baseline through Batch 4 v1.3.0. |
+| **[`BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md`](./BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md)** | **Certified Presentation Master**: 17-step presentation script, 5-min & 10-min demo pacing, expected outcomes matrix, and safe reset guide. |
 | **[`AGENTS.md`](./AGENTS.md)** | Compact agent entrypoint and source-of-truth hierarchy for AI coding assistants. |
 
 ---
@@ -115,10 +116,20 @@ Start both backend API (`localhost:3000`) and frontend web app (`localhost:5173`
 npm run dev
 ```
 
-### 4. Presentation & Demo Credentials
+### 4. Presentation & Demo Walkthrough
+Prepare and run repeatable live demonstrations using the canonical presentation dataset:
+```bash
+# Seed or reset demo accounts and canonical dataset safely (Non-destructive to real data)
+npm run demo:reset
+
+# Execute automated 17-step presentation verification test
+npm run demo:verify
+```
 For live demonstrations, use the one-click **"⚡ Fill Presentation Demo Credentials"** button in the sign-in modal, or manually sign in with:
 * **Email**: `lead@decision-os.org`
 * **Password**: `DecisionOS@2026`
+
+Detailed presentation scripts, 5-minute and 10-minute timings, and troubleshooting guides are available in **[`BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md`](./BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md)** and **[`docs/PRESENTATION_GUIDE.md`](./docs/PRESENTATION_GUIDE.md)**.
 
 ---
 

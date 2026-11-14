@@ -269,6 +269,8 @@ Batch 04 concludes the presentation milestone with zero functional regressions a
 | `BATCH_03_1_COLLABORATION_ADVISORY_AUDIT_REPORT.md` | Batch 03.1 | Collaboration, advisory and audit integration closure report. |
 | `BATCH_03_2_AI_ADVISORY_EXPLAINABLE_RANKING_REPORT.md` | Batch 03.2 | AI advisory and explainable deterministic ranking (MDAR v1) closure report. |
 | `BATCH_03_3_DECISION_HISTORY_EVIDENCE_AUDIT_REPORT.md` | Batch 03.3 | Decision history timeline, evidence management, and audit export showcase report. |
+| `BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md` | Batch 04.4 | Certified canonical presentation dataset, 17-step demo script, 5-min/10-min timings, expected outcomes, and safe demo reset. |
+| `docs/PRESENTATION_GUIDE.md` | Documentation | Fast-reference college presentation guide and operational checklist. |
 | `BATCH_4_V38_ARCHITECTURE_DECISION.md` | Batch 4 | Active Phase B.15 architecture decision record for Vault JWT role binding and coordination RS. |
 | `docs/API.md` | Documentation | REST API endpoint documentation and request/response DTO schemas. |
 | `docs/ARCHITECTURE.md` | Documentation | System component diagrams and interaction sequence flows. |
@@ -287,8 +289,20 @@ Batch 04 concludes the presentation milestone with zero functional regressions a
 
 The entire codebase is verified clean, fully tested, and passing all quality gates:
 - `npm run test:engine`: 12 test files passed, 98 tests passed.
-- `npm run test:web`: 23 test files passed, 243 tests passed.
+- `npm run test:web`: 26 test files passed, 270 tests passed.
 - Relevant API test suites: 11 test files passed, 134 tests passed.
+- `npm run demo:verify`: 17/17 canonical demonstration requirements verified.
 - `npm run typecheck`: 0 errors across all workspaces.
 - `npm run lint`: 0 warnings, 0 errors across all workspaces.
 - `npm run build`: Production bundle compiled successfully.
+
+---
+
+## 13. Batch 04.4: Final Presentation Dataset & Demo Walkthrough Certification
+
+On 2026-11-14, Batch 04.4 finalized the presentation architecture for the college showcase:
+1. **Canonical Presentation Dataset**: Standardized "Enterprise Cloud Provider Decision" across Option Alpha (90, 70) and Option Beta (70, 90) under Technical Architecture (60%) and Cost Efficiency (40%), delivering baseline Alpha = 82.0 pts vs Beta = 78.0 pts (+4.0 margin).
+2. **Deterministic Tipping Parity & Flip**: Closed-form calculus verified exact parity tie at 50% Cost Efficiency (80.0 pts) and decisive Option Beta victory at 51% Cost Efficiency (80.2 pts).
+3. **17-Step Demo Verification**: Implemented and certified `scripts/canonical_presentation_verification.ts` (`npm run demo:verify`), programmatically validating all 17 presentation requirements with 100% green status.
+4. **Data Safety & Non-Destructive Reset**: Created `scripts/demo_reset.ts` (`npm run demo:reset`), isolating demo operations to `@decision-os.org` test accounts with zero risk of modifying or deleting real user data.
+5. **Presentation Deliverables**: Published master script (`BATCH_04_4_CANONICAL_PRESENTATION_DATASET_AND_DEMO_WALKTHROUGH.md`), operational guide (`docs/PRESENTATION_GUIDE.md`), 5-minute lightning demo, 10-minute deep-dive, expected outcomes matrix, and troubleshooting checklist.
