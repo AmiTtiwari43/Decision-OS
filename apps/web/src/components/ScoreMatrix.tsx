@@ -44,6 +44,18 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
   const [isPopulating, setIsPopulating] = useState(false);
   const [populateError, setPopulateError] = useState<string | null>(null);
 
+  // Keyboard navigation: Escape key closes synthetic confirmation modal
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showConfirmModal && !isPopulating) {
+        setShowConfirmModal(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showConfirmModal, isPopulating]);
+
   // Check if a cell coordinate has synthetic demo provenance
   const isCellSynthetic = (optId: string, critId: string): boolean => {
     const rawVal = options.find((o) => o.id === optId)?.scores[critId];
@@ -410,14 +422,26 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm"
           data-testid="synthetic-confirm-dialog"
+          onClick={() => {
+            if (!isPopulating) {
+              setPopulateError(null);
+              setShowConfirmModal(false);
+            }
+          }}
         >
-          <div className="bg-[#121620] border border-amber-500/40 rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="synthetic-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+            className="bg-[#121620] border border-amber-500/40 rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4"
+          >
             <div className="flex items-start gap-3">
               <div className="p-2 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-400 shrink-0">
                 <AlertTriangle className="w-5 h-5" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-mono font-bold text-sm text-white">
+                <h3 id="synthetic-confirm-title" className="font-mono font-bold text-sm text-white">
                   Populate with Synthetic Demonstration Values?
                 </h3>
                 <p className="text-xs text-slate-300 leading-relaxed">

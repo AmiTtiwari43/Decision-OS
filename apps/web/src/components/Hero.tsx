@@ -85,7 +85,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenSandbox }) => {
                 sound.playTick();
                 onOpenSandbox();
               }}
-              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 transition-all duration-200 shadow-glow-signal hover:shadow-glow-signal transform hover:-translate-y-0.5"
+              className="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-sm sm:text-base flex items-center justify-center gap-2.5 transition-all duration-200 shadow-glow-signal hover:shadow-glow-signal transform hover:-translate-y-0.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
             >
               <MousePointerClick className="w-4 h-4 text-background" />
               <span>Click to start a decision</span>
@@ -95,7 +95,7 @@ export const Hero: React.FC<HeroProps> = ({ onOpenSandbox }) => {
             <a
               href="#simulator"
               onClick={() => sound.playTick()}
-              className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-surface hover:bg-surface-hover text-slate-200 hover:text-white font-semibold text-sm sm:text-base border border-border hover:border-slate-600 flex items-center justify-center gap-2 transition-all duration-200"
+              className="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-surface hover:bg-surface-hover text-slate-200 hover:text-white font-semibold text-sm sm:text-base border border-border hover:border-slate-600 flex items-center justify-center gap-2 transition-all duration-200 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
             >
               <span>Explore Interactive Demo</span>
               <ChevronRight className="w-4 h-4 text-slate-400" />
@@ -128,16 +128,17 @@ export const Hero: React.FC<HeroProps> = ({ onOpenSandbox }) => {
               </div>
 
               {/* Interactive Quick-Pill Switcher inside Hero Preview */}
-              <div className="flex items-center gap-1.5 bg-background/90 p-1.5 rounded-xl border border-border-subtle text-xs w-full sm:w-auto justify-between sm:justify-start">
-                <div className="flex items-center gap-1 text-slate-400 font-mono text-[11px] px-1.5">
+              <div className="flex items-center gap-1.5 bg-background/90 p-1.5 rounded-xl border border-border-subtle text-xs w-full sm:w-auto overflow-x-auto scrollbar-none justify-start">
+                <div className="flex items-center gap-1 text-slate-400 font-mono text-[11px] px-1.5 shrink-0">
                   <MousePointerClick className="w-3 h-3 text-signal" />
                   <span className="hidden md:inline">Click to test:</span>
                 </div>
 
-                <div className="flex items-center gap-1 flex-1 sm:flex-initial justify-end">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     onClick={() => handlePrioritySelect('career')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
+                    aria-pressed={activePriority === 'career'}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                       activePriority === 'career'
                         ? 'bg-signal text-background font-bold shadow-sm'
                         : 'text-slate-400 hover:text-slate-200 bg-surface/40'
@@ -149,7 +150,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenSandbox }) => {
 
                   <button
                     onClick={() => handlePrioritySelect('comp')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
+                    aria-pressed={activePriority === 'comp'}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                       activePriority === 'comp'
                         ? 'bg-signal text-background font-bold shadow-sm'
                         : 'text-slate-400 hover:text-slate-200 bg-surface/40'
@@ -161,7 +163,8 @@ export const Hero: React.FC<HeroProps> = ({ onOpenSandbox }) => {
 
                   <button
                     onClick={() => handlePrioritySelect('wlb')}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 ${
+                    aria-pressed={activePriority === 'wlb'}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1 shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                       activePriority === 'wlb'
                         ? 'bg-signal text-background font-bold shadow-sm'
                         : 'text-slate-400 hover:text-slate-200 bg-surface/40'

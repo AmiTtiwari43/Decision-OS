@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { apiClient, ApiClientError, type DecisionDto } from '../api/index.js';
@@ -18,6 +18,18 @@ export const DeleteDecisionModal: React.FC<DeleteDecisionModalProps> = ({
 }) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Keyboard navigation: Escape key closes modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen && !isDeleting) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, isDeleting, onClose]);
 
   if (!isOpen || !decision) return null;
 
@@ -44,29 +56,36 @@ export const DeleteDecisionModal: React.FC<DeleteDecisionModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm overflow-y-auto">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm overflow-y-auto"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="delete-decision-title"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
           transition={{ duration: 0.2 }}
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-md bg-surface border border-rose-500/30 rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100 my-auto"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-rose-500/10">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+              <div className="w-9 h-9 rounded-xl bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400 shrink-0">
                 <Trash2 className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-base sm:text-lg font-bold text-white">Delete Decision</h2>
+                <h2 id="delete-decision-title" className="text-base sm:text-lg font-bold text-white">Delete Decision</h2>
                 <p className="text-xs text-rose-300">Irreversible operational destruction</p>
               </div>
             </div>
             <button
               onClick={onClose}
               disabled={isDeleting}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
               title="Close modal"
               aria-label="Close modal"
             >
@@ -100,7 +119,7 @@ export const DeleteDecisionModal: React.FC<DeleteDecisionModalProps> = ({
                 type="button"
                 onClick={onClose}
                 disabled={isDeleting}
-                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               >
                 Cancel
               </button>
@@ -108,7 +127,7 @@ export const DeleteDecisionModal: React.FC<DeleteDecisionModalProps> = ({
                 type="button"
                 onClick={handleDelete}
                 disabled={isDeleting}
-                className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-glow-rose-sm"
+                className="px-5 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 disabled:opacity-50 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-glow-rose-sm focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
               >
                 {isDeleting ? (
                   <>

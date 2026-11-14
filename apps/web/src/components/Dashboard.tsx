@@ -322,7 +322,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex flex-wrap items-center gap-3 shrink-0">
             <button
               onClick={() => setIsCreateOpen(true)}
-              className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-glow-signal-sm transition-all cursor-pointer"
+              className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-glow-signal-sm transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
             >
               <Plus className="w-4 h-4" />
               <span>New Decision</span>
@@ -331,7 +331,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             <button
               onClick={() => loadDashboardData(true)}
               disabled={isRefreshing}
-              className="p-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50"
+              className="p-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white transition-all cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Refresh dashboard data"
               aria-label="Refresh dashboard data"
             >
@@ -341,7 +341,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             {onViewProductTour && (
               <button
                 onClick={onViewProductTour}
-                className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-300 hover:text-white transition-all cursor-pointer"
+                className="px-4 py-2.5 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-300 hover:text-white transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               >
                 Product Tour
               </button>
@@ -386,10 +386,12 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Navigation Tabs Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         {/* Navigation Tabs */}
-        <nav className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        <nav className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none max-w-full" role="tablist">
           <button
+            role="tab"
+            aria-selected={activeTab === 'overview'}
             onClick={() => setActiveTab('overview')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               activeTab === 'overview'
                 ? 'bg-signal text-background font-bold shadow-glow-signal-sm'
                 : 'bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white'
@@ -400,8 +402,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'my-decisions'}
             onClick={() => setActiveTab('my-decisions')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               activeTab === 'my-decisions'
                 ? 'bg-signal text-background font-bold shadow-glow-signal-sm'
                 : 'bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white'
@@ -412,8 +416,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'shared-with-me'}
             onClick={() => setActiveTab('shared-with-me')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               activeTab === 'shared-with-me'
                 ? 'bg-signal text-background font-bold shadow-glow-signal-sm'
                 : 'bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white'
@@ -424,8 +430,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'invitations'}
             onClick={() => setActiveTab('invitations')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               activeTab === 'invitations'
                 ? 'bg-signal text-background font-bold shadow-glow-signal-sm'
                 : 'bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white'
@@ -441,8 +449,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
 
           <button
+            role="tab"
+            aria-selected={activeTab === 'analytics'}
             onClick={() => setActiveTab('analytics')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               activeTab === 'analytics'
                 ? 'bg-signal text-background font-bold shadow-glow-signal-sm'
                 : 'bg-surface hover:bg-surface-subtle border border-border text-slate-300 hover:text-white'
@@ -457,7 +467,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         {onOpenAudit && (
           <button
             onClick={onOpenAudit}
-            className="hidden lg:flex items-center gap-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
+            className="hidden lg:flex items-center gap-2 text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none rounded px-2 py-1"
             title="Inspect Mathematical Engine"
           >
             <Command className="w-3.5 h-3.5" />
@@ -598,31 +608,33 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-surface-card p-3 rounded-2xl border border-border">
             {/* Search Input */}
             <div className="relative flex-1">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search decisions by title, trade-off or criteria..."
-                className="w-full pl-9 pr-8 py-2 rounded-xl bg-surface border border-border focus:border-signal text-xs text-white placeholder-slate-500 focus:outline-none transition-colors"
+                aria-label="Search decisions"
+                className="w-full pl-9 pr-8 py-2 rounded-xl bg-surface border border-border focus:border-signal text-xs text-white placeholder-slate-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-signal transition-colors"
               />
               {searchQuery && (
                 <button
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-0.5 rounded focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               )}
             </div>
 
-            {/* Filter by Evaluation Status */}
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 p-1 bg-surface rounded-xl border border-border text-xs font-mono">
-                <span className="text-[11px] text-slate-500 pl-2 hidden sm:inline">Status:</span>
+            {/* Filter by Evaluation Status & Sort */}
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 max-w-full">
+              <div className="flex items-center gap-1.5 p-1 bg-surface rounded-xl border border-border text-xs font-mono overflow-x-auto scrollbar-none max-w-full">
+                <span className="text-[11px] text-slate-500 pl-2 hidden sm:inline shrink-0">Status:</span>
                 <button
                   onClick={() => setStatusFilter('all')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs ${
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                     statusFilter === 'all'
                       ? 'bg-signal/20 text-signal font-semibold'
                       : 'text-slate-400 hover:text-white'
@@ -632,7 +644,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </button>
                 <button
                   onClick={() => setStatusFilter('decisive')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs ${
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                     statusFilter === 'decisive'
                       ? 'bg-emerald-500/20 text-emerald-300 font-semibold'
                       : 'text-slate-400 hover:text-white'
@@ -642,7 +654,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </button>
                 <button
                   onClick={() => setStatusFilter('tie')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs ${
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                     statusFilter === 'tie'
                       ? 'bg-amber-500/20 text-amber-300 font-semibold'
                       : 'text-slate-400 hover:text-white'
@@ -652,7 +664,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 </button>
                 <button
                   onClick={() => setStatusFilter('unscored')}
-                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs ${
+                  className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                     statusFilter === 'unscored'
                       ? 'bg-slate-600/30 text-slate-200 font-semibold'
                       : 'text-slate-400 hover:text-white'
@@ -663,7 +675,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 {decisions.some((d) => getDecisionEvaluationStatus(d) === 'stale') && (
                   <button
                     onClick={() => setStatusFilter('stale')}
-                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs ${
+                    className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer text-xs shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                       statusFilter === 'stale'
                         ? 'bg-amber-500/20 text-amber-300 font-semibold'
                         : 'text-slate-400 hover:text-white'
@@ -678,7 +690,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <select
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as SortOrder)}
-                className="px-3 py-2 rounded-xl bg-surface border border-border text-xs text-slate-300 focus:border-signal focus:outline-none transition-colors cursor-pointer font-mono"
+                aria-label="Sort decisions"
+                className="px-3 py-2 rounded-xl bg-surface border border-border text-xs text-slate-300 focus:border-signal focus:outline-none focus-visible:ring-2 focus-visible:ring-signal transition-colors cursor-pointer font-mono shrink-0"
               >
                 <option value="updated-desc">Recently Updated</option>
                 <option value="updated-asc">Oldest Updated</option>

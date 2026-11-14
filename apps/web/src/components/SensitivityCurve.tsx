@@ -90,7 +90,8 @@ export const SensitivityCurve: React.FC<SensitivityCurveProps> = ({
             <button
               key={c.id}
               onClick={() => setSelectedCriterionId(c.id)}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all ${
+              aria-pressed={selectedCriterionId === c.id}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 selectedCriterionId === c.id
                   ? 'bg-signal text-background font-bold shadow-sm'
                   : 'bg-surface-subtle text-slate-400 hover:text-slate-200 border border-border-subtle'

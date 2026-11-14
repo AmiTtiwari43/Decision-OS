@@ -131,6 +131,18 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
     }
   }, [isOpen, decision, fetchAuditData]);
 
+  // Keyboard navigation: Escape key closes audit export modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleVerifyChain = async () => {
     if (!decision?._id) return;
     setIsVerifyingChain(true);
@@ -202,11 +214,18 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.96 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="audit-export-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-5xl bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
         >
           {/* Header */}
@@ -216,7 +235,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                 <History className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white">Decision Audit, History & Export</h2>
+                <h2 id="audit-export-title" className="text-lg font-semibold text-white">Decision Audit, History & Export</h2>
                 <p className="text-xs text-slate-400">
                   {decision?.title || 'Decision'} &bull; Tamper-evident event timeline & portable briefings
                 </p>
@@ -227,14 +246,16 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               <button
                 onClick={fetchAuditData}
                 disabled={isLoading}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
                 title="Refresh history"
+                aria-label="Refresh audit history"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+                className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -242,10 +263,16 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex border-b border-slate-800 bg-slate-950/50 px-6 gap-6 text-sm">
+          <div
+            role="tablist"
+            aria-label="Audit views"
+            className="flex border-b border-slate-800 bg-slate-950/50 px-6 gap-6 text-sm overflow-x-auto scrollbar-none"
+          >
             <button
+              role="tab"
+              aria-selected={activeTab === 'history'}
               onClick={() => setActiveTab('history')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                 activeTab === 'history'
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-slate-400 hover:text-slate-300'
@@ -260,8 +287,10 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               )}
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'snapshots'}
               onClick={() => setActiveTab('snapshots')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                 activeTab === 'snapshots'
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-slate-400 hover:text-slate-300'
@@ -276,8 +305,10 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
               )}
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'export'}
               onClick={() => setActiveTab('export')}
-              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition ${
+              className={`py-3 font-medium border-b-2 flex items-center space-x-2 transition cursor-pointer whitespace-nowrap focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                 activeTab === 'export'
                   ? 'border-indigo-500 text-indigo-400'
                   : 'border-transparent text-slate-400 hover:text-slate-300'

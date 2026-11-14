@@ -69,6 +69,18 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
     }
   }, [isOpen, decision?._id, fetchComments]);
 
+  // Keyboard navigation: Escape key closes deliberation modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleCreateRootComment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCommentContent.trim() || !decision?._id || isSubmitting) return;
@@ -188,11 +200,18 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="deliberation-modal-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden text-slate-100"
         >
           {/* Header */}
@@ -202,7 +221,7 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
                 <MessageSquare className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
+                <h3 id="deliberation-modal-title" className="text-base font-bold text-white flex items-center gap-2">
                   <span>Stakeholder Deliberation & Threaded Audit</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-semibold bg-surface border border-border text-slate-300">
                     {comments.length} entries
@@ -215,7 +234,8 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+              aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>

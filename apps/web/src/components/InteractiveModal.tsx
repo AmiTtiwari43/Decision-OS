@@ -149,6 +149,47 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const missingScoresList = getMissingScores();
   const isComplete = isScoreMatrixComplete();
 
+  // Keyboard navigation: Escape key closes workspace modal if no child modal is open
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        if (isSavedListOpen) {
+          setIsSavedListOpen(false);
+          return;
+        }
+        if (
+          !isShareModalOpen &&
+          !isContributionsModalOpen &&
+          !isEvidenceModalOpen &&
+          !isAiAnalystModalOpen &&
+          !isAnalyticsModalOpen &&
+          !isDisagreementsModalOpen &&
+          !isCalibrationModalOpen &&
+          !isAuditExportModalOpen &&
+          !isDeliberationModalOpen
+        ) {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isOpen,
+    isSavedListOpen,
+    isShareModalOpen,
+    isContributionsModalOpen,
+    isEvidenceModalOpen,
+    isAiAnalystModalOpen,
+    isAnalyticsModalOpen,
+    isDisagreementsModalOpen,
+    isCalibrationModalOpen,
+    isAuditExportModalOpen,
+    isDeliberationModalOpen,
+    onClose,
+  ]);
+
   const { winner, runnerUp, explainability, sensitivity } = engineResult;
 
   const accessibleTipping = sensitivity?.find(
@@ -351,12 +392,19 @@ ${criteria
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.25 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="interactive-workspace-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-6xl max-h-[94vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
@@ -367,7 +415,7 @@ ${criteria
               </div>
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h3 className="text-base sm:text-lg font-bold text-white">
+                  <h3 id="interactive-workspace-title" className="text-base sm:text-lg font-bold text-white">
                     Decision OS Workspace
                   </h3>
 
@@ -419,7 +467,7 @@ ${criteria
 
             <button
               onClick={onClose}
-              className="p-2 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-all cursor-pointer"
+              className="p-2 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               aria-label="Close modal"
             >
               <X className="w-5 h-5" />
@@ -614,11 +662,17 @@ ${criteria
           )}
 
           {/* Workspace Navigation Tabs */}
-          <div className="px-4 sm:px-6 pt-3 bg-surface border-b border-border flex items-center justify-between gap-3 overflow-x-auto shrink-0">
+          <div
+            role="tablist"
+            aria-label="Workspace modes"
+            className="px-4 sm:px-6 pt-3 bg-surface border-b border-border flex items-center justify-between gap-3 overflow-x-auto scrollbar-none shrink-0"
+          >
             <div className="flex items-center gap-1 sm:gap-2">
               <button
+                role="tab"
+                aria-selected={activeTab === 'alternatives'}
                 onClick={() => setActiveTab('alternatives')}
-                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                   activeTab === 'alternatives'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -632,8 +686,10 @@ ${criteria
               </button>
 
               <button
+                role="tab"
+                aria-selected={activeTab === 'weights'}
                 onClick={() => setActiveTab('weights')}
-                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                   activeTab === 'weights'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -647,8 +703,10 @@ ${criteria
               </button>
 
               <button
+                role="tab"
+                aria-selected={activeTab === 'matrix'}
                 onClick={() => setActiveTab('matrix')}
-                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                   activeTab === 'matrix'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -667,8 +725,10 @@ ${criteria
               </button>
 
               <button
+                role="tab"
+                aria-selected={activeTab === 'analysis'}
                 onClick={() => setActiveTab('analysis')}
-                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+                className={`px-3 py-2 rounded-t-lg text-xs font-mono font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                   activeTab === 'analysis'
                     ? 'border-signal text-signal bg-surface-card'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -690,7 +750,7 @@ ${criteria
               <button
                 onClick={handleRunAuthoritativeCalculation}
                 disabled={isCalculating || !isComplete}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer shrink-0 mb-1.5 ${
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer shrink-0 mb-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                   isCalculating
                     ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
                     : !isComplete

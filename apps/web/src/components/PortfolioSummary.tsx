@@ -37,8 +37,17 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
     <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4">
       {/* Total Decisions */}
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange?.('all')}
-        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange?.('all');
+          }
+        }}
+        aria-label="Filter all decisions"
+        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
           activeFilter === 'all'
             ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
             : 'bg-surface-card/70 border-border hover:border-slate-600'
@@ -62,8 +71,17 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
 
       {/* Owned by Me */}
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange?.('owner')}
-        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange?.('owner');
+          }
+        }}
+        aria-label="Filter decisions owned by me"
+        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
           activeFilter === 'owner'
             ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
             : 'bg-surface-card/70 border-border hover:border-slate-600'
@@ -87,8 +105,17 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
 
       {/* Shared with Me */}
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => onFilterChange?.('shared')}
-        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onFilterChange?.('shared');
+          }
+        }}
+        aria-label="Filter decisions shared with me"
+        className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
           activeFilter === 'shared'
             ? 'bg-surface-card border-signal/50 shadow-glow-signal-sm'
             : 'bg-surface-card/70 border-border hover:border-slate-600'
@@ -130,8 +157,17 @@ export const PortfolioSummary: React.FC<PortfolioSummaryProps> = ({
 
       {/* Pending Invitations */}
       <div
+        role="button"
+        tabIndex={0}
         onClick={onSelectInvitations}
-        className={`col-span-2 lg:col-span-1 p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between ${
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onSelectInvitations?.();
+          }
+        }}
+        aria-label="View pending invitations"
+        className={`col-span-2 lg:col-span-1 p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
           pendingInvitationsCount > 0
             ? 'bg-signal/10 border-signal/40 shadow-glow-signal-sm'
             : 'bg-surface-card/70 border-border hover:border-slate-600'

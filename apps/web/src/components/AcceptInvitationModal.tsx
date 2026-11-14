@@ -58,6 +58,18 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
     }
   }, [isOpen, token]);
 
+  // Keyboard navigation: Escape key closes invitation modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !token) return null;
 
   const handleAccept = async () => {
@@ -122,12 +134,19 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="accept-invitation-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-md flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Header */}
@@ -136,11 +155,12 @@ export const AcceptInvitationModal: React.FC<AcceptInvitationModalProps> = ({
               <div className="w-8 h-8 rounded-lg bg-signal/15 border border-signal/30 flex items-center justify-center text-signal">
                 <Sparkles className="w-4 h-4" />
               </div>
-              <h3 className="text-base font-bold text-white">Decision Invitation</h3>
+              <h3 id="accept-invitation-title" className="text-base font-bold text-white">Decision Invitation</h3>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+              aria-label="Close modal"
             >
               <X className="w-4 h-4" />
             </button>

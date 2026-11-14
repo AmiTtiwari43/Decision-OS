@@ -136,6 +136,18 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     setIsLoading(Boolean(isOpen && decision?._id));
   }, [decision?._id, isOpen]);
 
+  // Keyboard navigation: Escape key closes AI analyst modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   useEffect(() => {
     if (isOpen && decision?._id && !analysis && !isLoading && !error) {
       fetchAnalysis('all');
@@ -491,11 +503,18 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="ai-analyst-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-neutral-950 border border-neutral-800 rounded-2xl shadow-2xl overflow-hidden"
         >
           {/* Header */}
@@ -506,7 +525,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               </div>
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-neutral-100">AI Decision Analyst</h2>
+                  <h2 id="ai-analyst-title" className="text-lg font-semibold text-neutral-100">AI Decision Analyst</h2>
                   <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-purple-300">
                     Advisory • Non-Authoritative
                   </span>
@@ -521,15 +540,17 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               <button
                 onClick={() => fetchAnalysis(capability)}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-neutral-300 hover:text-white bg-neutral-800 hover:bg-neutral-700 transition disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none"
                 title="Regenerate analysis"
+                aria-label="Regenerate analysis"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                 <span>Regenerate</span>
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition"
+                className="p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -537,7 +558,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           </div>
 
           {/* Capability Tabs */}
-          <div className="flex items-center gap-1 px-6 py-2.5 border-b border-neutral-800 bg-neutral-900/30 overflow-x-auto text-xs">
+          <div
+            role="tablist"
+            aria-label="AI Analyst capabilities"
+            className="flex items-center gap-1 px-6 py-2.5 border-b border-neutral-800 bg-neutral-900/30 overflow-x-auto text-xs scrollbar-none"
+          >
             {[
               { id: 'all', label: 'All Overview', icon: Brain },
               { id: 'ranked_suggestions', label: 'Ranked Advice', icon: Award },
@@ -554,9 +579,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
               return (
                 <button
                   key={tab.id}
+                  role="tab"
+                  aria-selected={isActive}
                   onClick={() => handleTabChange(tab.id as AiCapability)}
                   disabled={isLoading}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none ${
                     isActive
                       ? 'bg-purple-600/20 text-purple-300 border border-purple-500/30'
                       : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-800/60'

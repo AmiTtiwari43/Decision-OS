@@ -65,6 +65,8 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Fetch Evidence List
   const fetchEvidence = useCallback(async () => {
@@ -88,11 +90,25 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   useEffect(() => {
     if (isOpen && decision?._id) {
       fetchEvidence();
+      setConfirmDeleteId(null);
+      setDeleteError(null);
       if (decision.options && decision.options.length > 0) {
         setTargetId(decision.options[0].id);
       }
     }
   }, [isOpen, decision, fetchEvidence]);
+
+  // Keyboard navigation: Escape key closes evidence modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   // Handle Target Type Change
   const handleTargetTypeChange = (type: EvidenceTargetType) => {
@@ -190,14 +206,16 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
   const handleDelete = async (evidenceId: string) => {
     if (!decision?._id) return;
     setDeletingId(evidenceId);
+    setDeleteError(null);
     try {
       await apiClient.deleteEvidence(decision._id, evidenceId);
+      setConfirmDeleteId(null);
       await fetchEvidence();
     } catch (err: unknown) {
       if (err instanceof ApiClientError) {
-        alert(`Failed to delete evidence: ${err.message}`);
+        setDeleteError(`Failed to delete evidence: ${err.message}`);
       } else {
-        alert('Failed to delete evidence record.');
+        setDeleteError('Failed to delete evidence record.');
       }
     } finally {
       setDeletingId(null);
@@ -227,6 +245,10 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="evidence-modal-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden z-10"
         >
           {/* Header */}
@@ -236,7 +258,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                 <BookOpen className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <h2 id="evidence-modal-title" className="text-xl font-bold text-white flex items-center gap-2">
                   Evidence & Provenance
                   <span className="text-xs px-2.5 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-medium">
                     Traceability
@@ -250,7 +272,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
 
             <button
               onClick={onClose}
-              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
+              className="p-2 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
               aria-label="Close modal"
             >
               <X className="w-5 h-5" />
@@ -258,11 +280,17 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center justify-between border-b border-slate-800 px-6 bg-slate-950/40">
+          <div
+            role="tablist"
+            aria-label="Evidence navigation"
+            className="flex items-center justify-between border-b border-slate-800 px-6 bg-slate-950/40 overflow-x-auto scrollbar-none"
+          >
             <div className="flex gap-2 py-2">
               <button
+                role="tab"
+                aria-selected={activeTab === 'browse'}
                 onClick={() => setActiveTab('browse')}
-                className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
                   activeTab === 'browse'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -273,8 +301,10 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
               </button>
 
               <button
+                role="tab"
+                aria-selected={activeTab === 'coverage'}
                 onClick={() => setActiveTab('coverage')}
-                className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
                   activeTab === 'coverage'
                     ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -295,8 +325,10 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
 
               {!isViewer && (
                 <button
+                  role="tab"
+                  aria-selected={activeTab === 'create'}
                   onClick={() => setActiveTab('create')}
-                  className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition ${
+                  className={`flex items-center gap-2 px-4 py-2 text-xs font-semibold rounded-lg transition cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none ${
                     activeTab === 'create'
                       ? 'bg-blue-600 text-white'
                       : 'text-slate-400 hover:text-white hover:bg-slate-800'
@@ -356,6 +388,20 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
                       className="px-3 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs font-semibold border border-amber-500/40 transition shrink-0"
                     >
                       View Gaps &amp; Coverage
+                    </button>
+                  </div>
+                )}
+                {deleteError && (
+                  <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0" />
+                      <span>{deleteError}</span>
+                    </div>
+                    <button
+                      onClick={() => setDeleteError(null)}
+                      className="text-red-400 hover:text-white cursor-pointer ml-2"
+                    >
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 )}
@@ -428,18 +474,38 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
 
                             {/* Delete Action (Owner or Author only) */}
                             {isOwner && (
-                              <button
-                                onClick={() => handleDelete(itemKey)}
-                                disabled={isDeleting}
-                                className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition"
-                                title="Delete evidence"
-                              >
-                                {isDeleting ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
-                              </button>
+                              confirmDeleteId === itemKey ? (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    onClick={() => handleDelete(itemKey)}
+                                    disabled={isDeleting}
+                                    className="px-2.5 py-1 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none"
+                                  >
+                                    {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirm'}
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmDeleteId(null)}
+                                    disabled={isDeleting}
+                                    className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 text-xs hover:text-white transition cursor-pointer focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:outline-none"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  onClick={() => setConfirmDeleteId(itemKey)}
+                                  disabled={isDeleting}
+                                  className="p-2 text-slate-500 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition cursor-pointer focus-visible:ring-2 focus-visible:ring-red-400 focus-visible:outline-none"
+                                  title="Delete evidence"
+                                  aria-label={`Delete evidence ${item.title}`}
+                                >
+                                  {isDeleting ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-4 h-4" />
+                                  )}
+                                </button>
+                              )
                             )}
                           </div>
 

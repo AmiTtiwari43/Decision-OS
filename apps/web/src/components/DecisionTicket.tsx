@@ -147,7 +147,7 @@ Generated via Decision OS
               <div className="text-[10px] font-mono uppercase text-slate-400 tracking-wider mb-2">
                 Active Weights Applied
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
                 {criteria.map((c) => (
                   <div key={c.id} className="p-2 rounded-lg bg-surface/80 border border-border-subtle text-center">
                     <div className="text-[10px] text-slate-400 truncate">{c.shortName}</div>
@@ -171,7 +171,7 @@ Generated via Decision OS
 
               <button
                 onClick={handleCopyTicket}
-                className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-glow-signal-sm shrink-0"
+                className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-glow-signal-sm shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               >
                 {copied ? (
                   <>

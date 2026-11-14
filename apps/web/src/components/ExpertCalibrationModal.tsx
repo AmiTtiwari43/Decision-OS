@@ -92,6 +92,18 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
     }
   }, [isOpen, decision?._id, fetchData]);
 
+  // Keyboard navigation: Escape key closes calibration modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleCreatePrediction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!decision?._id || !statement.trim() || !targetDate) return;
@@ -177,12 +189,19 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.96 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="expert-calibration-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-5xl bg-slate-900 border border-slate-700 rounded-xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-slate-100"
         >
           {/* Header */}
@@ -193,7 +212,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
               </div>
               <div>
                 <div className="flex items-center space-x-2">
-                  <h2 className="text-lg font-bold text-white tracking-wide">
+                  <h2 id="expert-calibration-title" className="text-lg font-bold text-white tracking-wide">
                     Expert Calibration & Prediction Intelligence
                   </h2>
                   <span className="px-2 py-0.5 text-xs font-semibold bg-indigo-950 text-indigo-300 border border-indigo-700 rounded">
@@ -211,13 +230,15 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 onClick={fetchData}
                 disabled={isLoading}
                 title="Refresh Calibration Intelligence"
-                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition"
+                aria-label="Refresh calibration intelligence"
+                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition"
+                className="p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -225,11 +246,17 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/40">
+          <div
+            role="tablist"
+            aria-label="Calibration views"
+            className="flex items-center justify-between px-6 border-b border-slate-800 bg-slate-900/40 overflow-x-auto scrollbar-none"
+          >
             <div className="flex space-x-4">
               <button
+                role="tab"
+                aria-selected={activeTab === 'calibration'}
                 onClick={() => setActiveTab('calibration')}
-                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 ${
+                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                   activeTab === 'calibration'
                     ? 'border-indigo-500 text-indigo-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -239,8 +266,10 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
                 <span>Calibration & Dimensions</span>
               </button>
               <button
+                role="tab"
+                aria-selected={activeTab === 'predictions'}
                 onClick={() => setActiveTab('predictions')}
-                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 ${
+                className={`py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:outline-none ${
                   activeTab === 'predictions'
                     ? 'border-indigo-500 text-indigo-400'
                     : 'border-transparent text-slate-400 hover:text-slate-200'

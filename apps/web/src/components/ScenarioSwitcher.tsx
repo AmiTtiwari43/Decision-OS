@@ -44,7 +44,8 @@ export const ScenarioSwitcher: React.FC<ScenarioSwitcherProps> = ({
             <button
               key={scenario.id}
               onClick={() => onSelectScenario(scenario.id)}
-              className={`p-3.5 rounded-xl text-left transition-all duration-200 border flex flex-col justify-between gap-2 group cursor-pointer ${
+              aria-pressed={isActive}
+              className={`p-3.5 rounded-xl text-left transition-all duration-200 border flex flex-col justify-between gap-2 group cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 isActive
                   ? 'bg-surface border-signal shadow-glow-signal-sm text-white ring-1 ring-signal/30'
                   : 'bg-surface/50 border-border-subtle hover:border-signal/50 text-slate-300 hover:text-white hover:bg-surface'

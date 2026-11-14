@@ -65,6 +65,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
+  const [confirmWithdraw, setConfirmWithdraw] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
@@ -137,8 +138,21 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
       fetchSubmissions();
       setFormError(null);
       setFormSuccess(null);
+      setConfirmWithdraw(false);
     }
   }, [isOpen, decision?._id, fetchMyContribution, fetchSubmissions]);
+
+  // Keyboard navigation: Escape key closes contributions modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !decision) return null;
 
@@ -325,12 +339,19 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="contributions-modal-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-3xl flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Header */}
@@ -340,7 +361,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                 <Sparkles className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <h3 id="contributions-modal-title" className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                   <span>Expert Contributions</span>
                   <span className="text-xs font-mono text-signal bg-signal/10 px-2 py-0.5 rounded border border-signal/20">
                     Phase 7
@@ -368,12 +389,13 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                 <button
                   onClick={handleToggleRoundLock}
                   disabled={isTogglingLock}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                     isRoundLocked
                       ? 'bg-signal/15 text-signal border-signal/30 hover:bg-signal/25'
                       : 'bg-surface-subtle text-slate-300 border-border hover:bg-surface'
                   }`}
                   title={isRoundLocked ? 'Unlock contribution round' : 'Lock contribution round'}
+                  aria-label={isRoundLocked ? 'Unlock contribution round' : 'Lock contribution round'}
                 >
                   {isTogglingLock ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -393,7 +415,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
               <button
                 onClick={onClose}
-                className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 aria-label="Close modal"
               >
                 <X className="w-4 h-4" />
@@ -402,10 +424,16 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
           </div>
 
           {/* Tab Navigation */}
-          <div className="flex items-center border-b border-border-subtle bg-surface-subtle/50 px-4 pt-2 gap-2 shrink-0">
+          <div
+            role="tablist"
+            aria-label="Contributions navigation"
+            className="flex items-center border-b border-border-subtle bg-surface-subtle/50 px-4 pt-2 gap-2 shrink-0 overflow-x-auto scrollbar-none"
+          >
             <button
+              role="tab"
+              aria-selected={activeTab === 'mine'}
               onClick={() => setActiveTab('mine')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'mine'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -427,8 +455,10 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'submissions'}
               onClick={() => setActiveTab('submissions')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'submissions'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -658,22 +688,42 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
                         {/* Action Buttons */}
                         {!isRoundLocked && (
-                          <div className="flex items-center justify-between pt-3 border-t border-border-subtle">
+                          <div className="flex items-center justify-between pt-3 border-t border-border-subtle flex-wrap gap-2">
                             <div>
                               {myContribution?.status === 'submitted' && (
-                                <button
-                                  type="button"
-                                  onClick={handleWithdraw}
-                                  disabled={isWithdrawing}
-                                  className="px-3.5 py-2 rounded-xl bg-surface border border-accent-rose/40 text-accent-rose hover:bg-accent-rose/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
-                                >
-                                  {isWithdrawing ? (
-                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  ) : (
+                                confirmWithdraw ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await handleWithdraw();
+                                        setConfirmWithdraw(false);
+                                      }}
+                                      disabled={isWithdrawing}
+                                      className="px-3 py-1.5 rounded-xl bg-accent-rose text-white text-xs font-bold hover:bg-rose-600 cursor-pointer disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-accent-rose focus-visible:outline-none"
+                                    >
+                                      {isWithdrawing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirm Withdraw'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmWithdraw(false)}
+                                      disabled={isWithdrawing}
+                                      className="px-3 py-1.5 rounded-xl bg-surface-subtle text-slate-300 text-xs hover:text-white cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmWithdraw(true)}
+                                    disabled={isWithdrawing}
+                                    className="px-3.5 py-2 rounded-xl bg-surface border border-accent-rose/40 text-accent-rose hover:bg-accent-rose/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-accent-rose focus-visible:outline-none"
+                                  >
                                     <Undo2 className="w-3.5 h-3.5" />
-                                  )}
-                                  <span>Withdraw Submission</span>
-                                </button>
+                                    <span>Withdraw Submission</span>
+                                  </button>
+                                )
                               )}
                             </div>
 
@@ -682,7 +732,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                 type="button"
                                 onClick={handleSaveDraft}
                                 disabled={isSaving || isSubmitting}
-                                className="px-4 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+                                className="px-4 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                               >
                                 {isSaving ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -696,7 +746,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                 type="button"
                                 onClick={handleSubmit}
                                 disabled={isSubmitting || isSaving}
-                                className="px-5 py-2 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs flex items-center gap-1.5 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 transition-all"
+                                className="px-5 py-2 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs flex items-center gap-1.5 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                               >
                                 {isSubmitting ? (
                                   <Loader2 className="w-3.5 h-3.5 animate-spin" />

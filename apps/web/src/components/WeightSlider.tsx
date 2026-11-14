@@ -49,7 +49,7 @@ export const WeightSlider: React.FC<WeightSliderProps> = ({
           <button
             onClick={onToggleLock}
             disabled={disabled}
-            className={`px-2 py-1 rounded-md border text-[11px] font-mono flex items-center gap-1 transition-all ${
+            className={`px-2 py-1 rounded-md border text-[11px] font-mono flex items-center gap-1 transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               disabled
                 ? 'opacity-50 cursor-not-allowed'
                 : 'cursor-pointer'
@@ -93,7 +93,7 @@ export const WeightSlider: React.FC<WeightSliderProps> = ({
           value={weight}
           disabled={disabled || isLocked}
           onChange={(e) => onWeightChange(Number(e.target.value))}
-          className={`w-full ${disabled || isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+          className={`w-full focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none rounded-lg ${disabled || isLocked ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
           aria-label={`Drag to calibrate weight for ${criterion.name}`}
         />
       </div>

@@ -113,6 +113,7 @@ function AppContent() {
   }, [isSandboxOpen]);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();

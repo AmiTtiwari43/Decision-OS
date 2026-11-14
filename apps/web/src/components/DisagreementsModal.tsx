@@ -46,6 +46,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
   // AI Explanations cache: disagreementId -> AiDisagreementExplanationDto
   const [aiExplanations, setAiExplanations] = useState<Record<string, AiDisagreementExplanationDto>>({});
   const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
+  const [aiError, setAiError] = useState<Record<string, string | null>>({});
 
   // Expanded items state: disagreementId -> boolean
   const [expandedItems, setExpandedItems] = useState<Record<string, boolean>>({});
@@ -55,6 +56,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
     Record<string, { isEditing: boolean; status: DisagreementResolutionStatus; explanation: string }>
   >({});
   const [savingResolutionId, setSavingResolutionId] = useState<string | null>(null);
+  const [resolutionError, setResolutionError] = useState<Record<string, string | null>>({});
 
   const fetchDisagreements = useCallback(async () => {
     if (!decision?._id) return;
@@ -78,8 +80,22 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
   useEffect(() => {
     if (isOpen && decision?._id) {
       fetchDisagreements();
+      setAiError({});
+      setResolutionError({});
     }
   }, [isOpen, decision?._id, fetchDisagreements]);
+
+  // Keyboard navigation: Escape key closes disagreements modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const toggleExpand = (id: string) => {
     setExpandedItems(prev => ({ ...prev, [id]: !prev[id] }));
@@ -88,12 +104,16 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
   const handleRequestAiExplanation = async (disagreementId: string) => {
     if (!decision?._id || aiLoadingId) return;
     setAiLoadingId(disagreementId);
+    setAiError(prev => ({ ...prev, [disagreementId]: null }));
 
     try {
       const res = await apiClient.explainDisagreementWithAi(decision._id, disagreementId);
       setAiExplanations(prev => ({ ...prev, [disagreementId]: res }));
     } catch (err: unknown) {
-      alert(err instanceof ApiClientError ? err.message : 'Failed to generate AI explanation.');
+      setAiError(prev => ({
+        ...prev,
+        [disagreementId]: err instanceof ApiClientError ? err.message : 'Failed to generate AI explanation.',
+      }));
     } finally {
       setAiLoadingId(null);
     }
@@ -116,6 +136,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
     if (!form) return;
 
     setSavingResolutionId(disagreementId);
+    setResolutionError(prev => ({ ...prev, [disagreementId]: null }));
     try {
       await apiClient.updateDisagreementResolution(decision._id, disagreementId, {
         status: form.status,
@@ -148,7 +169,10 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
         [disagreementId]: { ...form, isEditing: false },
       }));
     } catch (err: unknown) {
-      alert(err instanceof ApiClientError ? err.message : 'Failed to update resolution.');
+      setResolutionError(prev => ({
+        ...prev,
+        [disagreementId]: err instanceof ApiClientError ? err.message : 'Failed to update resolution.',
+      }));
     } finally {
       setSavingResolutionId(null);
     }
@@ -169,12 +193,19 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="disagreements-modal-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-5xl max-h-[92vh] bg-surface border border-border rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100"
         >
           {/* Header */}
@@ -185,7 +216,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">
+                  <h2 id="disagreements-modal-title" className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">
                     Disagreement Intelligence
                   </h2>
                   {data && data.decisionCriticalCount > 0 && (
@@ -209,15 +240,17 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
               <button
                 onClick={fetchDisagreements}
                 disabled={isLoading}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Refresh Disagreements"
+                aria-label="Refresh disagreements"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Close"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -554,13 +587,26 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
                                     <button
                                       onClick={() => handleRequestAiExplanation(item.id)}
                                       disabled={isAiLoading}
-                                      className="px-2.5 py-1 rounded bg-signal/15 hover:bg-signal/25 text-signal border border-signal/30 text-xs font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                                      className="px-2.5 py-1 rounded bg-signal/15 hover:bg-signal/25 text-signal border border-signal/30 text-xs font-semibold cursor-pointer disabled:opacity-50 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                                     >
                                       {isAiLoading && <Loader2 className="w-3 h-3 animate-spin" />}
                                       Explain with AI
                                     </button>
                                   )}
                                 </div>
+
+                                {aiError[item.id] && (
+                                  <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+                                    <span>{aiError[item.id]}</span>
+                                    <button
+                                      onClick={() => setAiError(prev => ({ ...prev, [item.id]: null }))}
+                                      className="text-rose-400 hover:text-white ml-2 cursor-pointer"
+                                      aria-label="Dismiss error"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
 
                                 {aiExp ? (
                                   <div className="space-y-2 text-xs text-slate-300">
@@ -606,12 +652,25 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
                                   {!resForm?.isEditing && (
                                     <button
                                       onClick={() => handleStartResolutionEdit(item)}
-                                      className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer"
+                                      className="text-xs font-semibold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                                     >
                                       Update Resolution
                                     </button>
                                   )}
                                 </div>
+
+                                {resolutionError[item.id] && (
+                                  <div className="p-2.5 rounded bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs flex items-center justify-between">
+                                    <span>{resolutionError[item.id]}</span>
+                                    <button
+                                      onClick={() => setResolutionError(prev => ({ ...prev, [item.id]: null }))}
+                                      className="text-rose-400 hover:text-white ml-2 cursor-pointer"
+                                      aria-label="Dismiss error"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                )}
 
                                 {resForm?.isEditing ? (
                                   <div className="space-y-2.5 pt-1 text-xs">
@@ -628,7 +687,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
                                             },
                                           }))
                                         }
-                                        className="bg-surface-subtle border border-border rounded px-2.5 py-1 text-slate-200 text-xs"
+                                        className="bg-surface-subtle border border-border rounded px-2.5 py-1 text-slate-200 text-xs focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                                       >
                                         <option value="open">Open (Unresolved)</option>
                                         <option value="acknowledged">Acknowledged (Noted)</option>
@@ -650,7 +709,7 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
                                         }
                                         rows={2}
                                         placeholder="Record how this disagreement was addressed or why this variance is acceptable..."
-                                        className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-slate-200 text-xs focus:ring-1 focus:ring-signal outline-none"
+                                        className="w-full bg-surface-subtle border border-border rounded-lg p-2 text-slate-200 text-xs focus:ring-1 focus:ring-signal outline-none focus-visible:ring-2 focus-visible:ring-signal"
                                       />
                                     </div>
 
@@ -662,14 +721,14 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
                                             [item.id]: { ...prev[item.id], isEditing: false },
                                           }))
                                         }
-                                        className="px-2.5 py-1 rounded bg-surface hover:bg-surface-hover border border-border text-slate-400 text-xs cursor-pointer"
+                                        className="px-2.5 py-1 rounded bg-surface hover:bg-surface-hover border border-border text-slate-400 text-xs cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                                       >
                                         Cancel
                                       </button>
                                       <button
                                         onClick={() => handleSaveResolution(item.id)}
                                         disabled={savingResolutionId === item.id}
-                                        className="px-3 py-1 rounded bg-signal/15 hover:bg-signal/25 text-signal border border-signal/30 font-semibold text-xs cursor-pointer disabled:opacity-50 flex items-center gap-1"
+                                        className="px-3 py-1 rounded bg-signal/15 hover:bg-signal/25 text-signal border border-signal/30 font-semibold text-xs cursor-pointer disabled:opacity-50 flex items-center gap-1 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                                       >
                                         {savingResolutionId === item.id && <Loader2 className="w-3 h-3 animate-spin" />}
                                         Save Resolution

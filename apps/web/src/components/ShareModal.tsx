@@ -62,8 +62,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   const [isLoadingList, setIsLoadingList] = useState(false);
   const [listError, setListError] = useState<string | null>(null);
 
-  // Action in-flight states
+  // Action in-flight and confirmation states
   const [actionInProgressId, setActionInProgressId] = useState<string | null>(null);
+  const [confirmRevokeGrantId, setConfirmRevokeGrantId] = useState<string | null>(null);
+  const [confirmRevokeInviteId, setConfirmRevokeInviteId] = useState<string | null>(null);
 
   // Load collaborators and invitations when opened
   const fetchSharingData = useCallback(async () => {
@@ -94,8 +96,22 @@ export const ShareModal: React.FC<ShareModalProps> = ({
       fetchSharingData();
       setCreatedInviteInfo(null);
       setFormError(null);
+      setConfirmRevokeGrantId(null);
+      setConfirmRevokeInviteId(null);
     }
   }, [isOpen, decisionId, fetchSharingData]);
+
+  // Keyboard navigation: Escape key closes share modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !decisionId) return null;
 
@@ -151,24 +167,26 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleUpdateRole = async (grantId: string, newRole: DecisionCollaboratorRole) => {
     setActionInProgressId(grantId);
+    setListError(null);
     try {
       await apiClient.updateAccessGrant(decisionId, grantId, { role: newRole });
       await fetchSharingData();
     } catch (err) {
-      alert((err as Error)?.message || 'Failed to update collaborator role');
+      setListError((err as Error)?.message || 'Failed to update collaborator role');
     } finally {
       setActionInProgressId(null);
     }
   };
 
   const handleRevokeAccess = async (grantId: string) => {
-    if (!confirm('Are you sure you want to revoke this user’s access to the decision?')) return;
     setActionInProgressId(grantId);
+    setListError(null);
     try {
       await apiClient.revokeAccess(decisionId, grantId);
+      setConfirmRevokeGrantId(null);
       await fetchSharingData();
     } catch (err) {
-      alert((err as Error)?.message || 'Failed to revoke collaborator access');
+      setListError((err as Error)?.message || 'Failed to revoke collaborator access');
     } finally {
       setActionInProgressId(null);
     }
@@ -176,11 +194,13 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   const handleRevokeInvitation = async (invitationId: string) => {
     setActionInProgressId(invitationId);
+    setListError(null);
     try {
       await apiClient.revokeInvitation(decisionId, invitationId);
+      setConfirmRevokeInviteId(null);
       await fetchSharingData();
     } catch (err) {
-      alert((err as Error)?.message || 'Failed to revoke invitation');
+      setListError((err as Error)?.message || 'Failed to revoke invitation');
     } finally {
       setActionInProgressId(null);
     }
@@ -188,12 +208,19 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95, y: 15 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.95, y: 15 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="share-modal-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-2xl flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
@@ -203,7 +230,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                 <Share2 className="w-4 h-4" />
               </div>
               <div>
-                <h3 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                <h3 id="share-modal-title" className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
                   <span>Share Decision</span>
                   <span className="text-xs font-mono text-signal bg-signal/10 px-2 py-0.5 rounded border border-signal/20">
                     Phase 6
@@ -217,7 +244,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
 
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg bg-surface-subtle hover:bg-surface border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               aria-label="Close modal"
             >
               <X className="w-4 h-4" />
@@ -225,10 +252,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center border-b border-border-subtle bg-surface-subtle/50 px-4 pt-2 gap-2 shrink-0">
+          <div
+            role="tablist"
+            aria-label="Share navigation"
+            className="flex items-center border-b border-border-subtle bg-surface-subtle/50 px-4 pt-2 gap-2 shrink-0 overflow-x-auto scrollbar-none"
+          >
             <button
+              role="tab"
+              aria-selected={activeTab === 'invite'}
               onClick={() => setActiveTab('invite')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'invite'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -239,8 +272,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'collaborators'}
               onClick={() => setActiveTab('collaborators')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'collaborators'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -251,8 +286,10 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             </button>
 
             <button
+              role="tab"
+              aria-selected={activeTab === 'pending'}
               onClick={() => setActiveTab('pending')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 ${
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'pending'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -270,27 +307,36 @@ export const ShareModal: React.FC<ShareModalProps> = ({
               <div className="space-y-5">
                 <form onSubmit={handleCreateInvitation} className="space-y-4">
                   <div>
-                    <label className="block text-xs font-mono uppercase text-slate-300 font-semibold mb-1.5">
+                    <label htmlFor="share-recipient-email" className="block text-xs font-mono uppercase text-slate-300 font-semibold mb-1.5">
                       Recipient Email Address
                     </label>
                     <input
+                      id="share-recipient-email"
                       type="email"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       placeholder="collaborator@example.com"
                       required
-                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-border text-white text-sm focus:outline-none focus:border-signal/70 focus:ring-1 focus:ring-signal/30 placeholder-slate-500"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-surface border border-border text-white text-sm focus:outline-none focus:border-signal/70 focus:ring-1 focus:ring-signal/30 placeholder-slate-500 focus-visible:ring-2 focus-visible:ring-signal"
                     />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-mono uppercase text-slate-300 font-semibold mb-1.5">
+                    <span className="block text-xs font-mono uppercase text-slate-300 font-semibold mb-1.5">
                       Permission Level
-                    </label>
+                    </span>
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setRole('editor')}
-                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setRole('editor');
+                          }
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                           role === 'editor'
                             ? 'bg-signal/10 border-signal text-white shadow-glow-signal-sm'
                             : 'bg-surface border-border text-slate-300 hover:border-slate-500'
@@ -308,8 +354,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                       </div>
 
                       <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setRole('contributor')}
-                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setRole('contributor');
+                          }
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                           role === 'contributor'
                             ? 'bg-signal/10 border-signal text-white shadow-glow-signal-sm'
                             : 'bg-surface border-border text-slate-300 hover:border-slate-500'
@@ -327,8 +381,16 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                       </div>
 
                       <div
+                        role="button"
+                        tabIndex={0}
                         onClick={() => setRole('viewer')}
-                        className={`p-3 rounded-xl border cursor-pointer transition-all ${
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setRole('viewer');
+                          }
+                        }}
+                        className={`p-3 rounded-xl border cursor-pointer transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                           role === 'viewer'
                             ? 'bg-signal/10 border-signal text-white shadow-glow-signal-sm'
                             : 'bg-surface border-border text-slate-300 hover:border-slate-500'
@@ -362,7 +424,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center gap-2 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center gap-2 shadow-glow-signal-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition-all focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                     >
                       {isSubmitting ? (
                         <>
@@ -412,7 +474,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                           />
                           <button
                             onClick={() => handleCopy(createdInviteInfo.link, false)}
-                            className="px-3 py-1.5 rounded-lg bg-signal/20 hover:bg-signal/30 text-signal border border-signal/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            className="px-3 py-1.5 rounded-lg bg-signal/20 hover:bg-signal/30 text-signal border border-signal/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                           >
                             {copiedLink ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                             <span>{copiedLink ? 'Copied' : 'Copy Link'}</span>
@@ -433,7 +495,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                           />
                           <button
                             onClick={() => handleCopy(createdInviteInfo.token, true)}
-                            className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle text-slate-300 border border-border text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                            className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle text-slate-300 border border-border text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                           >
                             {copiedToken ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
                             <span>{copiedToken ? 'Copied' : 'Copy Token'}</span>
@@ -450,8 +512,14 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             {activeTab === 'collaborators' && (
               <div className="space-y-4">
                 {listError && (
-                  <div className="p-3 rounded-xl bg-accent-rose/10 border border-accent-rose/30 text-xs text-accent-rose">
-                    {listError}
+                  <div className="p-3 rounded-xl bg-accent-rose/10 border border-accent-rose/30 text-xs text-accent-rose flex items-center justify-between">
+                    <span>{listError}</span>
+                    <button
+                      onClick={() => setListError(null)}
+                      className="text-accent-rose hover:text-white ml-2 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 )}
 
@@ -529,21 +597,42 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                             onChange={(e) =>
                               handleUpdateRole(c.id, e.target.value as DecisionCollaboratorRole)
                             }
-                            className="px-2.5 py-1 rounded-lg bg-surface-card border border-border text-xs text-slate-300 focus:outline-none cursor-pointer"
+                            aria-label={`Update role for ${c.user.name}`}
+                            className="px-2.5 py-1 rounded-lg bg-surface-card border border-border text-xs text-slate-300 focus:outline-none cursor-pointer focus-visible:ring-2 focus-visible:ring-signal"
                           >
                             <option value="editor">Editor</option>
                             <option value="contributor">Contributor</option>
                             <option value="viewer">Viewer</option>
                           </select>
 
-                          <button
-                            onClick={() => handleRevokeAccess(c.id)}
-                            disabled={actionInProgressId === c.id}
-                            title="Revoke collaborator access"
-                            className="p-1.5 rounded-lg bg-surface-subtle hover:bg-accent-rose/20 text-slate-400 hover:text-accent-rose border border-border transition-colors cursor-pointer"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {confirmRevokeGrantId === c.id ? (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleRevokeAccess(c.id)}
+                                disabled={actionInProgressId === c.id}
+                                className="px-2 py-1 rounded-lg bg-accent-rose text-white text-xs font-bold hover:bg-rose-600 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-rose focus-visible:outline-none"
+                              >
+                                Confirm
+                              </button>
+                              <button
+                                onClick={() => setConfirmRevokeGrantId(null)}
+                                disabled={actionInProgressId === c.id}
+                                className="px-2 py-1 rounded-lg bg-surface-subtle text-slate-300 text-xs hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setConfirmRevokeGrantId(c.id)}
+                              disabled={actionInProgressId === c.id}
+                              title="Revoke collaborator access"
+                              aria-label={`Revoke access for ${c.user.name}`}
+                              className="p-1.5 rounded-lg bg-surface-subtle hover:bg-accent-rose/20 text-slate-400 hover:text-accent-rose border border-border transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -555,6 +644,18 @@ export const ShareModal: React.FC<ShareModalProps> = ({
             {/* TAB 3: PENDING INVITATIONS */}
             {activeTab === 'pending' && (
               <div className="space-y-4">
+                {listError && (
+                  <div className="p-3 rounded-xl bg-accent-rose/10 border border-accent-rose/30 text-xs text-accent-rose flex items-center justify-between">
+                    <span>{listError}</span>
+                    <button
+                      onClick={() => setListError(null)}
+                      className="text-accent-rose hover:text-white ml-2 cursor-pointer"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+
                 {isLoadingList ? (
                   <div className="p-6 text-center text-slate-400 text-xs flex items-center justify-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-signal" />
@@ -586,14 +687,33 @@ export const ShareModal: React.FC<ShareModalProps> = ({
                           </span>
                         </div>
 
-                        <button
-                          onClick={() => handleRevokeInvitation(inv.id)}
-                          disabled={actionInProgressId === inv.id}
-                          className="px-2.5 py-1 rounded-lg bg-accent-rose/10 hover:bg-accent-rose/20 text-accent-rose border border-accent-rose/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          <span>Revoke</span>
-                        </button>
+                        {confirmRevokeInviteId === inv.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleRevokeInvitation(inv.id)}
+                              disabled={actionInProgressId === inv.id}
+                              className="px-2 py-1 rounded-lg bg-accent-rose text-white text-xs font-bold hover:bg-rose-600 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-accent-rose focus-visible:outline-none"
+                            >
+                              Confirm
+                            </button>
+                            <button
+                              onClick={() => setConfirmRevokeInviteId(null)}
+                              disabled={actionInProgressId === inv.id}
+                              className="px-2 py-1 rounded-lg bg-surface-subtle text-slate-300 text-xs hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRevokeInviteId(inv.id)}
+                            disabled={actionInProgressId === inv.id}
+                            className="px-2.5 py-1 rounded-lg bg-accent-rose/10 hover:bg-accent-rose/20 text-accent-rose border border-accent-rose/30 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-accent-rose focus-visible:outline-none"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            <span>Revoke</span>
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>

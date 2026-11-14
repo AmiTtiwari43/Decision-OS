@@ -33,6 +33,7 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
   const [manualToken, setManualToken] = useState('');
   const [isAccepting, setIsAccepting] = useState(false);
   const [decliningId, setDecliningId] = useState<string | null>(null);
+  const [confirmDeclineId, setConfirmDeclineId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const tokenInputRef = useRef<HTMLInputElement>(null);
@@ -47,6 +48,7 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
         invitationId: inv.id,
         token: typeof candidateToken === 'string' && candidateToken.trim() ? candidateToken.trim() : undefined,
       });
+      setConfirmDeclineId(null);
       setSuccessMessage('Invitation declined successfully.');
       onRefresh();
     } catch (err: unknown) {
@@ -175,13 +177,13 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
             value={manualToken}
             onChange={(e) => setManualToken(e.target.value)}
             placeholder="Paste raw token e.g. 9f4a1c..."
-            className="flex-1 px-3.5 py-2.5 rounded-xl bg-surface border border-border focus:border-signal text-xs font-mono text-white placeholder-slate-500 focus:outline-none transition-colors"
+            className="flex-1 px-3.5 py-2.5 rounded-xl bg-surface border border-border focus:border-signal text-xs font-mono text-white placeholder-slate-500 focus:outline-none transition-colors focus-visible:ring-2 focus-visible:ring-signal"
             disabled={isAccepting}
           />
           <button
             type="submit"
             disabled={isAccepting || !manualToken.trim()}
-            className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light disabled:opacity-50 text-background font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-glow-signal-sm shrink-0"
+            className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light disabled:opacity-50 text-background font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-glow-signal-sm shrink-0 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
           >
             {isAccepting ? (
               <>
@@ -274,22 +276,38 @@ export const PendingInvitationsView: React.FC<PendingInvitationsViewProps> = ({
                       {(inv as any).token ? 'Token available' : 'Redeem or decline'}
                     </span>
                     <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => handleDeclineInvitation(inv)}
-                        disabled={decliningId === inv.id}
-                        className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50"
-                        title="Decline this invitation"
-                      >
-                        {decliningId === inv.id ? (
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                        ) : (
+                      {confirmDeclineId === inv.id ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleDeclineInvitation(inv)}
+                            disabled={decliningId === inv.id}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 text-white text-xs font-bold hover:bg-rose-700 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
+                          >
+                            {decliningId === inv.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Confirm'}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeclineId(null)}
+                            disabled={decliningId === inv.id}
+                            className="px-2 py-1 rounded-lg bg-surface text-slate-300 text-xs hover:text-white transition cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setConfirmDeclineId(inv.id)}
+                          disabled={decliningId === inv.id}
+                          className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-xs text-slate-400 hover:text-rose-300 flex items-center gap-1 transition-colors cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
+                          title="Decline this invitation"
+                          aria-label={`Decline invitation for ${decisionTitle}`}
+                        >
                           <X className="w-3 h-3 text-rose-400" />
-                        )}
-                        <span>Decline</span>
-                      </button>
+                          <span>Decline</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => handleRedeemClick(inv)}
-                        className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                        className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs text-slate-200 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                         title="Focus redemption input"
                       >
                         <span>Redeem</span>

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Terminal, Cpu, ShieldCheck } from 'lucide-react';
 import { jobOfferCriteria, jobOfferOptions } from '../data/decisionData';
@@ -9,28 +9,47 @@ interface EasterEggProps {
 }
 
 export const EasterEgg: React.FC<EasterEggProps> = ({ isOpen, onClose }) => {
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/85 backdrop-blur-md">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/85 backdrop-blur-md"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, scale: 0.95 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="easter-egg-title"
+          onClick={(e) => e.stopPropagation()}
           className="w-full max-w-3xl rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden font-mono text-xs"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 bg-surface border-b border-border">
             <div className="flex items-center gap-2 text-signal">
               <Terminal className="w-4 h-4" />
-              <span className="font-bold text-slate-100 uppercase tracking-wider">
+              <span id="easter-egg-title" className="font-bold text-slate-100 uppercase tracking-wider">
                 Decision OS Engine / Mathematical Audit Terminal
               </span>
             </div>
             <button
               onClick={onClose}
-              className="p-1 rounded-md bg-surface-subtle text-slate-400 hover:text-white"
+              className="p-1 rounded-md bg-surface-subtle text-slate-400 hover:text-white cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
+              aria-label="Close modal"
             >
               <X className="w-4 h-4" />
             </button>

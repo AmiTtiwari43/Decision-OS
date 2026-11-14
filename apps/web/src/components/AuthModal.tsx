@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, Lock, Mail, User, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '../hooks/useAuth.js';
 
@@ -19,6 +19,18 @@ export const AuthModal: React.FC = () => {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Keyboard navigation: Escape key closes auth dialog
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isAuthModalOpen) {
+        closeAuthModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAuthModalOpen, closeAuthModal]);
 
   if (!isAuthModalOpen) return null;
 
@@ -77,16 +89,20 @@ export const AuthModal: React.FC = () => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto"
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-modal-title"
+      onClick={closeAuthModal}
     >
-      <div className="relative w-full max-w-md bg-surface border border-border/80 rounded-2xl shadow-glow-card overflow-hidden">
+      <div
+        className="relative w-full max-w-md max-h-[92vh] overflow-y-auto bg-surface border border-border/80 rounded-2xl shadow-glow-card my-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Top Header Bar */}
-        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-border-subtle/60">
+        <div className="flex items-center justify-between px-5 sm:px-6 pt-5 sm:pt-6 pb-4 border-b border-border-subtle/60 sticky top-0 bg-surface z-10">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-signal/10 border border-signal/30 flex items-center justify-center text-signal">
+            <div className="w-8 h-8 rounded-lg bg-signal/10 border border-signal/30 flex items-center justify-center text-signal shrink-0">
               <ShieldCheck className="w-4 h-4" />
             </div>
             <div>
@@ -100,7 +116,7 @@ export const AuthModal: React.FC = () => {
           </div>
           <button
             onClick={closeAuthModal}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-surface-highlight transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
             aria-label="Close dialog"
           >
             <X className="w-4 h-4" />
@@ -112,7 +128,7 @@ export const AuthModal: React.FC = () => {
           <button
             type="button"
             onClick={() => handleTabChange('login')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               authModalMode === 'login'
                 ? 'bg-surface text-signal shadow-sm border border-border/60'
                 : 'text-slate-400 hover:text-slate-200'
@@ -123,7 +139,7 @@ export const AuthModal: React.FC = () => {
           <button
             type="button"
             onClick={() => handleTabChange('register')}
-            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer ${
+            className={`flex-1 py-2 text-xs font-semibold rounded-lg transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
               authModalMode === 'register'
                 ? 'bg-surface text-signal shadow-sm border border-border/60'
                 : 'text-slate-400 hover:text-slate-200'
@@ -134,7 +150,7 @@ export const AuthModal: React.FC = () => {
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4">
           {activeError && (
             <div
               className="flex items-start gap-2.5 p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs"
@@ -159,7 +175,7 @@ export const AuthModal: React.FC = () => {
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Jane Doe"
-                  className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30"
+                  className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                   required={authModalMode === 'register'}
                   autoFocus
                 />
@@ -180,7 +196,7 @@ export const AuthModal: React.FC = () => {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@domain.com"
-                className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 required
                 autoFocus={authModalMode === 'login'}
               />
@@ -200,7 +216,7 @@ export const AuthModal: React.FC = () => {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••••••"
-                className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30"
+                className="w-full pl-9 pr-3 py-2 text-sm bg-surface-subtle/80 border border-border-subtle rounded-lg text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-signal/50 focus:ring-1 focus:ring-signal/30 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 required
               />
             </div>
@@ -214,7 +230,7 @@ export const AuthModal: React.FC = () => {
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full mt-2 py-2.5 px-4 rounded-lg bg-signal hover:bg-signal-hover text-slate-950 font-semibold text-sm transition-all shadow-glow-signal-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full mt-2 py-2.5 px-4 rounded-lg bg-signal hover:bg-signal-hover text-slate-950 font-semibold text-sm transition-all shadow-glow-signal-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
           >
             {isLoading ? (
               <>
@@ -235,7 +251,7 @@ export const AuthModal: React.FC = () => {
                 setPassword('DecisionOS@2026');
                 setName('Lead Decision Architect');
               }}
-              className="w-full py-1.5 px-3 rounded-lg bg-surface border border-dashed border-border-subtle hover:border-signal/50 text-slate-400 hover:text-signal text-[11px] font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-1.5 px-3 rounded-lg bg-surface border border-dashed border-border-subtle hover:border-signal/50 text-slate-400 hover:text-signal text-[11px] font-mono transition-all flex items-center justify-center gap-1.5 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
             >
               <span>⚡ Fill Presentation Demo Credentials</span>
             </button>
@@ -243,7 +259,7 @@ export const AuthModal: React.FC = () => {
         </form>
 
         {/* Footer info note */}
-        <div className="px-6 py-3 bg-surface/40 border-t border-border-subtle/60 text-center">
+        <div className="px-5 sm:px-6 py-3 bg-surface/40 border-t border-border-subtle/60 text-center">
           <p className="text-[11px] text-slate-500">
             {authModalMode === 'login' ? (
               <>
@@ -251,7 +267,7 @@ export const AuthModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleTabChange('register')}
-                  className="text-signal hover:underline cursor-pointer font-medium"
+                  className="text-signal hover:underline cursor-pointer font-medium focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none rounded"
                 >
                   Create one now
                 </button>
@@ -262,7 +278,7 @@ export const AuthModal: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => handleTabChange('login')}
-                  className="text-signal hover:underline cursor-pointer font-medium"
+                  className="text-signal hover:underline cursor-pointer font-medium focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none rounded"
                 >
                   Sign in
                 </button>

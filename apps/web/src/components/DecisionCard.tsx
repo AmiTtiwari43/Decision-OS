@@ -140,7 +140,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
           <div className="relative shrink-0">
             <button
               onClick={() => setIsMenuOpen((prev) => !prev)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="More actions"
               aria-label="More actions"
             >
@@ -160,7 +160,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                         setIsMenuOpen(false);
                         onEdit(decision);
                       }}
-                      className="px-3 py-2 text-left hover:bg-surface-subtle flex items-center gap-2 transition-colors cursor-pointer text-slate-200 hover:text-white"
+                      className="px-3 py-2 text-left hover:bg-surface-subtle flex items-center gap-2 transition-colors cursor-pointer text-slate-200 hover:text-white focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                     >
                       <Edit3 className="w-3.5 h-3.5 text-slate-400" />
                       <span>Edit Framing</span>
@@ -172,7 +172,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                       setIsMenuOpen(false);
                       onOpenFeature(decision, 'audit');
                     }}
-                    className="px-3 py-2 text-left hover:bg-surface-subtle flex items-center gap-2 transition-colors cursor-pointer text-slate-200 hover:text-white"
+                    className="px-3 py-2 text-left hover:bg-surface-subtle flex items-center gap-2 transition-colors cursor-pointer text-slate-200 hover:text-white focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                   >
                     <Download className="w-3.5 h-3.5 text-slate-400" />
                     <span>Audit & Export</span>
@@ -184,7 +184,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
                         setIsMenuOpen(false);
                         onDelete(decision);
                       }}
-                      className="px-3 py-2 text-left hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 flex items-center gap-2 transition-colors cursor-pointer border-t border-border mt-1"
+                      className="px-3 py-2 text-left hover:bg-rose-500/10 text-rose-400 hover:text-rose-300 flex items-center gap-2 transition-colors cursor-pointer border-t border-border mt-1 focus-visible:ring-2 focus-visible:ring-rose-400 focus-visible:outline-none"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>Delete Decision</span>
@@ -237,13 +237,13 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </div>
           ) : evaluationStatus === 'stale' ? (
             <div className="flex items-center gap-2 text-amber-400 text-[11px] font-mono">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              <span>Stale Evaluation · Recalculation Required</span>
+              <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+              <span className="truncate">Stale Evaluation · Recalculation Required</span>
             </div>
           ) : (
             <div className="flex items-center gap-2 text-slate-500 text-[11px] font-mono">
-              <span className="w-2 h-2 rounded-full bg-slate-600" />
-              <span>Incomplete Evaluation / Draft</span>
+              <span className="w-2 h-2 rounded-full bg-slate-600 shrink-0" />
+              <span className="truncate">Incomplete Evaluation / Draft</span>
             </div>
           )}
 
@@ -256,11 +256,11 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
       {/* Footer & Quick Feature Bar */}
       <div className="mt-4 pt-3 border-t border-border/70 flex flex-col gap-3">
         {/* Quick Modal Launcher Buttons */}
-        <div className="flex items-center justify-between gap-1 text-slate-400">
-          <div className="flex items-center gap-1">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-1 text-slate-400">
+          <div className="flex items-center gap-0.5 sm:gap-1 flex-wrap">
             <button
               onClick={() => onOpenFeature(decision, 'share')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Share and manage collaborators"
               aria-label="Share and manage collaborators"
             >
@@ -268,7 +268,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'contributions')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Expert Deliberation & Contributions"
               aria-label="Expert Deliberation"
             >
@@ -276,7 +276,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'deliberation')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Stakeholder Deliberation Threads"
               aria-label="Stakeholder Deliberation Threads"
             >
@@ -284,7 +284,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'evidence')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Evidence Ledger"
               aria-label="Evidence Ledger"
             >
@@ -292,7 +292,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'ai')}
-              className="p-1.5 rounded-lg hover:text-signal hover:bg-signal/10 transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-signal hover:bg-signal/10 transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Autonomous AI Decision Analyst"
               aria-label="AI Decision Analyst"
             >
@@ -300,7 +300,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'analytics')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Deep Decision Analytics"
               aria-label="Deep Decision Analytics"
             >
@@ -308,7 +308,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'disagreements')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Stakeholder Disagreements"
               aria-label="Stakeholder Disagreements"
             >
@@ -316,7 +316,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
             <button
               onClick={() => onOpenFeature(decision, 'calibration')}
-              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer"
+              className="p-1.5 rounded-lg hover:text-white hover:bg-surface-subtle transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               title="Brier Calibration & Forecasting"
               aria-label="Brier Calibration"
             >
@@ -324,7 +324,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
             </button>
           </div>
 
-          <span className="text-[10px] font-mono text-slate-500 shrink-0">
+          <span className="text-[10px] font-mono text-slate-500 shrink-0 ml-auto sm:ml-0">
             {updatedFormatted}
           </span>
         </div>
@@ -332,7 +332,7 @@ export const DecisionCard: React.FC<DecisionCardProps> = ({
         {/* Primary Launch Action */}
         <button
           onClick={() => onOpenStudio(decision)}
-          className="w-full py-2 px-3 rounded-xl bg-surface hover:bg-surface-subtle border border-border hover:border-signal/50 text-xs font-semibold text-slate-200 hover:text-white flex items-center justify-center gap-2 transition-all cursor-pointer group-hover:shadow-glow-signal-sm"
+          className="w-full py-2 px-3 rounded-xl bg-surface hover:bg-surface-subtle border border-border hover:border-signal/50 text-xs font-semibold text-slate-200 hover:text-white flex items-center justify-center gap-2 transition-all cursor-pointer group-hover:shadow-glow-signal-sm focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
         >
           <span>Open Studio Workspace</span>
           <ArrowRight className="w-3.5 h-3.5 text-signal transition-transform group-hover:translate-x-1" />

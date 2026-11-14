@@ -77,16 +77,35 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
     }
   }, [isOpen, decision?._id, fetchAnalytics]);
 
+  // Keyboard navigation: Escape key closes analytics modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="advanced-analytics-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-5xl max-h-[92vh] bg-surface border border-border rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100"
         >
           {/* Header */}
@@ -97,7 +116,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">
+                  <h2 id="advanced-analytics-title" className="text-lg sm:text-xl font-bold tracking-tight text-white truncate">
                     Advanced Analytics
                   </h2>
                   {data?.outcome === 'decisive' && (
@@ -131,15 +150,17 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               <button
                 onClick={fetchAnalytics}
                 disabled={isLoading}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Refresh Analytics"
+                aria-label="Refresh analytics"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Close"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -147,10 +168,16 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1.5 p-2 px-4 sm:px-6 border-b border-border bg-surface-subtle/30 overflow-x-auto text-xs shrink-0 scrollbar-none">
+          <div
+            role="tablist"
+            aria-label="Analytics sections"
+            className="flex items-center gap-1.5 p-2 px-4 sm:px-6 border-b border-border bg-surface-subtle/30 overflow-x-auto text-xs shrink-0 scrollbar-none"
+          >
             <button
+              role="tab"
+              aria-selected={activeTab === 'overview'}
               onClick={() => setActiveTab('overview')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'overview'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'
@@ -160,8 +187,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               Overview
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'options'}
               onClick={() => setActiveTab('options')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'options'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'
@@ -171,8 +200,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               Option & Criteria Matrix
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'sensitivity'}
               onClick={() => setActiveTab('sensitivity')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'sensitivity'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'
@@ -182,8 +213,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               Sensitivity & Counterfactuals
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'uncertainty'}
               onClick={() => setActiveTab('uncertainty')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'uncertainty'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'
@@ -193,8 +226,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               Uncertainty & Monte Carlo
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'evidence'}
               onClick={() => setActiveTab('evidence')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'evidence'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'
@@ -207,8 +242,10 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
               )}
             </button>
             <button
+              role="tab"
+              aria-selected={activeTab === 'deliberation'}
               onClick={() => setActiveTab('deliberation')}
-              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer ${
+              className={`px-3 py-2 rounded-lg font-medium flex items-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
                 activeTab === 'deliberation'
                   ? 'bg-signal/15 text-signal border border-signal/30'
                   : 'text-slate-400 hover:text-white hover:bg-surface-hover'

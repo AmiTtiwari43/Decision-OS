@@ -66,16 +66,35 @@ export const WorkspaceAnalyticsModal: React.FC<WorkspaceAnalyticsModalProps> = (
     }
   }, [isOpen, fetchWorkspaceAnalytics]);
 
+  // Keyboard navigation: Escape key closes workspace analytics modal
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   return (
     <AnimatePresence>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm">
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+        onClick={onClose}
+      >
         <motion.div
           initial={{ opacity: 0, scale: 0.96, y: 10 }}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           exit={{ opacity: 0, scale: 0.96, y: 10 }}
           transition={{ duration: 0.2 }}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="workspace-analytics-title"
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-4xl max-h-[90vh] bg-surface border border-border rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100"
         >
           {/* Header */}
@@ -85,7 +104,7 @@ export const WorkspaceAnalyticsModal: React.FC<WorkspaceAnalyticsModalProps> = (
                 <PieChart className="w-5 h-5" />
               </div>
               <div>
-                <h2 className="text-lg sm:text-xl font-bold tracking-tight text-white">
+                <h2 id="workspace-analytics-title" className="text-lg sm:text-xl font-bold tracking-tight text-white">
                   Workspace Portfolio Analytics
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
@@ -98,15 +117,17 @@ export const WorkspaceAnalyticsModal: React.FC<WorkspaceAnalyticsModalProps> = (
               <button
                 onClick={fetchWorkspaceAnalytics}
                 disabled={isLoading}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-300 hover:text-white transition-colors cursor-pointer disabled:opacity-50 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Refresh"
+                aria-label="Refresh workspace analytics"
               >
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
               <button
                 onClick={onClose}
-                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer"
+                className="p-2 rounded-lg bg-surface hover:bg-surface-hover border border-border text-slate-400 hover:text-white transition-colors cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Close"
+                aria-label="Close modal"
               >
                 <X className="w-5 h-5" />
               </button>
