@@ -7,9 +7,16 @@ import {
   UnauthorizedError,
 } from '../errors/domain.errors.js';
 
+/**
+ * Credential endpoints get a much tighter per-IP limit than the global API
+ * limit to slow password guessing and account-creation abuse. Applied only
+ * when the rate-limit plugin is registered (it is skipped in tests).
+ */
+export const AUTH_RATE_LIMIT = { max: 10, timeWindow: '1 minute' } as const;
+
 export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   // POST /api/auth/register — Register a new user
-  app.post('/register', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/register', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (request: FastifyRequest, reply: FastifyReply) => {
     const requestId = (request.id as string) || 'unknown';
     const body = request.body as Record<string, unknown>;
 
@@ -52,7 +59,7 @@ export const authRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
   });
 
   // POST /api/auth/login — Authenticate user
-  app.post('/login', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (request: FastifyRequest, reply: FastifyReply) => {
     const requestId = (request.id as string) || 'unknown';
     const body = request.body as Record<string, unknown>;
 
