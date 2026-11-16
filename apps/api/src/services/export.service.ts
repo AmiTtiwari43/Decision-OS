@@ -7,10 +7,14 @@ import {
   predictionRepository,
   auditRepository,
 } from '../repositories/index.js';
-import { authorizeDecisionAction } from './authorization.service.js';
+import { authorizeDecisionAction, getDecisionRole } from './authorization.service.js';
 import { auditService } from './audit.service.js';
 import { calibrationService } from './calibration.service.js';
-import type { RequesterContext } from './decision.service.js';
+import {
+  getSyntheticScoreCoordinates,
+  validateCompleteness,
+  type RequesterContext,
+} from './decision.service.js';
 import {
   DecisionNotFoundError,
   InvalidDecisionIdError,
@@ -75,6 +79,39 @@ export class ExportService {
 
     await authorizeDecisionAction(decision, 'read', requester);
 
+    // Collaborator contact details are visible to the owner only (or internal callers).
+    const requesterRole = await getDecisionRole(decision, requester);
+    const canSeeContactDetails = requesterRole === 'owner';
+
+    // Certification status (F05/F19): an export is an authoritative record only
+    // when a stored analysis exists, the matrix is complete, and no synthetic
+    // demo values remain. Otherwise it is explicitly marked non-authoritative.
+    const syntheticCoordinates = getSyntheticScoreCoordinates(
+      decision.criteria || [],
+      decision.options || [],
+      decision.scoreProvenance
+    );
+    const missingCoordinates = validateCompleteness(decision.criteria || [], decision.options || [], decision.scores);
+    const certificationBlockers: string[] = [];
+    if (syntheticCoordinates.length > 0) {
+      certificationBlockers.push(`${syntheticCoordinates.length} synthetic demonstration score(s) remain`);
+    }
+    if (missingCoordinates.length > 0) {
+      certificationBlockers.push(`${missingCoordinates.length} score(s) are missing`);
+    }
+    if (!decision.analysis) {
+      certificationBlockers.push('no authoritative analysis has been calculated for the current inputs');
+    }
+    const certification = {
+      isAuthoritative: certificationBlockers.length === 0,
+      status: certificationBlockers.length === 0 ? 'authoritative' : 'not_certifiable',
+      reasons: certificationBlockers,
+      syntheticCoordinates,
+      missingCoordinates,
+    };
+    const isSyntheticCell = (optionId: string, criterionId: string): boolean =>
+      syntheticCoordinates.some(c => c.optionId === optionId && c.criterionId === criterionId);
+
     // Fetch related records in parallel
     const [evidenceList, contributionsList, disagreementsList, predictionsList, chainCheck, rawAuditEvents] =
       await Promise.all([
@@ -90,13 +127,14 @@ export class ExportService {
 
     const auditEvents = rawAuditEvents || [];
 
-    // Privacy filter: Only show submitted contributions, or contributor's own draft
+    // Privacy filter: drafts are private to their author. Submitted, adopted,
+    // rejected and withdrawn contributions are part of the decision record.
     const sanitizedContributions = contributionsList.filter(
       (c: { status: string; contributorId: unknown }) => {
         const cId = (c.contributorId as { _id?: { toString(): string } })?._id
           ? (c.contributorId as { _id: { toString(): string } })._id.toString()
           : String(c.contributorId);
-        return c.status === 'submitted' || (requester && cId === requester.id);
+        return c.status !== 'draft' || (requester && cId === requester.id);
       }
     );
 
@@ -214,6 +252,9 @@ export class ExportService {
             isLocked: Boolean(c.isLocked),
           })),
           scoreMatrix: decision.scores || {},
+          // Cell-level provenance: coordinates flagged isSynthetic hold demo values, not evidence.
+          scoreProvenance: decision.scoreProvenance || {},
+          certification,
           finalRankings: (decision.analysis?.evaluations || []).map(e => ({
             rank: e.rank,
             optionId: e.optionId,
@@ -252,7 +293,7 @@ export class ExportService {
               id: c._id.toString(),
               contributorId: cId,
               contributorName: rawC.contributorName,
-              contributorEmail: rawC.contributorEmail,
+              contributorEmail: canSeeContactDetails || cId === requester?.id ? rawC.contributorEmail : undefined,
               status: c.status,
               weights: rawC.weights,
               preferredOptionId: c.recommendation?.preferredOptionId,
@@ -286,7 +327,7 @@ export class ExportService {
             entityId: e.entityId,
             actor: e.actorName || e.actorEmail || e.actorId,
             actorId: e.actorId,
-            actorEmail: e.actorEmail,
+            actorEmail: canSeeContactDetails ? e.actorEmail : undefined,
             summary: e.summary,
             diff: e.diff,
             timestamp: (e.originalTimestamp || e.timestamp),
@@ -323,7 +364,15 @@ export class ExportService {
         const lines: string[] = [];
 
         // 1. Header & Metadata Section
-        lines.push('# DECISION OS — AUTHORITATIVE DECISION EXPORT');
+        lines.push(
+          certification.isAuthoritative
+            ? '# DECISION OS — AUTHORITATIVE DECISION EXPORT'
+            : '# DECISION OS — DECISION EXPORT (NOT CERTIFIABLE — NON-AUTHORITATIVE)'
+        );
+        lines.push(`Certification Status,${sanitizeCsvCell(certification.status)}`);
+        if (!certification.isAuthoritative) {
+          lines.push(`Certification Blockers,${sanitizeCsvCell(certification.reasons.join('; '))}`);
+        }
         lines.push(`Decision Title,${sanitizeCsvCell(decision.title)}`);
         lines.push(`Decision ID,${sanitizeCsvCell(decision._id.toString())}`);
         lines.push(`Description,${sanitizeCsvCell(decision.description || '')}`);
@@ -405,6 +454,24 @@ export class ExportService {
         }
         lines.push('');
 
+        // 4b. Cell-level provenance: lists every synthetic demonstration value
+        lines.push('# SCORE PROVENANCE (SYNTHETIC DEMONSTRATION VALUES ARE NOT EVIDENCE)');
+        lines.push('Option ID,Criterion ID,Score,Provenance');
+        if (syntheticCoordinates.length === 0) {
+          lines.push(['', '', '', sanitizeCsvCell('All scores user-entered (no synthetic values)')].join(','));
+        }
+        for (const coord of syntheticCoordinates) {
+          lines.push(
+            [
+              sanitizeCsvCell(coord.optionId),
+              sanitizeCsvCell(coord.criterionId),
+              sanitizeCsvCell(decision.scores?.[coord.optionId]?.[coord.criterionId] ?? ''),
+              sanitizeCsvCell('SYNTHETIC (demo)'),
+            ].join(',')
+          );
+        }
+        lines.push('');
+
         // 5. Final Rankings Table
         lines.push('# FINAL RANKINGS');
         lines.push('Rank,Option Name,Option ID,Deterministic Weighted Score,Margin to Leader');
@@ -415,7 +482,13 @@ export class ExportService {
               sanitizeCsvCell(e.optionName),
               sanitizeCsvCell(e.optionId),
               sanitizeCsvCell(typeof e.weightedScore === 'number' && Number.isFinite(e.weightedScore) ? (e.weightedScore).toFixed(2) : 'N/A'),
-              sanitizeCsvCell(e.rank === 1 ? '0.00 (Leader)' : typeof e.scoreDifferenceToLeader === 'number' && Number.isFinite(e.scoreDifferenceToLeader) ? `-${(e.scoreDifferenceToLeader).toFixed(2)}` : 'N/A'),
+              // Server-computed finite number: emitted raw so spreadsheets keep it numeric
+              // (sanitizeCsvCell would quote-prefix the leading '-' and turn it into text).
+              e.rank === 1
+                ? sanitizeCsvCell('0.00 (Leader)')
+                : typeof e.scoreDifferenceToLeader === 'number' && Number.isFinite(e.scoreDifferenceToLeader)
+                  ? (-Math.abs(e.scoreDifferenceToLeader)).toFixed(2)
+                  : sanitizeCsvCell('N/A'),
             ].join(',')
           );
         }
@@ -614,7 +687,7 @@ export class ExportService {
     <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 10px;">
       <h1>${escapeHtml(decision.title)}</h1>
       <div>
-        <span class="badge badge-winner">${isHtmlInvalid || isHtmlIncomplete ? 'Status' : 'Authoritative Winner'}: ${escapeHtml(htmlWinnerName)}</span>
+        <span class="badge badge-winner">${isHtmlInvalid || isHtmlIncomplete || !certification.isAuthoritative ? 'Status' : 'Authoritative Winner'}: ${escapeHtml(certification.isAuthoritative ? htmlWinnerName : 'Not certifiable')}</span>
         <span class="badge ${chainCheck.isValid ? 'badge-chain' : 'badge-broken'}">${chainCheck.isValid ? 'SHA-256 Chain Verified' : 'Chain Integrity Error'}</span>
       </div>
     </div>
@@ -622,8 +695,22 @@ export class ExportService {
     <p style="font-size: 12px; color: #94a3b8;">
       <strong>Decision ID:</strong> <code>${escapeHtml(decision._id.toString())}</code> &nbsp;|&nbsp;
       <strong>Evaluation Engine:</strong> ${escapeHtml(decision.analysis?.engineVersion || 'canonical-v1')} &nbsp;|&nbsp;
-      <strong>Evaluated At:</strong> ${escapeHtml(decision.analysis?.evaluatedAt || new Date().toISOString())}
+      <strong>Evaluated At:</strong> ${escapeHtml(decision.analysis?.evaluatedAt || 'Not calculated')}
     </p>
+    ${
+      certification.isAuthoritative
+        ? ''
+        : `<div class="alert-box alert-warn" role="alert">
+      <strong>NOT CERTIFIABLE — NON-AUTHORITATIVE EXPORT.</strong>
+      This briefing cannot be used as an authoritative decision record because
+      ${escapeHtml(certification.reasons.join('; '))}.
+      ${
+        syntheticCoordinates.length > 0
+          ? 'Cells marked <strong>SYNTHETIC</strong> in the score matrix are demonstration values, not assessments or evidence.'
+          : ''
+      }
+    </div>`
+    }
 
     <h2>1. Final Rankings &amp; Authoritative MCDA Scores</h2>
     <table>
@@ -716,7 +803,13 @@ export class ExportService {
           .map((opt: { id: string; name: string }) => {
             const rowScores = decision.scores?.[opt.id] || {};
             const cells = (decision.criteria || [])
-              .map((c: { id: string }) => `<td>${rowScores[c.id] !== undefined ? rowScores[c.id] : '—'}</td>`)
+              .map((c: { id: string }) => {
+                if (rowScores[c.id] === undefined) return '<td>—</td>';
+                const value = escapeHtml(String(rowScores[c.id]));
+                return isSyntheticCell(opt.id, c.id)
+                  ? `<td>${value} <span class="badge badge-warn" title="Synthetic demonstration value — not an assessment or evidence">SYNTHETIC</span></td>`
+                  : `<td>${value}</td>`;
+              })
               .join('');
             return `<tr><td><strong>${escapeHtml(opt.name)}</strong></td>${cells}</tr>`;
           })
@@ -914,7 +1007,7 @@ export class ExportService {
     </div>
 
     <div class="footer">
-      Decision OS Authoritative Export Briefing &bull; Canonical MCDA Decision Engine v1 &bull; Generated on ${new Date().toUTCString()}
+      Decision OS ${certification.isAuthoritative ? 'Authoritative Export Briefing' : 'Export Briefing (Not Certifiable)'} &bull; Canonical MCDA Decision Engine v1 &bull; Generated on ${new Date().toUTCString()}
     </div>
   </div>
 </body>

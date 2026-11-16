@@ -27,6 +27,7 @@ vi.mock('../src/repositories/index.js', () => ({
 
 vi.mock('../src/services/authorization.service.js', () => ({
   authorizeDecisionAction: vi.fn().mockResolvedValue(true),
+  getDecisionRole: vi.fn().mockResolvedValue('owner'),
 }));
 
 vi.mock('../src/services/audit.service.js', () => ({

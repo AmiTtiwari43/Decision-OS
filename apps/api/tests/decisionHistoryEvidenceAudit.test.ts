@@ -41,6 +41,7 @@ vi.mock('../src/repositories/index.js', () => ({
 
 vi.mock('../src/services/authorization.service.js', () => ({
   authorizeDecisionAction: vi.fn().mockResolvedValue(true),
+  getDecisionRole: vi.fn().mockResolvedValue('owner'),
 }));
 
 vi.mock('../src/services/calibration.service.js', () => ({
@@ -514,6 +515,9 @@ describe('Batch 03.3: Decision History, Evidence and Audit Showcase Tests', () =
         options: [
           { id: 'opt-danger', name: '@SUM(1+1)*cmd' },
         ],
+        // Complete matrix for the substituted option so the export is certifiable
+        // (an incomplete matrix is correctly labelled non-authoritative).
+        scores: { 'opt-danger': { 'crit-vel': 80, 'crit-sec': 80, 'crit-cost': 80 } },
       };
       (decisionRepository.findById as any).mockResolvedValue(dangerousDecision);
 
