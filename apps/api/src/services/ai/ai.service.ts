@@ -22,6 +22,26 @@ import type { DecisionDocument } from '../../models/index.js';
 import { suggestionRankingService } from './suggestion-ranking.service.js';
 import { env } from '../../config/env.js';
 
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * True when an AI observation claims that a non-winning option won. Option
+ * names are user-supplied text, so they are escaped before use in a pattern:
+ * a name such as "C++" previously threw (HTTP 500) and "Option (Beta)" never
+ * matched, letting a false winner claim through.
+ */
+export function claimsOtherOptionWon(observation: string, otherOptionNames: string[]): boolean {
+  return otherOptionNames.some(name => {
+    const trimmed = name.trim();
+    if (!trimmed) return false;
+    const falseClaim = new RegExp(
+      `(?<!\\w)${escapeRegExp(trimmed)}\\s+(?:won|wins|is the winner|achieved top rank)(?!\\w)`,
+      'i'
+    );
+    return falseClaim.test(observation);
+  });
+}
+
 export class AiService {
   /**
    * Executes structured, evidence-aware advisory AI analysis for a decision.
@@ -291,13 +311,9 @@ Please correct the response and return strictly valid JSON matching the schema.`
         }
       } else if (winnerOption) {
         // If the AI somehow asserted a completely different option as the winner, correct it
-        const otherOptions = decision.options.filter(o => o.id !== winnerId);
-        for (const other of otherOptions) {
-          const falseClaim = new RegExp(`\\b${other.name}\\s+(?:won|is the winner|achieved top rank)\\b`, 'i');
-          if (falseClaim.test(output.tradeoffAnalysis.winnerObservation)) {
-            output.tradeoffAnalysis.winnerObservation = `Authoritative backend MCDA results establish ${authoritativeWinnerName} as the current top-ranked alternative.`;
-            break;
-          }
+        const otherNames = decision.options.filter(o => o.id !== winnerId).map(o => o.name);
+        if (claimsOtherOptionWon(output.tradeoffAnalysis.winnerObservation, otherNames)) {
+          output.tradeoffAnalysis.winnerObservation = `Authoritative backend MCDA results establish ${authoritativeWinnerName} as the current top-ranked alternative.`;
         }
       }
     }
