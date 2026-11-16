@@ -11,7 +11,7 @@ import {
   contributionRepository,
   userRepository,
 } from '../repositories/index.js';
-import { authorizeDecisionAction } from './authorization.service.js';
+import { authorizeDecisionAction, getDecisionRole } from './authorization.service.js';
 import { auditService } from './audit.service.js';
 import type { RequesterContext } from './decision.service.js';
 import {
@@ -534,9 +534,38 @@ export class CalibrationService {
     };
   }
 
+  /**
+   * A user's calibration profile aggregates forecasts across decisions. Other
+   * users may only see forecasts made on decisions they can read; otherwise the
+   * profile would leak private decisions' predictions (IDOR). A requester who
+   * shares no readable decision with the expert gets 404, so profiles cannot be
+   * used to enumerate users. Internal callers (no requester) see everything.
+   */
+  private async filterPredictionsReadableBy<T extends { decisionId: unknown }>(
+    predictions: T[],
+    userId: string,
+    requester?: RequesterContext
+  ): Promise<T[]> {
+    if (!requester || requester.id === userId || requester.role === 'admin') {
+      return predictions;
+    }
+    const readable = new Set<string>();
+    const decisionIds = [...new Set(predictions.map(p => String(p.decisionId)))];
+    for (const decisionId of decisionIds) {
+      const decision = await decisionRepository.findById(decisionId);
+      if (decision && (await getDecisionRole(decision, requester))) {
+        readable.add(decisionId);
+      }
+    }
+    if (readable.size === 0) {
+      throw new PredictionNotFoundError('Calibration profile not found');
+    }
+    return predictions.filter(p => readable.has(String(p.decisionId)));
+  }
+
   async getUserCalibration(
     userId: string,
-    _requester?: RequesterContext
+    requester?: RequesterContext
   ): Promise<ExpertCalibrationProfileDto> {
     if (!userId || !mongoose.isValidObjectId(userId)) {
       throw new InvalidDecisionIdError(userId);
@@ -545,7 +574,11 @@ export class CalibrationService {
     const user = await userRepository.findById(userId);
     const contributorName = user?.name || user?.email || 'Expert Contributor';
 
-    const allUserPredictions = await predictionRepository.listByContributor(userId);
+    const allUserPredictions = await this.filterPredictionsReadableBy(
+      await predictionRepository.listByContributor(userId),
+      userId,
+      requester
+    );
     const verifiedUserPredictions = allUserPredictions.filter(
       p => p.status === 'verified' && p.outcome?.verificationStatus === 'verified'
     );

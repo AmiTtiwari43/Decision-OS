@@ -1120,7 +1120,8 @@ export async function populateSyntheticDemo(
  */
 export async function reconcileStandaloneAudit(
   decisionId: string,
-  operationId?: string
+  operationId?: string,
+  requester?: RequesterContext
 ): Promise<DecisionDocument> {
   if (!mongoose.isValidObjectId(decisionId)) {
     throw new InvalidDecisionIdError(decisionId);
@@ -1129,6 +1130,13 @@ export async function reconcileStandaloneAudit(
   const existing = await decisionRepository.findById(decisionId);
   if (!existing) {
     throw new DecisionNotFoundError(decisionId);
+  }
+
+  // HTTP callers act on behalf of a user and may quarantine the decision as a
+  // side effect, so they need the same authority as resolving quarantine.
+  // Internal recovery paths (read-time reconciliation) pass no requester.
+  if (requester) {
+    await authorizeDecisionAction(existing, 'quarantine_resolve', requester);
   }
 
   const opId = operationId || existing.pendingOperationId;

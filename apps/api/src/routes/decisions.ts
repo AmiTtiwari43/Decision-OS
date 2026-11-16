@@ -433,7 +433,10 @@ export const decisionRoutes: FastifyPluginAsync = async (app: FastifyInstance) =
     }
 
     try {
-      const doc = await reconcileStandaloneAudit(id, body.operationId);
+      if (!request.user) {
+        return reply.status(401).send({ statusCode: 401, error: 'Unauthorized', message: 'Authentication required', requestId });
+      }
+      const doc = await reconcileStandaloneAudit(id, body.operationId, request.user);
       return reply.status(200).send(doc);
     } catch (err) {
       return handleServiceError(err, request, reply);
