@@ -376,7 +376,13 @@ describe('Decision Routes — Synthetic Demonstration & Provenance Fastify Route
 
       expect(response.statusCode).toBe(200);
       expect(response.json()).toEqual(mockReconciled);
-      expect(decisionService.reconcileStandaloneAudit).toHaveBeenCalledWith(validDecisionId, 'op-123');
+      // The route must forward the authenticated requester so the service can
+      // authorize the reconciliation (it may quarantine the decision).
+      expect(decisionService.reconcileStandaloneAudit).toHaveBeenCalledWith(
+        validDecisionId,
+        'op-123',
+        expect.objectContaining({ id: expect.any(String) })
+      );
     });
 
     it('returns HTTP 400 when invalid decision ID is provided', async () => {
