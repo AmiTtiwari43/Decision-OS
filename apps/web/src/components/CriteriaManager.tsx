@@ -211,6 +211,7 @@ export const CriteriaManager: React.FC<CriteriaManagerProps> = ({
             <button
               type="button"
               onClick={() => setIsAdding(false)}
+              aria-label="Cancel adding criterion"
               className="p-1 rounded text-slate-400 hover:text-white"
             >
               <X className="w-3.5 h-3.5" />

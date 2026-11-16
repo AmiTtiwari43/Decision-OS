@@ -708,6 +708,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
                       </span>
                       <button
                         onClick={() => setSelectedSnapshot(null)}
+                        aria-label="Close snapshot details"
                         className="text-slate-400 hover:text-white"
                       >
                         <X className="w-4 h-4" />

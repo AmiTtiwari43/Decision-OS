@@ -181,6 +181,7 @@ export const AlternativesManager: React.FC<AlternativesManagerProps> = ({
             <button
               type="button"
               onClick={handleCancelAdd}
+              aria-label="Cancel adding alternative"
               className="p-1 rounded text-slate-400 hover:text-white"
             >
               <X className="w-3.5 h-3.5" />

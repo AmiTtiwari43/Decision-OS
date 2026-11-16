@@ -671,6 +671,7 @@ ${criteria
                 )}
                 <button
                   onClick={dismissConflict}
+                  aria-label="Dismiss concurrent update notice"
                   className="p-1 rounded text-amber-300 hover:text-white"
                 >
                   <X className="w-3.5 h-3.5" />

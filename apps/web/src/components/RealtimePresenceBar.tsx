@@ -141,6 +141,7 @@ export const RealtimePresenceBar: React.FC<RealtimePresenceBarProps> = ({
                 )}
                 <button
                   onClick={onDismissConflict}
+                  aria-label="Dismiss warning and keep my local edits"
                   className="p-1 rounded hover:bg-amber-400/20 text-amber-300 hover:text-white transition-colors cursor-pointer"
                   title="Dismiss warning and keep my local edits"
                 >
