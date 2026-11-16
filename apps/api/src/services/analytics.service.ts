@@ -16,6 +16,7 @@ import { authorizeDecisionAction } from './authorization.service.js';
 import {
   validateCompleteness,
   mapToEngineInput,
+  getSyntheticScoreCoordinates,
   type RequesterContext,
 } from './decision.service.js';
 import {
@@ -255,14 +256,18 @@ export class AnalyticsService {
     const decisionOptions = decision.options || [];
     const missingPairs = validateCompleteness(criteria, decisionOptions, decision.scores);
     const isComplete = missingPairs.length === 0;
+    // Synthetic demo placeholders are never decision evidence (F05): analytics
+    // must not compute or present an authoritative result while any remain.
+    const syntheticCoordinates = getSyntheticScoreCoordinates(criteria, decisionOptions, decision.scoreProvenance);
+    const isEligibleForAuthoritativeAnalysis = isComplete && syntheticCoordinates.length === 0;
 
-    let analysis: EngineResult | null = decision.analysis;
+    let analysis: EngineResult | null = isEligibleForAuthoritativeAnalysis ? decision.analysis : null;
     const includeMonteCarlo = options.includeMonteCarlo !== false;
     const mcIterations = Math.max(100, Math.min(10000, options.iterations ?? 1000));
     const mcSeed = options.seed ?? 42;
     const mcSigma = Math.max(0.01, Math.min(0.5, options.sigmaRelative ?? 0.15));
 
-    if (isComplete) {
+    if (isEligibleForAuthoritativeAnalysis) {
       const lockedIds = criteria.filter(c => c.isLocked).map(c => c.id);
       const engineInput = mapToEngineInput(criteria, decisionOptions, decision.scores);
 
@@ -287,7 +292,7 @@ export class AnalyticsService {
       }
     }
 
-    const isAuthoritative = isComplete && analysis !== null;
+    const isAuthoritative = isEligibleForAuthoritativeAnalysis && analysis !== null;
     const outcome = !isAuthoritative || !analysis ? 'unscored' : analysis.decisionOutcome;
     const pointLead = analysis?.pointLead ?? 0;
 

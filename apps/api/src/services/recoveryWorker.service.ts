@@ -10,6 +10,7 @@ import {
   type DecisionCriterion,
   type DecisionOption,
   type ScoreMatrix,
+  type ScoreProvenanceMap,
 } from '../models/index.js';
 import { DecisionContributionModel } from '../models/contribution.model.js';
 import { auditService } from './audit.service.js';
@@ -20,6 +21,7 @@ import {
 import {
   mapToEngineInput,
   validateCompleteness,
+  getSyntheticScoreCoordinates,
 } from './decision.service.js';
 import {
   ConcurrencyFencingError,
@@ -318,7 +320,15 @@ export class RecoveryWorkerService {
         let evalResult = null;
         let evalError = null;
 
-        if (criteria.length > 0 && options.length > 0 && validateCompleteness(criteria, options, scores).length === 0) {
+        // Never persist an authoritative result while synthetic demo cells remain (F05).
+        const hasSyntheticCells =
+          getSyntheticScoreCoordinates(criteria, options, decision.scoreProvenance as ScoreProvenanceMap | undefined).length > 0;
+        if (
+          criteria.length > 0 &&
+          options.length > 0 &&
+          !hasSyntheticCells &&
+          validateCompleteness(criteria, options, scores).length === 0
+        ) {
           try {
             const input = mapToEngineInput(criteria, options, scores);
             evalResult = evaluateDecision(input);

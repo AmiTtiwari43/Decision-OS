@@ -13,6 +13,7 @@ import {
   type DecisionCriterion,
   type DecisionOption,
   type ScoreMatrix,
+  type ScoreProvenanceMap,
 } from '../models/index.js';
 import {
   DecisionNotFoundError,
@@ -35,6 +36,7 @@ import { evaluationCache } from './evaluationCache.js';
 import {
   runAnalysis,
   validateCompleteness,
+  getSyntheticScoreCoordinates,
   type RequesterContext,
 } from './decision.service.js';
 import { ValidationError } from '@decision-os/decision-engine';
@@ -558,6 +560,7 @@ export class ContributionService {
 
     // Prepare candidate scores
     const candidateScores: ScoreMatrix = JSON.parse(JSON.stringify(decision.scores || {}));
+    const candidateProvenance: ScoreProvenanceMap = JSON.parse(JSON.stringify(decision.scoreProvenance || {}));
     if (!candidateScores[preferredOptionId]) {
       candidateScores[preferredOptionId] = {};
     }
@@ -567,6 +570,14 @@ export class ContributionService {
       }
       if (typeof scoreVal === 'number' && Number.isFinite(scoreVal)) {
         candidateScores[preferredOptionId][criterionId] = scoreVal;
+        // An adopted expert assessment is a genuine score for this coordinate,
+        // so it replaces any synthetic demo placeholder that was there.
+        if (candidateProvenance[preferredOptionId]?.[criterionId]) {
+          delete candidateProvenance[preferredOptionId][criterionId];
+          if (Object.keys(candidateProvenance[preferredOptionId]).length === 0) {
+            delete candidateProvenance[preferredOptionId];
+          }
+        }
       }
     }
 
@@ -582,7 +593,15 @@ export class ContributionService {
     let freshAnalysis = null;
     let calcError: unknown = null;
 
-    if (criteria.length > 0 && options.length > 0 && validateCompleteness(criteria, options, candidateScores).length === 0) {
+    // Authoritative analysis requires a complete matrix with no synthetic cells
+    // remaining (F05); otherwise the adoption is saved with analysis cleared.
+    const remainingSynthetic = getSyntheticScoreCoordinates(criteria, options, candidateProvenance);
+    if (
+      criteria.length > 0 &&
+      options.length > 0 &&
+      remainingSynthetic.length === 0 &&
+      validateCompleteness(criteria, options, candidateScores).length === 0
+    ) {
       try {
         freshAnalysis = runAnalysis(criteria, options, candidateScores);
       } catch (err) {
@@ -656,6 +675,7 @@ export class ContributionService {
         {
           $set: {
             scores: candidateScores,
+            scoreProvenance: candidateProvenance,
             analysis: freshAnalysis,
             version: targetVersion,
             isAudited: true,
