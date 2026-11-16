@@ -122,7 +122,10 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     [decision?._id]
   );
 
-  // Explicitly reset all cached analysis, proposals, loading, and errors on decision ID change or modal close/open
+  // Reset all cached analysis, proposals, loading and errors on decision change or
+  // modal open/close, then start the initial analysis in the same step.
+  // Previously this effect set isLoading=true and a separate effect only fetched
+  // when !isLoading, so the request never started and the spinner never ended.
   useEffect(() => {
     activeDecisionIdRef.current = decision?._id || null;
     activeRequestIdRef.current++;
@@ -133,8 +136,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     setAdoptingCriterionId(null);
     setAdoptingOptionId(null);
     setExpandedSuggestionIds({});
-    setIsLoading(Boolean(isOpen && decision?._id));
-  }, [decision?._id, isOpen]);
+    setIsLoading(false);
+    if (isOpen && decision?._id) {
+      void fetchAnalysis('all');
+    }
+  }, [decision?._id, isOpen, fetchAnalysis]);
 
   // Keyboard navigation: Escape key closes AI analyst modal
   useEffect(() => {
@@ -147,12 +153,6 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
-
-  useEffect(() => {
-    if (isOpen && decision?._id && !analysis && !isLoading && !error) {
-      fetchAnalysis('all');
-    }
-  }, [isOpen, decision?._id, analysis, isLoading, error, fetchAnalysis]);
 
   const handleTabChange = (cap: AiCapability) => {
     setCapability(cap);
