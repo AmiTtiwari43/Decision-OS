@@ -19,6 +19,12 @@ export interface UseRealtimeCollaborationOptions {
   decisionId: string | null;
   enabled?: boolean;
   isDirty?: boolean;
+  /** True while this client has a write in flight. */
+  isSaving?: boolean;
+  /** Latest decision version this client already holds. */
+  knownVersion?: number;
+  /** Authenticated user id, used to recognise echoes of this client's own writes. */
+  currentUserId?: string;
   currentView?: string;
   onDecisionUpdated?: (payload: any) => void;
   onCalculationUpdated?: (payload: any) => void;
@@ -39,10 +45,29 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const RECONNECT_BASE_DELAY_MS = 2_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 
+/**
+ * Returns true for update events this client should not treat as someone
+ * else's change: versions it already holds, and echoes of its own in-flight
+ * save (the save response applies that state). Without this, a user's own
+ * save was reported as a "Concurrent Update" by themselves.
+ */
+export function isOwnOrStaleUpdate(
+  event: Pick<CollaborationEventDto, 'version' | 'actorId'>,
+  guard: { isSaving?: boolean; knownVersion?: number; currentUserId?: string }
+): boolean {
+  if (typeof guard.knownVersion === 'number' && typeof event.version === 'number' && event.version <= guard.knownVersion) {
+    return true;
+  }
+  return Boolean(guard.isSaving && guard.currentUserId && event.actorId === guard.currentUserId);
+}
+
 export function useRealtimeCollaboration({
   decisionId,
   enabled = true,
   isDirty = false,
+  isSaving = false,
+  knownVersion,
+  currentUserId,
   currentView = 'decision',
   onDecisionUpdated,
   onCalculationUpdated,
@@ -68,6 +93,12 @@ export function useRealtimeCollaboration({
   useEffect(() => {
     isDirtyRef.current = isDirty;
   }, [isDirty]);
+
+  // Echo suppression state, read inside long-lived EventSource handlers.
+  const echoGuardRef = useRef({ isSaving, knownVersion, currentUserId });
+  useEffect(() => {
+    echoGuardRef.current = { isSaving, knownVersion, currentUserId };
+  }, [isSaving, knownVersion, currentUserId]);
 
   const callbacksRef = useRef({
     onDecisionUpdated,
@@ -150,6 +181,7 @@ export function useRealtimeCollaboration({
             }
 
             case 'decision.updated': {
+              if (isOwnOrStaleUpdate(parsed, echoGuardRef.current)) break;
               if (isDirtyRef.current) {
                 // User has unsaved edits in progress: do NOT overwrite their changes!
                 setConflictState({
@@ -166,6 +198,7 @@ export function useRealtimeCollaboration({
             }
 
             case 'decision.calculation.updated': {
+              if (isOwnOrStaleUpdate(parsed, echoGuardRef.current)) break;
               if (isDirtyRef.current) {
                 setConflictState({
                   hasConflict: true,

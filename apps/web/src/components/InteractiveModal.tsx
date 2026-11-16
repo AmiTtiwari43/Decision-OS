@@ -124,7 +124,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     isScoreMatrixComplete,
   } = model;
 
-  const { isAuthenticated, openAuthModal } = useAuth();
+  const { isAuthenticated, openAuthModal, user } = useAuth();
 
   const [activeTab, setActiveTab] = useState<ActiveWorkspaceTab>('matrix');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
@@ -217,6 +217,9 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     decisionId,
     enabled: isOpen && !!decisionId && mode === 'saved',
     isDirty,
+    isSaving: saveStatus === 'in_flight',
+    knownVersion: serverDecision?.version,
+    currentUserId: user?.id,
     currentView: 'workspace',
     onDecisionUpdated: () => {
       if (decisionId) {
