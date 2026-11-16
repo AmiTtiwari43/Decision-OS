@@ -978,8 +978,9 @@ describe('BATCH 4 V3.2 ADVERSARIAL VERIFICATION & CLOSURE SUITE', () => {
   // =========================================================================
   describe('DOMAIN D5: Topology Verification & Standalone Fail-Closed', () => {
     it('D5-T1: Standalone MongoDB transaction attempt fails closed without unsafe fallback', async () => {
-      // Connect to standalone instance on port 27017
-      const standaloneConn = await mongoose.createConnection('mongodb://127.0.0.1:27017/decision_os_standalone_test').asPromise();
+      // Connect to a real standalone instance (default port 27017, overridable)
+      const standaloneHost = process.env.TEST_STANDALONE_MONGODB_HOST || '127.0.0.1:27017';
+      const standaloneConn = await mongoose.createConnection(`mongodb://${standaloneHost}/decision_os_standalone_test`).asPromise();
 
       try {
         const session = await standaloneConn.startSession();

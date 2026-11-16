@@ -27,7 +27,9 @@ const REPLICA_SET_URI =
     : 'mongodb://127.0.0.1:27018/decision_os_rs_transactions_test?replicaSet=rs0&directConnection=true');
 assertTestDatabase(REPLICA_SET_URI);
 
-const STANDALONE_URI = 'mongodb://127.0.0.1:27017/decision_os_standalone_test';
+// Real standalone mongod. Override the host/port with TEST_STANDALONE_MONGODB_HOST
+// (e.g. 127.0.0.1:27019) when 27017 is occupied by a replica-set member locally.
+const STANDALONE_URI = `mongodb://${process.env.TEST_STANDALONE_MONGODB_HOST || '127.0.0.1:27017'}/decision_os_standalone_test`;
 assertTestDatabase(STANDALONE_URI);
 
 describe('Batch 4 Phase 1 — Transaction Enforcement & Standalone Fail-Closed Verification', () => {
