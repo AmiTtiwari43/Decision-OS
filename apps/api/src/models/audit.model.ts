@@ -124,6 +124,29 @@ AuditEventSchema.pre('deleteMany', function () {
 AuditEventSchema.pre('findOneAndDelete', function () {
   throw new Error('Audit records are strictly append-only. Deletions are prohibited.');
 });
+AuditEventSchema.pre('replaceOne', function () {
+  throw new Error('Audit records are strictly append-only. Replacements are prohibited.');
+});
+AuditEventSchema.pre('findOneAndReplace', function () {
+  throw new Error('Audit records are strictly append-only. Replacements are prohibited.');
+});
+// Document-level deleteOne() is separate from the query hook above in Mongoose 9.
+AuditEventSchema.pre('deleteOne', { document: true, query: false }, function () {
+  throw new Error('Audit records are strictly append-only. Deletions are prohibited.');
+});
+// save() on an existing document would rewrite a persisted event in place.
+AuditEventSchema.pre('save', function () {
+  if (!this.isNew) {
+    throw new Error('Audit records are strictly append-only. Updates are prohibited.');
+  }
+});
+// bulkWrite can carry update/replace/delete operations; only inserts are allowed.
+AuditEventSchema.pre('bulkWrite', function (ops) {
+  const operations = (ops ?? []) as unknown as Array<Record<string, unknown>>;
+  if (operations.some(op => !('insertOne' in op))) {
+    throw new Error('Audit records are strictly append-only. Only insert operations are permitted.');
+  }
+});
 
 export const AuditEventModel =
   (mongoose.models.AuditEvent as Model<AuditEventDocument>) ||
