@@ -152,7 +152,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
             <span
               className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1.5 shadow-sm"
               data-testid="synthetic-indicator"
-              title="Matrix contains synthetic placeholder values (75.0) for demonstration only"
+              title="Matrix contains synthetic placeholder values for demonstration only"
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-400" />
               <span>{activeSyntheticCount} Synthetic Value{activeSyntheticCount === 1 ? '' : 's'} (Demo Only)</span>
@@ -332,7 +332,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
                                 : isInvalid
                                   ? 'Invalid score: Must be finite number in [0, 100]'
                                   : isSynthetic
-                                    ? 'Synthetic demonstration value (75.0) — Not an authoritative assessment or verified evidence'
+                                    ? `Synthetic demonstration value (${rawVal}) — Not an authoritative assessment or verified evidence`
                                     : `Score: ${rawVal}`
                             }
                           />
@@ -349,7 +349,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
                           {isSynthetic && (
                             <span
                               className="absolute -top-1.5 right-1 px-1 py-0.2 rounded text-[8px] font-mono font-bold bg-purple-950 text-purple-300 border border-purple-500/40 tracking-wider pointer-events-none shadow-sm z-10"
-                              title="Synthetic demonstration value (75.0) — Not an authoritative assessment"
+                              title={`Synthetic demonstration value (${rawVal}) — Not an authoritative assessment`}
                               data-testid="synthetic-cell-badge"
                             >
                               DEMO
@@ -375,7 +375,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
           <div className="flex items-center gap-2">
             <Sparkles className="w-3.5 h-3.5 text-purple-400 shrink-0" />
             <span>
-              <strong>Synthetic Demo Notice:</strong> {activeSyntheticCount} matrix score{activeSyntheticCount === 1 ? '' : 's'} contain synthetic baseline value (75.0). Not an authoritative assessment or verified evidence.
+              <strong>Synthetic Demo Notice:</strong> {activeSyntheticCount} matrix score{activeSyntheticCount === 1 ? '' : 's'} contain synthetic placeholder values. Not an authoritative assessment or verified evidence.
             </span>
           </div>
           <button
