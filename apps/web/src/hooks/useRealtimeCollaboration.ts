@@ -60,6 +60,10 @@ export function useRealtimeCollaboration({
   const reconnectAttemptsRef = useRef<number>(0);
   const connectStreamRef = useRef<() => void>(() => {});
   const isDirtyRef = useRef<boolean>(isDirty);
+  // Resume cursor for reconnects. Kept in a ref so that receiving an event does
+  // not recreate `connectStream` (which would tear down and reopen the stream on
+  // every message and cause an endless reconnect loop).
+  const lastEventIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     isDirtyRef.current = isDirty;
@@ -99,7 +103,7 @@ export function useRealtimeCollaboration({
     try {
       const streamUrl = apiClient.getCollaborationStreamUrl(
         decisionId,
-        lastEventId || undefined
+        lastEventIdRef.current || undefined
       );
 
       const es = new EventSource(streamUrl);
@@ -114,6 +118,7 @@ export function useRealtimeCollaboration({
         try {
           const parsed = JSON.parse(event.data) as CollaborationEventDto;
           if (parsed.eventId) {
+            lastEventIdRef.current = parsed.eventId;
             setLastEventId(parsed.eventId);
           }
 
@@ -229,7 +234,7 @@ export function useRealtimeCollaboration({
     } catch {
       setConnectionStatus('disconnected');
     }
-  }, [decisionId, enabled, lastEventId]);
+  }, [decisionId, enabled]);
 
   useEffect(() => {
     connectStreamRef.current = connectStream;
@@ -270,6 +275,11 @@ export function useRealtimeCollaboration({
       }
     };
   }, [decisionId, enabled, connectionStatus, currentView]);
+
+  // A resume cursor belongs to one decision stream only.
+  useEffect(() => {
+    lastEventIdRef.current = null;
+  }, [decisionId]);
 
   // Main lifecycle effect for connection
   useEffect(() => {
