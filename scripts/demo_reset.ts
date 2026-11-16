@@ -11,6 +11,7 @@
  *    - Clean Slate (--clean-slate): Cleans demo decisions so presenter can demonstrate creation from scratch.
  */
 
+import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { connectToDatabase, disconnectFromDatabase, isReplicaSetSupported } from '../apps/api/src/db/connection.js';
 import { UserModel } from '../apps/api/src/models/user.model.js';
@@ -19,6 +20,7 @@ import { AuditEventModel } from '../apps/api/src/models/audit.model.js';
 import { DecisionContributionModel } from '../apps/api/src/models/contribution.model.js';
 import { DecisionInvitationModel } from '../apps/api/src/models/invitation.model.js';
 import { DecisionEvidenceModel } from '../apps/api/src/models/evidence.model.js';
+import { DecisionAccessGrantModel } from '../apps/api/src/models/decisionAccess.model.js';
 import { hashPassword } from '../apps/api/src/utils/crypto.js';
 import { computeCanonicalEventHash, GENESIS_PREVIOUS_HASH } from '../apps/api/src/services/audit.service.js';
 
@@ -128,15 +130,15 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
     }
   }
 
-  const presenterId = createdDemoUsers[`demo.presenter${DEMO_DOMAIN}`];
+  // The quick-fill account (lead@) is the documented owner of the canonical
+  // presentation decision (see FEATURES_AND_MANUAL_VERIFICATION_GUIDE.md).
+  const ownerEmail = `lead${DEMO_DOMAIN}`;
+  const ownerId = createdDemoUsers[ownerEmail];
+  const demoUserObjectIds = Object.values(createdDemoUsers).map((id) => new mongoose.Types.ObjectId(id));
 
-  // 4. Clean previous demo decisions owned by demo presenter
-  const demoDecisions = await DecisionModel.find({
-    $or: [
-      { createdById: presenterId },
-      { title: 'Enterprise Cloud Provider Decision' },
-    ],
-  });
+  // 4. Clean previous demo decisions — strictly those owned by demo accounts.
+  // Never match by title alone: a real user may own a decision with the same title.
+  const demoDecisions = await DecisionModel.find({ ownerId: { $in: demoUserObjectIds } });
 
   const demoDecisionIds = demoDecisions.map((d) => d._id);
   if (demoDecisionIds.length > 0) {
@@ -144,6 +146,7 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
     await DecisionContributionModel.deleteMany({ decisionId: { $in: demoDecisionIds } });
     await DecisionInvitationModel.deleteMany({ decisionId: { $in: demoDecisionIds } });
     await DecisionEvidenceModel.deleteMany({ decisionId: { $in: demoDecisionIds } });
+    await DecisionAccessGrantModel.deleteMany({ decisionId: { $in: demoDecisionIds } });
     await DecisionModel.deleteMany({ _id: { $in: demoDecisionIds } });
     console.log(`  ✓ Cleared ${demoDecisionIds.length} previous demo decision records and associated audit events.`);
   }
@@ -154,13 +157,14 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
   if (!isCleanSlate) {
     console.log(`\n[SEEDING CANONICAL PRESENTATION DECISION]`);
     const decisionId = new mongoose.Types.ObjectId();
+    const genesisEventId = randomUUID();
     const now = new Date();
 
     // Initial genesis audit event
     const initialHash = computeCanonicalEventHash({
-      eventId: 'evt-001-canonical-init',
+      eventId: genesisEventId,
       decisionId: decisionId.toString(),
-      actorId: presenterId,
+      actorId: ownerId,
       action: 'decision.create',
       entityType: 'decision',
       entityId: decisionId.toString(),
@@ -173,11 +177,11 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
     });
 
     const auditEvent = await AuditEventModel.create({
-      eventId: 'evt-001-canonical-init',
+      eventId: genesisEventId,
       decisionId,
-      actorId: presenterId,
-      actorEmail: `demo.presenter${DEMO_DOMAIN}`,
-      actorName: 'Alex Rivera',
+      actorId: ownerId,
+      actorEmail: ownerEmail,
+      actorName: 'Lead Decision Architect',
       action: 'decision.create',
       entityType: 'decision',
       entityId: decisionId.toString(),
@@ -193,14 +197,7 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
       _id: decisionId,
       title: 'Enterprise Cloud Provider Decision',
       description: 'Which cloud provider provides the optimal architecture and cost balance for enterprise migration?',
-      createdById: presenterId,
-      members: [
-        {
-          userId: presenterId,
-          role: 'owner',
-          addedAt: now,
-        },
-      ],
+      ownerId: new mongoose.Types.ObjectId(ownerId),
       criteria: [
         {
           id: 'crit-tech',
