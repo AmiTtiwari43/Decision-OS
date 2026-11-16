@@ -187,6 +187,9 @@ export async function resetDemoEnvironment(options: { cleanSlate?: boolean; uri?
       entityId: decisionId.toString(),
       summary: 'Initialized canonical Enterprise Cloud Provider Decision framework',
       timestamp: now,
+      // Must be persisted with the exact value that was hashed; omitting it lets
+      // Mongoose default it to a later Date.now() and breaks chain verification.
+      originalTimestamp: now,
       previousEventHash: GENESIS_PREVIOUS_HASH,
       eventHash: initialHash,
       sequenceNumber: 1,
