@@ -63,20 +63,24 @@ function AppContent() {
     ? `TIPPING: ${accessibleTipping.criterionName} > ${accessibleTipping.tippingPointWeight}% flips to ${accessibleTipping.wouldFlipToOptionName}`
     : 'LEAD IS MATHEMATICALLY STABLE';
 
-  // Support direct URL retrieval via ?decisionId=<mongoId> or ?inviteToken=<token>
+  // Deep link captured once at first render. The URL-sync effect below runs on
+  // the first render (studio closed) and would otherwise strip ?decisionId=
+  // before auth initialization completes and the link can be honoured.
+  const pendingDeepLinkIdRef = useRef<string | null>(
+    (() => {
+      try {
+        return new URLSearchParams(window.location.search).get('decisionId')?.trim() || null;
+      } catch {
+        return null;
+      }
+    })()
+  );
+
+  // Support direct URL retrieval via ?inviteToken=<token>
   useEffect(() => {
     if (isInitializing) return;
     try {
       const params = new URLSearchParams(window.location.search);
-      const urlId = params.get('decisionId');
-      if (urlId && urlId.trim()) {
-        loadDecision(urlId.trim()).then((doc) => {
-          if (doc) {
-            setIsSandboxOpen(true);
-          }
-        });
-      }
-
       const inviteToken = params.get('inviteToken') || params.get('token');
       if (inviteToken && inviteToken.trim()) {
         setIncomingInviteToken(inviteToken.trim());
@@ -84,7 +88,22 @@ function AppContent() {
     } catch {
       // URL parsing failed safely
     }
-  }, [loadDecision, isInitializing]);
+  }, [isInitializing]);
+
+  // Support direct URL retrieval via ?decisionId=<mongoId>. Waits for an
+  // authenticated session so a signed-out visitor is taken to the decision
+  // right after signing in.
+  useEffect(() => {
+    if (isInitializing || !isAuthenticated) return;
+    const urlId = pendingDeepLinkIdRef.current;
+    if (!urlId) return;
+    pendingDeepLinkIdRef.current = null;
+    loadDecision(urlId).then((doc) => {
+      if (doc) {
+        setIsSandboxOpen(true);
+      }
+    });
+  }, [loadDecision, isInitializing, isAuthenticated]);
 
   // Synchronize decisionId in URL search params so browser refresh re-opens the active decision
   useEffect(() => {
@@ -95,7 +114,7 @@ function AppContent() {
           url.searchParams.set('decisionId', decisionId);
           window.history.replaceState({}, '', url.toString());
         }
-      } else if (!isSandboxOpen && url.searchParams.has('decisionId')) {
+      } else if (!isSandboxOpen && url.searchParams.has('decisionId') && !pendingDeepLinkIdRef.current) {
         url.searchParams.delete('decisionId');
         window.history.replaceState({}, '', url.toString());
       }
