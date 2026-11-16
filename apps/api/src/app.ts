@@ -25,6 +25,13 @@ export interface BuildAppOptions extends FastifyServerOptions {
   enableRateLimit?: boolean;
 }
 
+const SENSITIVE_QUERY_PARAMS = /([?&](?:token|access_token)=)[^&#]*/gi;
+
+/** Replaces credential-bearing query parameter values with a redaction marker. */
+export function redactUrlCredentials(url: string): string {
+  return url.replace(SENSITIVE_QUERY_PARAMS, '$1[REDACTED]');
+}
+
 export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyInstance> {
   const currentEnv = options.env ?? defaultEnv;
 
@@ -32,6 +39,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     logger: {
       level: currentEnv.LOG_LEVEL,
       ...(currentEnv.NODE_ENV === 'test' ? { level: 'silent' } : {}),
+      serializers: {
+        // EventSource cannot send an Authorization header, so the collaboration
+        // stream accepts ?token=<jwt>. Never write that credential to logs.
+        req: (req: { method: string; url: string; host?: string; ip?: string; socket?: { remotePort?: number } }) => ({
+          method: req.method,
+          url: redactUrlCredentials(req.url),
+          host: req.host,
+          remoteAddress: req.ip,
+          remotePort: req.socket?.remotePort,
+        }),
+      },
     },
     bodyLimit: 1048576, // 1MB payload limit protects against unbounded memory ingestion
     genReqId: req => (req.headers['x-request-id'] as string) || crypto.randomUUID(),
@@ -55,13 +73,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   // CORS
   const configuredOrigins = currentEnv.CORS_ORIGIN.split(',').map(o => o.trim());
-  const allowedOrigins = Array.from(new Set([
-    ...configuredOrigins,
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:3000',
-  ]));
+  // Local development origins are only implicitly trusted outside production;
+  // production must list every allowed origin explicitly in CORS_ORIGIN.
+  const developmentOrigins = currentEnv.NODE_ENV === 'production'
+    ? []
+    : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
+  const allowedOrigins = Array.from(new Set([...configuredOrigins, ...developmentOrigins]));
 
   await app.register(cors, {
     origin: allowedOrigins,

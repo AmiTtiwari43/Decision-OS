@@ -107,7 +107,13 @@ export const collaborationRoutes: FastifyPluginAsync = async (app) => {
       (request.headers['last-event-id'] as string) ||
       (parsedQuery.success ? parsedQuery.data.lastEventId : undefined);
 
-    // Hijack Fastify response to manage long-lived SSE stream natively
+    // Hijack Fastify response to manage long-lived SSE stream natively.
+    // Hijacking bypasses Fastify's header pipeline, so headers already set by
+    // onRequest hooks (CORS, x-request-id) must be copied onto the raw response,
+    // otherwise browsers block the cross-origin EventSource.
+    for (const [name, value] of Object.entries(reply.getHeaders())) {
+      if (value !== undefined) reply.raw.setHeader(name, value as string | number | string[]);
+    }
     reply.hijack();
     collaborationService.registerClient(id, user, reply.raw, lastEventId);
   });
