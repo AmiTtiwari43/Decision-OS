@@ -1503,11 +1503,37 @@ export class DecisionApiClient {
 
     const url = `${this.baseUrl}/api/decisions/${encodeURIComponent(cleanId)}/export?format=${encodeURIComponent(format)}`;
     const headers: Record<string, string> = {};
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    const currentToken = this.getToken();
+    if (currentToken) {
+      headers['Authorization'] = `Bearer ${currentToken}`;
     }
 
-    const response = await fetch(url, { headers });
+    // Exports return non-JSON bodies, so this cannot go through request(); it
+    // mirrors its timeout, session-expiry and network-error handling.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    let response: Response;
+    try {
+      response = await fetch(url, { headers, signal: controller.signal });
+    } catch (err) {
+      const aborted = (err as Error)?.name === 'AbortError';
+      throw new ApiClientError({
+        statusCode: 0,
+        error: aborted ? 'Request Timeout' : 'Network Error',
+        message: aborted
+          ? 'Export timed out. Please try again.'
+          : 'Unable to reach the Decision OS API to generate the export.',
+        isNetworkError: true,
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response.status === 401 && this.token) {
+      this.token = null;
+      this.onUnauthorizedCallback?.();
+    }
+
     if (!response.ok) {
       let msg = 'Failed to generate export';
       try {
@@ -1539,7 +1565,8 @@ export class DecisionApiClient {
    */
   getCollaborationStreamUrl(decisionId: string, lastEventId?: string): string {
     const cleanId = (decisionId || '').trim();
-    const tokenParam = this.token ? `token=${encodeURIComponent(this.token)}` : '';
+    const currentToken = this.getToken();
+    const tokenParam = currentToken ? `token=${encodeURIComponent(currentToken)}` : '';
     const lastEventParam = lastEventId ? `&lastEventId=${encodeURIComponent(lastEventId)}` : '';
     const query = [tokenParam, lastEventParam].filter(Boolean).join('');
     return `${this.baseUrl}/api/decisions/${encodeURIComponent(cleanId)}/collaboration/stream${query ? `?${query}` : ''}`;
