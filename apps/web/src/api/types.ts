@@ -114,9 +114,15 @@ export interface MissingScorePairDto {
 export interface ApiErrorResponse {
   statusCode: number;
   error: string;
+  /** Stable machine-readable code, e.g. SYNTHETIC_SCORE_BLOCKED, INCOMPLETE_SCORES, VERSION_CONFLICT. */
+  code?: string;
   message: string;
   requestId?: string;
   missingPairs?: MissingScorePairDto[];
+  /** Coordinates still holding synthetic demo values (HTTP 422 SYNTHETIC_SCORE_BLOCKED). */
+  syntheticCoordinates?: MissingScorePairDto[];
+  /** Server's current decision version on HTTP 409 conflicts. */
+  currentVersion?: number;
 }
 
 export interface UserDto {

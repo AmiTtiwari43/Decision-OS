@@ -311,6 +311,53 @@ describe('DecisionApiClient', () => {
       });
     });
 
+    it('preserves code and syntheticCoordinates from a 422 SYNTHETIC_SCORE_BLOCKED response', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 422,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          statusCode: 422,
+          error: 'Unprocessable Entity',
+          code: 'SYNTHETIC_SCORE_BLOCKED',
+          message: 'Authoritative analysis cannot be calculated while synthetic demonstration scores remain.',
+          syntheticCoordinates: [{ optionId: 'opt-b', criterionId: 'crit-cost' }],
+        }),
+      });
+
+      await expect(client.analyzeDecision('6ae31498c09401aedf991863')).rejects.toSatisfy((err: unknown) => {
+        const apiErr = err as ApiClientError;
+        expect(apiErr.code).toBe('SYNTHETIC_SCORE_BLOCKED');
+        expect(apiErr.syntheticCoordinates).toEqual([{ optionId: 'opt-b', criterionId: 'crit-cost' }]);
+        return true;
+      });
+    });
+
+    it('preserves currentVersion from a 409 VERSION_CONFLICT response', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue({
+        ok: false,
+        status: 409,
+        headers: new Headers({ 'content-type': 'application/json' }),
+        json: async () => ({
+          statusCode: 409,
+          error: 'Conflict',
+          code: 'VERSION_CONFLICT',
+          message: 'Version conflict',
+          currentVersion: 7,
+        }),
+      });
+
+      await expect(
+        client.updateDecision('6ae31498c09401aedf991863', { title: 'x', expectedVersion: 6 })
+      ).rejects.toSatisfy((err: unknown) => {
+        const apiErr = err as ApiClientError;
+        expect(apiErr.statusCode).toBe(409);
+        expect(apiErr.code).toBe('VERSION_CONFLICT');
+        expect(apiErr.currentVersion).toBe(7);
+        return true;
+      });
+    });
+
     it('handles 500 server error and safely extracts requestId header if body is empty', async () => {
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: false,

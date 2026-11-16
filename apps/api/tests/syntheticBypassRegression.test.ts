@@ -123,6 +123,24 @@ describe('Synthetic score authoritative-analysis bypasses', () => {
     expect(after?.analysis?.winnerId).toBe('b');
   });
 
+  it('analyze returns 422 with stable code SYNTHETIC_SCORE_BLOCKED and the synthetic coordinates', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/decisions/${decisionId}/analyze`,
+      headers: { authorization: `Bearer ${ownerToken}` },
+      payload: {},
+    });
+    expect(res.statusCode).toBe(422);
+    const body = res.json();
+    expect(body.code).toBe('SYNTHETIC_SCORE_BLOCKED');
+    expect(body.syntheticCoordinates).toEqual(
+      expect.arrayContaining([
+        { optionId: 'b', criterionId: 'c1' },
+        { optionId: 'b', criterionId: 'c2' },
+      ])
+    );
+  });
+
   it('decision analytics is not authoritative and names no winner while synthetic cells remain', async () => {
     const res = await app.inject({
       method: 'GET',

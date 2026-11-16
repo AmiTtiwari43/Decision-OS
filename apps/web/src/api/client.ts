@@ -70,6 +70,9 @@ export class ApiClientError extends Error {
   readonly error: string;
   readonly requestId?: string;
   readonly missingPairs?: MissingScorePairDto[];
+  readonly code?: string;
+  readonly syntheticCoordinates?: MissingScorePairDto[];
+  readonly currentVersion?: number;
   readonly isNetworkError: boolean;
 
   constructor(params: {
@@ -78,6 +81,9 @@ export class ApiClientError extends Error {
     error: string;
     requestId?: string;
     missingPairs?: MissingScorePairDto[];
+    code?: string;
+    syntheticCoordinates?: MissingScorePairDto[];
+    currentVersion?: number;
     isNetworkError?: boolean;
   }) {
     super(params.message);
@@ -86,6 +92,9 @@ export class ApiClientError extends Error {
     this.error = params.error;
     this.requestId = params.requestId;
     this.missingPairs = params.missingPairs;
+    this.code = params.code;
+    this.syntheticCoordinates = params.syntheticCoordinates;
+    this.currentVersion = params.currentVersion;
     this.isNetworkError = params.isNetworkError ?? false;
   }
 }
@@ -227,6 +236,9 @@ export class DecisionApiClient {
           message,
           requestId,
           missingPairs: errorData?.missingPairs,
+          code: errorData?.code,
+          syntheticCoordinates: errorData?.syntheticCoordinates,
+          currentVersion: errorData?.currentVersion,
           isNetworkError: false,
         });
       }

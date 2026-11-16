@@ -69,6 +69,7 @@ function handleServiceError(
     reply.status(422).send({
       statusCode: 422,
       error: 'Unprocessable Entity',
+      code: 'INCOMPLETE_SCORES',
       message: err.message,
       missingPairs: err.missingPairs,
       requestId,
@@ -80,6 +81,7 @@ function handleServiceError(
     reply.status(422).send({
       statusCode: 422,
       error: 'Unprocessable Entity',
+      code: 'SYNTHETIC_SCORE_BLOCKED',
       message: err.message,
       syntheticCoordinates: err.syntheticCoordinates,
       requestId,
@@ -101,6 +103,7 @@ function handleServiceError(
     reply.status(409).send({
       statusCode: 409,
       error: 'Conflict',
+      code: 'VERSION_CONFLICT',
       message: err.message,
       currentVersion: err.currentVersion,
       requestId,

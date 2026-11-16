@@ -140,6 +140,16 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   const [isDeliberationModalOpen, setIsDeliberationModalOpen] = useState(false);
   const [isSavedListOpen, setIsSavedListOpen] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
+  /** Renders score coordinates with the user's own option and criterion names. */
+  const describeScoreCells = (cells: { optionId: string; criterionId: string }[]): string =>
+    cells
+      .map((cell) => {
+        const optionName = dataset.options.find((o) => o.id === cell.optionId)?.name ?? cell.optionId;
+        const criterionName = dataset.criteria.find((c) => c.id === cell.criterionId)?.name ?? cell.criterionId;
+        return `${optionName} × ${criterionName}`;
+      })
+      .join(', ');
+
   const [editTitle, setEditTitle] = useState(dataset.title);
   const [editContext, setEditContext] = useState(dataset.context);
   const [savedDecisions, setSavedDecisions] = useState<DecisionDto[]>([]);
@@ -606,10 +616,12 @@ ${criteria
                   <p className="text-slate-200 mt-0.5 leading-relaxed">{apiError.message}</p>
                   {apiError.missingPairs && apiError.missingPairs.length > 0 && (
                     <div className="mt-1 text-[11px] font-mono text-accent-amber">
-                      Missing score coordinates:{' '}
-                      {apiError.missingPairs
-                        .map((p) => `[Option: ${p.optionId}, Criterion: ${p.criterionId}]`)
-                        .join(', ')}
+                      Missing scores: {describeScoreCells(apiError.missingPairs)}
+                    </div>
+                  )}
+                  {apiError.syntheticCoordinates && apiError.syntheticCoordinates.length > 0 && (
+                    <div className="mt-1 text-[11px] font-mono text-accent-amber">
+                      Synthetic demo scores to replace: {describeScoreCells(apiError.syntheticCoordinates)}
                     </div>
                   )}
                   {apiError.requestId && (

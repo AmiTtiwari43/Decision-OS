@@ -1400,7 +1400,7 @@ export function useDecisionModel(
       if (clientErr.statusCode === 409) {
         setConflictState({
           isConflict: true,
-          currentVersion: (clientErr as any).currentVersion,
+          currentVersion: clientErr.currentVersion,
         });
       }
 
@@ -1462,7 +1462,9 @@ export function useDecisionModel(
       const err = new ApiClientError({
         statusCode: 422,
         error: 'Unprocessable Entity',
+        code: 'SYNTHETIC_SCORE_BLOCKED',
         message: `Cannot calculate authoritative analysis: Decision contains ${synthetics.length} synthetic demonstration score(s). Replace synthetic values with verified assessments at: ${coordList}.`,
+        syntheticCoordinates: synthetics.map((s) => ({ optionId: s.optionId, criterionId: s.criterionId })),
       });
       setApiError(err);
       throw err;
@@ -1550,7 +1552,7 @@ export function useDecisionModel(
       if (clientErr.statusCode === 409) {
         setConflictState({
           isConflict: true,
-          currentVersion: (clientErr as any).currentVersion,
+          currentVersion: clientErr.currentVersion,
         });
       }
 
