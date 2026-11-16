@@ -21,6 +21,7 @@ import {
   type AccessGrantCollaboratorDto,
   type DecisionCollaboratorRole,
 } from '../api/index.js';
+import { copyTextToClipboard } from '../utils/clipboard.js';
 
 export interface ShareModalProps {
   isOpen: boolean;
@@ -154,8 +155,13 @@ export const ShareModal: React.FC<ShareModalProps> = ({
     }
   };
 
-  const handleCopy = (text: string, isToken: boolean) => {
-    navigator.clipboard.writeText(text);
+  const handleCopy = async (text: string, isToken: boolean) => {
+    const ok = await copyTextToClipboard(text);
+    if (!ok) {
+      // Inputs are select-all, so the user can still copy manually.
+      setFormError('Your browser blocked clipboard access. Select the field and copy it manually.');
+      return;
+    }
     if (isToken) {
       setCopiedToken(true);
       setTimeout(() => setCopiedToken(false), 2000);

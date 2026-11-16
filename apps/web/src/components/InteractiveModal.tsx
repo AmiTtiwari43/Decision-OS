@@ -48,6 +48,7 @@ import { useRealtimeCollaboration } from '../hooks/useRealtimeCollaboration.js';
 import type { DecisionDto } from '../api/types.js';
 import { sound } from '../utils/audioFx.js';
 import { useAuth } from '../hooks/useAuth.js';
+import { copyTextToClipboard } from '../utils/clipboard.js';
 
 // Lazy-load secondary modal dialogs for code-splitting and bundle reduction
 const ShareModal = React.lazy(() => import('./ShareModal.js').then(m => ({ default: m.ShareModal })));
@@ -127,7 +128,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<ActiveWorkspaceTab>('matrix');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
   const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [isContributionsModalOpen, setIsContributionsModalOpen] = useState(false);
   const [isEvidenceModalOpen, setIsEvidenceModalOpen] = useState(false);
@@ -326,7 +327,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
     }
   };
 
-  const handleExportBriefing = () => {
+  const handleExportBriefing = async () => {
     const { winner, evaluations, explainability, isTie, tiedWinnerIds } = engineResult;
 
     const report = `# Decision OS — Decision Briefing
@@ -378,14 +379,16 @@ ${criteria
 *Created with Decision OS — Make decisions you can explain.*
 `;
 
-    navigator.clipboard.writeText(report);
-    setCopied(true);
-    confetti({
-      particleCount: 50,
-      spread: 60,
-      origin: { y: 0.6 },
-    });
-    setTimeout(() => setCopied(false), 3000);
+    const ok = await copyTextToClipboard(report);
+    setCopyStatus(ok ? 'copied' : 'failed');
+    if (ok) {
+      confetti({
+        particleCount: 50,
+        spread: 60,
+        origin: { y: 0.6 },
+      });
+    }
+    setTimeout(() => setCopyStatus('idle'), 3000);
   };
 
   if (!isOpen) return null;
@@ -1556,10 +1559,15 @@ ${criteria
                 onClick={handleExportBriefing}
                 className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
-                {copied ? (
+                {copyStatus === 'copied' ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-signal" />
                     <span>Copied!</span>
+                  </>
+                ) : copyStatus === 'failed' ? (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-amber-400" />
+                    <span role="alert" className="text-amber-300">Copy blocked</span>
                   </>
                 ) : (
                   <>

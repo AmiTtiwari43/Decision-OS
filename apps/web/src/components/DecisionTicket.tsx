@@ -3,6 +3,7 @@ import { Award, Copy, Check, QrCode, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import type { OptionEvaluation, Criterion } from '../types/decision';
 import { sound } from '../utils/audioFx';
+import { copyTextToClipboard } from '../utils/clipboard';
 
 interface DecisionTicketProps {
   winner: OptionEvaluation;
@@ -23,13 +24,13 @@ export const DecisionTicket: React.FC<DecisionTicketProps> = ({
   decisionId,
   isAuthoritative = false,
 }) => {
-  const [copied, setCopied] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
 
   const serialNumber = decisionId
     ? `DEC-${decisionId.toUpperCase()}`
     : 'DEC-LOCAL-PREVIEW';
 
-  const handleCopyTicket = () => {
+  const handleCopyTicket = async () => {
     sound.playCelebrate();
     const text = `=========================================
   DECISION OS — ${isAuthoritative ? 'AUTHORITATIVE DECISION TICKET' : 'DECISION BRIEFING PASS'}
@@ -54,10 +55,10 @@ Verification: ${isAuthoritative ? 'Server-Verified MongoDB & Engine v1.0.0' : 'C
 Generated via Decision OS
 =========================================`;
 
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
-    setTimeout(() => setCopied(false), 2500);
+    const ok = await copyTextToClipboard(text);
+    setCopyStatus(ok ? 'copied' : 'failed');
+    if (ok) confetti({ particleCount: 60, spread: 70, origin: { y: 0.7 } });
+    setTimeout(() => setCopyStatus('idle'), 2500);
   };
 
   return (
@@ -173,10 +174,15 @@ Generated via Decision OS
                 onClick={handleCopyTicket}
                 className="px-5 py-2.5 rounded-xl bg-signal hover:bg-signal-light text-background font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-glow-signal-sm shrink-0 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
               >
-                {copied ? (
+                {copyStatus === 'copied' ? (
                   <>
                     <Check className="w-4 h-4 text-background" />
                     <span>Ticket Copied!</span>
+                  </>
+                ) : copyStatus === 'failed' ? (
+                  <>
+                    <Copy className="w-4 h-4 text-background" />
+                    <span role="alert">Copy blocked by browser</span>
                   </>
                 ) : (
                   <>

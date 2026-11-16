@@ -21,6 +21,7 @@ import {
   Award,
 } from 'lucide-react';
 import { sound } from '../utils/audioFx.js';
+import { copyTextToClipboard } from '../utils/clipboard.js';
 
 export interface ShowcaseSectionProps {
   onOpenStudio?: () => void;
@@ -103,9 +104,9 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
     }
   };
 
-  const handleCopyHash = (hash: string) => {
+  const handleCopyHash = async (hash: string) => {
     sound.playTick();
-    navigator.clipboard.writeText(hash);
+    if (!(await copyTextToClipboard(hash))) return;
     setCopiedHash(hash);
     setTimeout(() => setCopiedHash(null), 1500);
   };
