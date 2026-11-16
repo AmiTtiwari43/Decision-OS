@@ -1332,6 +1332,11 @@ export function useDecisionModel(
         // If any coordinate was synthetic on server and has been replaced with a real assessment,
         // execute atomic replacement so server records verified transition
         const serverProv = serverDecision?.scoreProvenance;
+        // Each accepted replacement advances the server version, so thread the
+        // version returned by every write into the next one. Reusing the
+        // version loaded before the first replacement made every later write
+        // (including the final update) fail with 409.
+        let expectedVersion = serverDecision?.version;
         if (serverProv) {
           for (const opt of dataset.options) {
             for (const crit of dataset.criteria) {
@@ -1341,16 +1346,15 @@ export function useDecisionModel(
               ) {
                 const newScore = opt.scores[crit.id];
                 if (typeof newScore === 'number' && Number.isFinite(newScore)) {
-                  try {
-                    await apiClient.replaceSyntheticScore(decisionId, {
-                      optionId: opt.id,
-                      criterionId: crit.id,
-                      score: newScore,
-                      expectedVersion: serverDecision?.version,
-                    });
-                  } catch {
-                    // continue to normal save
-                  }
+                  // Errors propagate: a failed replacement must not be followed by a
+                  // save that silently leaves the coordinate marked synthetic.
+                  const replaced = await apiClient.replaceSyntheticScore(decisionId, {
+                    optionId: opt.id,
+                    criterionId: crit.id,
+                    score: newScore,
+                    expectedVersion,
+                  });
+                  expectedVersion = replaced.version;
                 }
               }
             }
@@ -1359,7 +1363,7 @@ export function useDecisionModel(
 
         const updatePayload: UpdateDecisionPayload = {
           ...(payload as UpdateDecisionPayload),
-          expectedVersion: serverDecision?.version,
+          expectedVersion,
         };
         savedDoc = await apiClient.updateDecision(decisionId, updatePayload);
       } else {
