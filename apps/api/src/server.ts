@@ -18,7 +18,8 @@ export async function startServer(): Promise<void> {
   const app = await buildApp();
 
   try {
-    const address = await app.listen({ port: env.PORT, host: env.HOST });
+    const host = process.env.RENDER || process.env.NODE_ENV === 'production' ? '0.0.0.0' : env.HOST;
+    const address = await app.listen({ port: env.PORT, host });
     app.log.info(`Decision OS API listening at ${address}`);
   } catch (err) {
     app.log.error(err);
