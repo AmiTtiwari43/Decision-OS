@@ -25,7 +25,7 @@ export const rawEnvSchema = z.object({
   AI_PROVIDER: z.enum(['mock', 'gemini', 'openai', 'anthropic', 'openrouter']).default('mock'),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().optional(),
-  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(35000),
   FALLBACK_AI_PROVIDER: z.enum(['none', 'mock', 'gemini', 'openai', 'anthropic', 'openrouter']).default('none'),
   FALLBACK_AI_API_KEY: z.string().optional(),
   FALLBACK_AI_MODEL: z.string().optional(),

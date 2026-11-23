@@ -44,7 +44,8 @@ export function getAIProvider(): AIProvider {
       env.FALLBACK_AI_API_KEY || env.AI_API_KEY,
       env.FALLBACK_AI_MODEL
     );
-    return new FailoverAIProvider([primary, fallback]);
+    // Include MockAIProvider as tertiary safety net so AI analysis never completely fails
+    return new FailoverAIProvider([primary, fallback, new MockAIProvider(true)]);
   }
 
   return primary;
