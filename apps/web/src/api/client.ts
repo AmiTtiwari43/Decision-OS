@@ -120,6 +120,10 @@ export interface ApiClientOptions {
   timeoutMs?: number;
 }
 
+export interface RequestOptions extends RequestInit {
+  timeoutMs?: number;
+}
+
 export class DecisionApiClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -127,7 +131,7 @@ export class DecisionApiClient {
 
   constructor(options: ApiClientOptions = {}) {
     this.baseUrl = (options.baseUrl ?? resolveApiUrl()).replace(/\/+$/, '');
-    this.timeoutMs = options.timeoutMs ?? 15000;
+    this.timeoutMs = options.timeoutMs ?? 60000;
     if (typeof window !== 'undefined') {
       try {
         const stored = window.localStorage.getItem('decision_os_token');
@@ -177,7 +181,7 @@ export class DecisionApiClient {
 
   private async request<T>(
     endpoint: string,
-    init: RequestInit = {}
+    init: RequestOptions = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
     const headers = new Headers(init.headers || {});
@@ -192,8 +196,9 @@ export class DecisionApiClient {
       headers.set('Authorization', `Bearer ${currentToken}`);
     }
 
+    const effectiveTimeout = init.timeoutMs ?? this.timeoutMs;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
     try {
       const response = await fetch(url, {
@@ -256,7 +261,7 @@ export class DecisionApiClient {
       const isAbort = (err as Error)?.name === 'AbortError';
       const rawMessage = (err as Error)?.message;
       const message = isAbort
-        ? `Request timed out after ${this.timeoutMs}ms. Please verify the backend service is running.`
+        ? `Request timed out after ${effectiveTimeout}ms. Please verify the backend service is running.`
         : rawMessage
           ? `Network request failed: ${rawMessage}. Backend server may be offline.`
           : 'Network request failed. Backend server may be offline.';
@@ -1047,7 +1052,8 @@ export class DecisionApiClient {
    */
   async runAiAnalysis(
     decisionId: string,
-    capability: AiCapability = 'all'
+    capability: AiCapability = 'all',
+    options?: { timeoutMs?: number }
   ): Promise<AiAnalystResponseDto> {
     const cleanId = (decisionId || '').trim();
     if (!cleanId) {
@@ -1063,6 +1069,7 @@ export class DecisionApiClient {
       {
         method: 'POST',
         body: JSON.stringify({ capability }),
+        timeoutMs: options?.timeoutMs ?? 90000,
       }
     );
   }

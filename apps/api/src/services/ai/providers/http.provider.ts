@@ -14,11 +14,11 @@ export class HttpAIProvider implements AIProvider {
     this.name = providerName;
     this.apiKey = apiKey;
     if (providerName === 'gemini') {
-      this.defaultModel = model || 'gemini-3.5-flash';
+      this.defaultModel = model || 'gemini-3.5-flash-lite';
     } else if (providerName === 'anthropic') {
       this.defaultModel = model || 'claude-3-5-sonnet-latest';
     } else if (providerName === 'openrouter') {
-      this.defaultModel = model || 'google/gemini-2.0-flash-exp:free';
+      this.defaultModel = model || 'nvidia/nemotron-3.5-lightning:free';
     } else {
       this.defaultModel = model || 'gpt-4o-mini';
     }
