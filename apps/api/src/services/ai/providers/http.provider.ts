@@ -10,13 +10,15 @@ export class HttpAIProvider implements AIProvider {
   readonly defaultModel: string;
   private readonly apiKey?: string;
 
-  constructor(providerName: 'gemini' | 'openai' | 'anthropic', apiKey?: string, model?: string) {
+  constructor(providerName: 'gemini' | 'openai' | 'anthropic' | 'openrouter', apiKey?: string, model?: string) {
     this.name = providerName;
     this.apiKey = apiKey;
     if (providerName === 'gemini') {
-      this.defaultModel = model || 'gemini-1.5-flash';
+      this.defaultModel = model || 'gemini-3.5-flash';
     } else if (providerName === 'anthropic') {
       this.defaultModel = model || 'claude-3-5-sonnet-latest';
+    } else if (providerName === 'openrouter') {
+      this.defaultModel = model || 'google/gemini-2.0-flash-exp:free';
     } else {
       this.defaultModel = model || 'gpt-4o-mini';
     }
@@ -123,19 +125,29 @@ export class HttpAIProvider implements AIProvider {
     model: string,
     signal: AbortSignal
   ): Promise<AIProviderResponse> {
-    const url = 'https://api.openai.com/v1/chat/completions';
+    const isOpenRouter = this.name === 'openrouter';
+    const url = isOpenRouter
+      ? 'https://openrouter.ai/api/v1/chat/completions'
+      : 'https://api.openai.com/v1/chat/completions';
     const messages = [];
     if (systemPrompt) {
       messages.push({ role: 'system', content: systemPrompt });
     }
     messages.push({ role: 'user', content: prompt });
 
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${this.apiKey}`,
+    };
+
+    if (isOpenRouter) {
+      headers['HTTP-Referer'] = 'https://decision-os.org';
+      headers['X-Title'] = 'Decision OS';
+    }
+
     const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
+      headers,
       body: JSON.stringify({
         model,
         messages,
@@ -146,10 +158,10 @@ export class HttpAIProvider implements AIProvider {
     });
 
     if (res.status === 429) {
-      throw new AIRateLimitError('OpenAI API rate limit exceeded.');
+      throw new AIRateLimitError(`${this.name} API rate limit exceeded.`);
     }
     if (!res.ok) {
-      throw new AIProviderUnavailableError(`OpenAI API returned status ${res.status}: ${res.statusText}`);
+      throw new AIProviderUnavailableError(`${this.name} API returned status ${res.status}: ${res.statusText}`);
     }
 
     const data = (await res.json()) as {
@@ -159,7 +171,7 @@ export class HttpAIProvider implements AIProvider {
 
     const text = data.choices?.[0]?.message?.content;
     if (!text) {
-      throw new AIProviderUnavailableError('OpenAI API returned an empty response.');
+      throw new AIProviderUnavailableError(`${this.name} API returned an empty response.`);
     }
 
     return {

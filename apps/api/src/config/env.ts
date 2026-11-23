@@ -22,10 +22,13 @@ export const rawEnvSchema = z.object({
   MONGODB_MAX_POOL_SIZE: z.coerce.number().int().min(1).max(500).default(50),
   MONGODB_MIN_POOL_SIZE: z.coerce.number().int().min(1).max(100).default(5),
   JWT_SECRET: z.string().optional(),
-  AI_PROVIDER: z.enum(['mock', 'gemini', 'openai', 'anthropic']).default('mock'),
+  AI_PROVIDER: z.enum(['mock', 'gemini', 'openai', 'anthropic', 'openrouter']).default('mock'),
   AI_API_KEY: z.string().optional(),
   AI_MODEL: z.string().optional(),
   AI_TIMEOUT_MS: z.coerce.number().int().min(1000).max(120000).default(15000),
+  FALLBACK_AI_PROVIDER: z.enum(['none', 'mock', 'gemini', 'openai', 'anthropic', 'openrouter']).default('none'),
+  FALLBACK_AI_API_KEY: z.string().optional(),
+  FALLBACK_AI_MODEL: z.string().optional(),
 });
 
 export const envSchema = rawEnvSchema
