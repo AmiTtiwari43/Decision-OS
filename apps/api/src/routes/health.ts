@@ -4,6 +4,15 @@ import { evaluationCache } from '../services/evaluationCache.js';
 import { collaborationService } from '../services/collaboration.service.js';
 
 export const healthRoutes: FastifyPluginAsync = async (app: FastifyInstance) => {
+  // Root ping: satisfies cloud platform default health probes (e.g. Render, AWS, Fly)
+  app.get('/', async (_request, reply) => {
+    return reply.status(200).send({
+      service: 'decision-os-api',
+      status: 'ok',
+      version: '1.0.0',
+    });
+  });
+
   // Liveness check: confirms process is responding
   app.get('/health', async (_request, reply) => {
     return reply.status(200).send({
