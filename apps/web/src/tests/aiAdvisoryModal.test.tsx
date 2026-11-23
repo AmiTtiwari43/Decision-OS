@@ -126,4 +126,49 @@ describe('Batch 03.2 — Frontend AI Advisory & Explainable Ranking Modal Suite'
     expect(html).not.toContain('objective probability');
     expect(html).toContain('Advisory • Non-Authoritative');
   });
+
+  it('7. retains and caches analysis without re-fetching on already seen views', async () => {
+    const { getCachedAiAnalysis, setCachedAiAnalysis, clearCachedAiAnalysis } = await import('../components/AiAnalystModal.js');
+    clearCachedAiAnalysis(mockDecision._id);
+    expect(getCachedAiAnalysis(mockDecision._id, 'all')).toBeNull();
+
+    const mockResult = {
+      decisionId: mockDecision._id,
+      analysisType: 'all' as const,
+      generatedAt: new Date().toISOString(),
+      provider: 'gemini',
+      model: 'gemini-3.5-flash-lite',
+      isAiGenerated: true as const,
+      disclaimer: 'Advisory notice',
+      output: {
+        executiveSummary: 'Retained executive summary briefing',
+        rankedSuggestions: [],
+        evidenceGaps: [],
+        assumptions: [],
+        followUpQuestions: [],
+        suggestedCriteria: [],
+        suggestedAlternatives: [],
+        expertRecommendations: [],
+      },
+    };
+
+    setCachedAiAnalysis(mockDecision._id, 'all', mockResult);
+    expect(getCachedAiAnalysis(mockDecision._id, 'all')).toEqual(mockResult);
+    // Sub-capabilities can also leverage the 'all' cache
+    expect(getCachedAiAnalysis(mockDecision._id, 'ranked_suggestions')).toEqual(mockResult);
+
+    // Render with cached analysis present: should render cached output immediately rather than loading state
+    const html = renderToString(
+      React.createElement(AiAnalystModal, {
+        isOpen: true,
+        onClose: vi.fn(),
+        decision: mockDecision,
+      })
+    );
+    expect(html).toContain('Retained executive summary briefing');
+    expect(html).not.toContain('Synthesizing Evidence-Aware Advisory Analysis...');
+
+    clearCachedAiAnalysis(mockDecision._id);
+    expect(getCachedAiAnalysis(mockDecision._id, 'all')).toBeNull();
+  });
 });

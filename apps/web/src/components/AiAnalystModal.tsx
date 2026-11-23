@@ -41,6 +41,83 @@ export interface AiAnalystModalProps {
   onDecisionUpdated?: (updated: DecisionDto) => void;
 }
 
+const CACHE_STORAGE_PREFIX = 'decision_os_ai_cache_';
+const memoryAiCache = new Map<string, Map<AiCapability, AiAnalystResponseDto>>();
+
+export function getCachedAiAnalysis(decisionId: string, cap: AiCapability = 'all'): AiAnalystResponseDto | null {
+  // 1. Check in-memory cache first
+  const decMap = memoryAiCache.get(decisionId);
+  if (decMap) {
+    if (decMap.has(cap)) return decMap.get(cap)!;
+    if (decMap.has('all')) return decMap.get('all')!;
+  }
+
+  // 2. Check sessionStorage fallback
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = window.sessionStorage.getItem(`${CACHE_STORAGE_PREFIX}${decisionId}_${cap}`);
+      if (stored) {
+        const parsed = JSON.parse(stored) as AiAnalystResponseDto;
+        if (!decMap) {
+          memoryAiCache.set(decisionId, new Map([[cap, parsed]]));
+        } else {
+          decMap.set(cap, parsed);
+        }
+        return parsed;
+      }
+      const storedAll = window.sessionStorage.getItem(`${CACHE_STORAGE_PREFIX}${decisionId}_all`);
+      if (storedAll) {
+        const parsedAll = JSON.parse(storedAll) as AiAnalystResponseDto;
+        if (!decMap) {
+          memoryAiCache.set(decisionId, new Map([['all', parsedAll]]));
+        } else {
+          decMap.set('all', parsedAll);
+        }
+        return parsedAll;
+      }
+    } catch {
+      // safe fallback if storage disabled or restricted
+    }
+  }
+
+  return null;
+}
+
+export function setCachedAiAnalysis(decisionId: string, cap: AiCapability, data: AiAnalystResponseDto): void {
+  let decMap = memoryAiCache.get(decisionId);
+  if (!decMap) {
+    decMap = new Map();
+    memoryAiCache.set(decisionId, decMap);
+  }
+  decMap.set(cap, data);
+
+  if (typeof window !== 'undefined') {
+    try {
+      window.sessionStorage.setItem(`${CACHE_STORAGE_PREFIX}${decisionId}_${cap}`, JSON.stringify(data));
+    } catch {
+      // safe fallback
+    }
+  }
+}
+
+export function clearCachedAiAnalysis(decisionId: string): void {
+  memoryAiCache.delete(decisionId);
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < window.sessionStorage.length; i++) {
+        const key = window.sessionStorage.key(i);
+        if (key && key.startsWith(`${CACHE_STORAGE_PREFIX}${decisionId}`)) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => window.sessionStorage.removeItem(k));
+    } catch {
+      // safe fallback
+    }
+  }
+}
+
 export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   isOpen,
   onClose,
@@ -48,8 +125,13 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   onDecisionUpdated,
 }) => {
   const [capability, setCapability] = useState<AiCapability>('all');
-  const [analysis, setAnalysis] = useState<AiAnalystResponseDto | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(Boolean(isOpen && decision?._id));
+  const [analysis, setAnalysis] = useState<AiAnalystResponseDto | null>(() => {
+    return decision?._id ? getCachedAiAnalysis(decision._id, 'all') : null;
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(() => {
+    if (!isOpen || !decision?._id) return false;
+    return !getCachedAiAnalysis(decision._id, 'all');
+  });
   const [error, setError] = useState<string | null>(null);
   const [isUnavailable, setIsUnavailable] = useState<boolean>(false);
   const [adoptingCriterionId, setAdoptingCriterionId] = useState<string | null>(null);
@@ -64,9 +146,31 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   const canEdit = currentUserRole === 'owner' || currentUserRole === 'editor';
 
   const fetchAnalysis = useCallback(
-    async (cap: AiCapability) => {
+    async (cap: AiCapability, options: { force?: boolean } = {}) => {
       if (!decision?._id) return;
       const targetDecisionId = decision._id;
+
+      // Check cache unless explicitly forcing regeneration
+      if (!options.force) {
+        const cached = getCachedAiAnalysis(targetDecisionId, cap);
+        if (cached) {
+          setAnalysis(cached);
+          setIsLoading(false);
+          setError(null);
+          setIsUnavailable(false);
+          if (cached.output.rankedSuggestions && cached.output.rankedSuggestions.length > 0) {
+            const initialExpanded: Record<string, boolean> = {};
+            cached.output.rankedSuggestions.slice(0, 2).forEach(s => {
+              initialExpanded[s.id] = true;
+            });
+            setExpandedSuggestionIds(initialExpanded);
+          }
+          return;
+        }
+      } else {
+        clearCachedAiAnalysis(targetDecisionId);
+      }
+
       const requestId = ++activeRequestIdRef.current;
 
       setIsLoading(true);
@@ -81,6 +185,8 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           activeDecisionIdRef.current === targetDecisionId
         ) {
           setAnalysis(result);
+          setCachedAiAnalysis(targetDecisionId, cap, result);
+
           // Default first 2 suggestions expanded
           if (result.output.rankedSuggestions && result.output.rankedSuggestions.length > 0) {
             const initialExpanded: Record<string, boolean> = {};
@@ -122,25 +228,42 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     [decision?._id]
   );
 
-  // Reset all cached analysis, proposals, loading and errors on decision change or
-  // modal open/close, then start the initial analysis in the same step.
-  // Previously this effect set isLoading=true and a separate effect only fetched
-  // when !isLoading, so the request never started and the spinner never ended.
+  // Retain already-fetched analysis when reopening modal or switching decisions.
+  // Never re-fetches if an analysis is already available in cache for this decision.
   useEffect(() => {
-    activeDecisionIdRef.current = decision?._id || null;
-    activeRequestIdRef.current++;
-    setAnalysis(null);
-    setError(null);
-    setIsUnavailable(false);
-    setAdoptSuccess(null);
-    setAdoptingCriterionId(null);
-    setAdoptingOptionId(null);
-    setExpandedSuggestionIds({});
-    setIsLoading(false);
-    if (isOpen && decision?._id) {
-      void fetchAnalysis('all');
+    if (!isOpen || !decision?._id) {
+      return;
     }
-  }, [decision?._id, isOpen, fetchAnalysis]);
+
+    const targetDecisionId = decision._id;
+    const isNewDecision = activeDecisionIdRef.current !== targetDecisionId;
+    activeDecisionIdRef.current = targetDecisionId;
+
+    if (isNewDecision) {
+      setAdoptSuccess(null);
+      setAdoptingCriterionId(null);
+      setAdoptingOptionId(null);
+      setExpandedSuggestionIds({});
+    }
+
+    const cached = getCachedAiAnalysis(targetDecisionId, capability) || getCachedAiAnalysis(targetDecisionId, 'all');
+    if (cached) {
+      setAnalysis(cached);
+      setIsLoading(false);
+      setError(null);
+      setIsUnavailable(false);
+      if (cached.output.rankedSuggestions && cached.output.rankedSuggestions.length > 0) {
+        const initialExpanded: Record<string, boolean> = {};
+        cached.output.rankedSuggestions.slice(0, 2).forEach(s => {
+          initialExpanded[s.id] = true;
+        });
+        setExpandedSuggestionIds(initialExpanded);
+      }
+      return;
+    }
+
+    void fetchAnalysis('all');
+  }, [decision?._id, isOpen, capability, fetchAnalysis]);
 
   // Keyboard navigation: Escape key closes AI analyst modal
   useEffect(() => {
@@ -156,6 +279,15 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
   const handleTabChange = (cap: AiCapability) => {
     setCapability(cap);
+    // If analysis is already loaded or cached, seamlessly switch the tab without regenerating
+    if (analysis) {
+      return;
+    }
+    const cached = decision?._id ? (getCachedAiAnalysis(decision._id, cap) || getCachedAiAnalysis(decision._id, 'all')) : null;
+    if (cached) {
+      setAnalysis(cached);
+      return;
+    }
     fetchAnalysis(cap);
   };
 
@@ -538,7 +670,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
 
             <div className="flex items-center gap-2">
               <button
-                onClick={() => fetchAnalysis(capability)}
+                onClick={() => fetchAnalysis(capability, { force: true })}
                 disabled={isLoading}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-300 hover:text-white bg-surface hover:bg-surface-subtle border border-border transition disabled:opacity-50 cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none"
                 title="Regenerate analysis"
@@ -611,7 +743,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                 <span>{error}</span>
               </div>
               <button
-                onClick={() => fetchAnalysis(capability)}
+                onClick={() => fetchAnalysis(capability, { force: true })}
                 className="px-2.5 py-1 rounded bg-red-500/20 hover:bg-red-500/30 text-red-200 font-medium transition"
               >
                 Retry
@@ -630,7 +762,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                 The backend AI provider is currently offline or not configured with an API key. You can continue using deterministic MCDA engine evaluations and collaborative features.
               </p>
               <button
-                onClick={() => fetchAnalysis(capability)}
+                onClick={() => fetchAnalysis(capability, { force: true })}
                 className="px-4 py-2 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-xs font-medium text-slate-200 transition cursor-pointer"
               >
                 Check Again
