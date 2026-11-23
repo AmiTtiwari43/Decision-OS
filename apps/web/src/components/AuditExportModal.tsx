@@ -215,7 +215,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
@@ -226,7 +226,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
           aria-modal="true"
           aria-labelledby="audit-export-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-5xl bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden"
+          className="relative w-full max-w-[1600px] bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
@@ -266,7 +266,7 @@ export const AuditExportModal: React.FC<AuditExportModalProps> = ({
           <div
             role="tablist"
             aria-label="Audit views"
-            className="flex border-b border-border-subtle bg-surface-subtle/50 px-6 gap-6 text-sm overflow-x-auto scrollbar-none"
+            className="shrink-0 flex border-b border-border-subtle bg-surface-subtle/50 px-4 sm:px-6 gap-4 sm:gap-6 text-sm overflow-x-auto scrollbar-none"
           >
             <button
               role="tab"

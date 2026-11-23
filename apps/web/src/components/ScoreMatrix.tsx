@@ -126,15 +126,15 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
   }
 
   return (
-    <div className="border border-border-subtle rounded-xl bg-surface/60 overflow-hidden space-y-0 relative">
+    <div className="border border-border-subtle rounded-xl bg-surface/60 overflow-hidden relative flex flex-col flex-1 min-h-[320px]">
       {/* Matrix Status Header */}
-      <div className="p-3.5 bg-surface-card border-b border-border-subtle flex flex-wrap items-center justify-between gap-3">
+      <div className="shrink-0 px-3 py-2.5 sm:px-3.5 bg-surface-card border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 sm:gap-3">
         <div className="flex items-center gap-2">
           <Table className="w-4 h-4 text-signal shrink-0" />
           <span className="text-xs font-mono font-bold text-white uppercase tracking-wider">
             Utility Scoring Matrix (0 – 100)
           </span>
-          <span className="text-[10px] font-mono text-slate-400">
+          <span className="hidden sm:inline text-[10px] font-mono text-slate-400">
             [Rows: Criteria × Columns: Alternatives]
           </span>
         </div>
@@ -198,12 +198,13 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
       </div>
 
       {/* Responsive Matrix Table: Rows = Criteria, Columns = Alternatives */}
-      <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+      {/* One scroll box for both axes so the option header row and criterion column stay pinned */}
+      <div className="flex-1 min-h-[200px] overflow-auto overscroll-contain">
         <table className="w-full text-left border-collapse text-xs">
           <thead className="sticky top-0 z-10 bg-surface border-b border-border shadow-sm">
             <tr>
               {/* Top-Left Corner Header */}
-              <th className="p-3 font-mono font-bold text-slate-400 text-[11px] uppercase tracking-wider min-w-[200px] border-r border-border-subtle">
+              <th className="sticky left-0 z-20 bg-surface p-2.5 sm:p-3 font-mono font-bold text-slate-400 text-[11px] uppercase tracking-wider min-w-[150px] sm:min-w-[190px] border-r border-border-subtle">
                 Evaluation Criterion
               </th>
 
@@ -211,20 +212,20 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
               {options.map((opt) => (
                 <th
                   key={opt.id}
-                  className="p-3 font-mono font-bold text-slate-200 text-xs text-center min-w-[130px] border-r border-border-subtle last:border-r-0"
+                  className="p-2 sm:p-2.5 font-mono font-bold text-slate-200 text-xs text-center align-top min-w-[96px] max-w-[180px] border-r border-border-subtle last:border-r-0"
                 >
                   <div className="flex flex-col items-center gap-1">
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-start justify-center gap-1.5 min-w-0">
                       <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm"
+                        className="w-2.5 h-2.5 mt-0.5 rounded-full shrink-0 shadow-sm"
                         style={{ backgroundColor: opt.color }}
                       />
-                      <span className="font-bold text-white truncate max-w-[120px]" title={opt.name}>
+                      <span className="font-bold text-white line-clamp-2 break-words leading-snug" title={opt.name}>
                         {opt.name}
                       </span>
                     </div>
                     {opt.tagline && (
-                      <span className="text-[10px] text-slate-400 font-normal truncate max-w-[120px]">
+                      <span className="text-[10px] text-slate-400 font-normal line-clamp-1 break-words">
                         {opt.tagline}
                       </span>
                     )}
@@ -241,10 +242,10 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
               return (
                 <tr key={crit.id} className="hover:bg-surface-subtle/40 transition-colors">
                   {/* Row Header: Criterion Details */}
-                  <th className="p-3 text-left font-normal bg-surface/40 border-r border-border-subtle">
+                  <th className="sticky left-0 z-[5] px-2.5 py-1.5 sm:px-3 sm:py-2 text-left font-normal bg-surface border-r border-border-subtle">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
-                        <span className="font-bold text-white text-xs truncate block" title={crit.name}>
+                        <span className="font-bold text-white text-xs line-clamp-2 break-words" title={crit.name}>
                           {crit.shortName || crit.name}
                         </span>
                         {crit.description && (
@@ -276,7 +277,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
                     return (
                       <td
                         key={opt.id}
-                        className={`p-2 text-center border-r border-border-subtle last:border-r-0 transition-colors ${
+                        className={`px-1.5 py-1 sm:px-2 sm:py-1.5 text-center border-r border-border-subtle last:border-r-0 transition-colors ${
                           isMissing
                             ? 'bg-amber-500/5'
                             : isInvalid
@@ -315,7 +316,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
                               if (isInteractionDisabled) return;
                               handleKeyDown(e, rIdx, cIdx);
                             }}
-                            className={`w-full px-2 py-1.5 rounded-lg text-center font-mono font-bold text-xs transition-all focus:outline-none ${
+                            className={`w-full px-2 py-1 rounded-lg text-center font-mono font-bold text-xs transition-all focus:outline-none ${
                               isInteractionDisabled ? 'opacity-60 cursor-not-allowed' : 'cursor-text'
                             } ${
                               isMissing
@@ -369,7 +370,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
       {/* Footer warning bar if synthetic values active */}
       {activeSyntheticCount > 0 && (
         <div
-          className="p-2.5 bg-purple-500/10 border-t border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-[11px] text-purple-200 font-mono"
+          className="shrink-0 p-2.5 bg-purple-500/10 border-t border-purple-500/30 flex flex-wrap items-center justify-between gap-2 text-[11px] text-purple-200 font-mono"
           data-testid="synthetic-banner"
         >
           <div className="flex items-center gap-2">
@@ -404,7 +405,7 @@ export const ScoreMatrix: React.FC<ScoreMatrixProps> = ({
 
       {/* Footer warning bar if missing scores */}
       {missingCount > 0 && (
-        <div className="p-2.5 bg-amber-500/10 border-t border-amber-500/30 flex items-center justify-between text-[11px] text-amber-200 font-mono">
+        <div className="shrink-0 p-2.5 bg-amber-500/10 border-t border-amber-500/30 flex items-center justify-between text-[11px] text-amber-200 font-mono">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
             <span>

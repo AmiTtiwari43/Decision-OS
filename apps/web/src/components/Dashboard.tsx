@@ -301,7 +301,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   }, [decisions, activeTab, searchQuery, statusFilter, sortOrder, user]);
 
   return (
-    <div className="pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto space-y-8 animate-fade-in text-slate-100">
+    <div className="pt-24 pb-20 px-4 sm:px-6 lg:px-8 max-w-[1600px] mx-auto space-y-8 animate-fade-in text-slate-100">
       {/* Dashboard Top Header Banner */}
       <div className="p-6 sm:p-8 rounded-3xl bg-gradient-to-r from-surface-card via-surface to-surface-card border border-border shadow-glow-card relative overflow-hidden">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 relative z-10">
@@ -386,7 +386,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
       {/* Navigation Tabs Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border pb-4">
         {/* Navigation Tabs */}
-        <nav className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none max-w-full" role="tablist">
+        <nav className="flex flex-wrap lg:flex-nowrap items-center gap-2 lg:overflow-x-auto scrollbar-none max-w-full" role="tablist">
           <button
             role="tab"
             aria-selected={activeTab === 'overview'}
@@ -781,7 +781,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
           ) : (
             /* Render Decision Cards Grid */
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
               {filteredDecisions.map((decision) => (
                 <DecisionCard
                   key={decision._id}

@@ -190,7 +190,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/75 backdrop-blur-sm overflow-y-auto"
         onClick={onClose}
       >
         <motion.div
@@ -202,7 +202,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
           aria-modal="true"
           aria-labelledby="expert-calibration-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-5xl bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden text-slate-100"
+          className="relative w-full max-w-[1600px] bg-surface-card border border-border rounded-2xl shadow-2xl flex flex-col max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] overflow-hidden text-slate-100"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
@@ -249,7 +249,7 @@ export const ExpertCalibrationModal: React.FC<ExpertCalibrationModalProps> = ({
           <div
             role="tablist"
             aria-label="Calibration views"
-            className="flex items-center justify-between px-6 border-b border-border-subtle bg-surface-subtle/50 overflow-x-auto scrollbar-none"
+            className="shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-border-subtle bg-surface-subtle/50 overflow-x-auto scrollbar-none"
           >
             <div className="flex space-x-4">
               <button

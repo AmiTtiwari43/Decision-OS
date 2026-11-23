@@ -340,7 +340,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -352,7 +352,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
           aria-modal="true"
           aria-labelledby="contributions-modal-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-3xl flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
+          className="relative w-full max-w-6xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-surface shrink-0">
@@ -470,7 +470,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
           </div>
 
           {/* Modal Body */}
-          <div className="p-4 sm:p-6 overflow-y-auto max-h-[72vh] space-y-4">
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0 space-y-4">
             {/* TAB 1: MY SUBMISSION */}
             {activeTab === 'mine' && (
               <div className="space-y-4">
@@ -609,11 +609,11 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                           <label className="block text-xs font-mono uppercase text-slate-300 font-semibold">
                             Criterion-Specific Assessments (For Preferred Option)
                           </label>
-                          <div className="space-y-3">
+                          <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-3">
                             {decision.criteria.map((c) => (
                               <div
                                 key={c.id}
-                                className="p-3 rounded-xl bg-surface border border-border space-y-2"
+                                className="p-3 rounded-xl bg-surface border border-border space-y-2 min-w-0"
                               >
                                 <div className="flex items-center justify-between">
                                   <span className="text-xs font-bold text-white">{c.name}</span>

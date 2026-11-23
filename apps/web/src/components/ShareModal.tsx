@@ -215,7 +215,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -227,7 +227,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           aria-modal="true"
           aria-labelledby="share-modal-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-2xl flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
+          className="relative w-full max-w-2xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
           <div className="flex items-center justify-between p-4 sm:p-5 border-b border-border bg-surface shrink-0">
@@ -307,7 +307,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({
           </div>
 
           {/* Modal Body */}
-          <div className="p-4 sm:p-6 overflow-y-auto max-h-[70vh]">
+          <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
             {/* TAB 1: INVITE */}
             {activeTab === 'invite' && (
               <div className="space-y-5">

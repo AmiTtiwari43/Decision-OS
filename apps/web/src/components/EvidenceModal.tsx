@@ -249,7 +249,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           aria-modal="true"
           aria-labelledby="evidence-modal-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-surface-card border border-border rounded-2xl shadow-2xl overflow-hidden z-10"
+          className="relative w-full max-w-6xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col bg-surface-card border border-border rounded-2xl shadow-2xl overflow-hidden z-10"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-border bg-surface">
@@ -283,7 +283,7 @@ export const EvidenceModal: React.FC<EvidenceModalProps> = ({
           <div
             role="tablist"
             aria-label="Evidence navigation"
-            className="flex items-center justify-between border-b border-border-subtle px-6 bg-surface-subtle/50 overflow-x-auto scrollbar-none"
+            className="shrink-0 flex items-center justify-between border-b border-border-subtle px-4 sm:px-6 bg-surface-subtle/50 overflow-x-auto scrollbar-none"
           >
             <div className="flex gap-2 py-2">
               <button

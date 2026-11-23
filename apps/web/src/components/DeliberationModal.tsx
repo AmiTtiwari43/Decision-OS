@@ -201,7 +201,7 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-background/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -212,7 +212,7 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
           aria-modal="true"
           aria-labelledby="deliberation-modal-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-3xl max-h-[90vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden text-slate-100"
+          className="relative w-full max-w-4xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden text-slate-100"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface-card">

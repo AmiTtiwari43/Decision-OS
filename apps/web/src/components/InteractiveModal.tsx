@@ -409,7 +409,7 @@ ${criteria
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-y-auto bg-background/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-2 lg:p-3 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -421,10 +421,10 @@ ${criteria
           aria-modal="true"
           aria-labelledby="interactive-workspace-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-6xl max-h-[94vh] flex flex-col rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
+          className="relative w-full max-w-[1760px] h-[calc(100dvh-0.5rem)] sm:h-[calc(100dvh-1rem)] lg:h-[calc(100dvh-1.5rem)] flex flex-col rounded-xl sm:rounded-2xl bg-surface-card border border-border shadow-2xl overflow-hidden"
         >
           {/* Modal Header */}
-          <div className="flex items-center justify-between p-3.5 sm:p-5 border-b border-border bg-surface shrink-0">
+          <div className="flex items-center justify-between gap-3 px-3 py-2 sm:px-4 border-b border-border bg-surface shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-surface-subtle border border-border flex items-center justify-center text-signal">
                 <Layers className="w-4 h-4" />
@@ -475,7 +475,7 @@ ${criteria
                   )}
                 </div>
 
-                <p className="text-xs text-slate-400 mt-0.5">
+                <p className="hidden xl:block text-xs text-slate-400 mt-0.5">
                   Configure alternatives and criteria, calibrate weights, enter scores, and execute authoritative MCDA calculations.
                 </p>
               </div>
@@ -508,14 +508,14 @@ ${criteria
           )}
 
           {/* Template & Saved Selector Ribbon */}
-          <div className="p-2.5 sm:p-3 bg-surface-subtle/50 border-b border-border-subtle flex flex-wrap items-center justify-between gap-2 shrink-0">
-            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
-              <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline">Templates:</span>
+          <div className="px-2.5 py-2 sm:px-3 bg-surface-subtle/50 border-b border-border-subtle flex items-center justify-between gap-2 shrink-0">
+            <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]">
+              <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline shrink-0">Templates:</span>
               {templateDatasets.map((t, idx) => (
                 <button
                   key={t.id}
                   onClick={() => handleTemplateChange(idx)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
+                  className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
                     selectedTemplateIndex === idx && mode === 'template'
                       ? 'bg-signal text-background border-signal font-bold shadow-sm'
                       : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
@@ -527,7 +527,7 @@ ${criteria
 
               <button
                 onClick={handleCreateNew}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
+                className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border flex items-center gap-1 cursor-pointer ${
                   mode === 'draft' && selectedTemplateIndex === null
                     ? 'bg-signal text-background border-signal font-bold shadow-sm'
                     : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
@@ -540,7 +540,7 @@ ${criteria
             </div>
 
             {/* Saved Decisions Dropdown Trigger */}
-            <div className="relative">
+            <div className="relative shrink-0">
               <button
                 onClick={handleOpenSavedList}
                 className={`px-3 py-1 rounded-lg text-xs font-mono flex items-center gap-1.5 transition-all border cursor-pointer ${
@@ -810,9 +810,9 @@ ${criteria
           </div>
 
           {/* Modal Scrollable Body */}
-          <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1">
+          <div className="p-3 sm:p-4 overflow-y-auto flex flex-col gap-3 sm:gap-4 flex-1 min-h-0">
             {/* Target Question Scope & Leading Winner Card */}
-            <div className="p-4 rounded-xl bg-surface/80 border border-border flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="shrink-0 px-3 py-2.5 sm:px-4 rounded-xl bg-surface/80 border border-border flex flex-col md:flex-row md:items-center justify-between gap-3">
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[10px] font-mono uppercase text-signal tracking-wider">
@@ -870,13 +870,13 @@ ${criteria
                     <h4 className="text-base sm:text-lg font-bold text-white mt-0.5">
                       "{dataset.question}"
                     </h4>
-                    <p className="text-xs text-slate-400 mt-1">{dataset.context}</p>
+                    <p className="hidden sm:block text-xs text-slate-400 mt-1 line-clamp-1" title={dataset.context}>{dataset.context}</p>
                   </>
                 )}
               </div>
 
               {/* Authoritative Outcome Pill */}
-              <div className="flex items-center gap-3 bg-surface-card p-3 rounded-xl border border-border shrink-0">
+              <div className="flex items-center gap-3 bg-surface-card px-3 py-2 sm:p-3 rounded-xl border border-border shrink-0">
                 <Award className="w-5 h-5 text-signal shrink-0" />
                 <div>
                   <div className="text-[10px] font-mono text-slate-400 uppercase flex items-center gap-1.5">
@@ -927,7 +927,7 @@ ${criteria
 
             {/* Tab 1: Scoring Matrix */}
             {activeTab === 'matrix' && (
-              <div className="space-y-4">
+              <div className="flex-1 min-h-0 flex flex-col">
                 <ScoreMatrix
                   criteria={criteria}
                   options={options}
@@ -970,7 +970,7 @@ ${criteria
                     )}
                   </div>
 
-                  <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                  <div className="space-y-2.5">
                     {criteria.map((c) => (
                       <WeightSlider
                         key={c.id}
@@ -1275,7 +1275,7 @@ ${criteria
                     )}
                   </div>
 
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-3 items-start">
                     {engineResult.evaluations.map((item) => {
                       const isOptionWinner = item.rank === 1 && !engineResult.isIncomplete && !engineResult.isInvalid;
 
@@ -1404,8 +1404,8 @@ ${criteria
           </div>
 
           {/* Modal Footer Bar */}
-          <div className="p-3.5 sm:p-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
-            <div className="text-xs text-slate-400 font-mono flex items-center gap-2">
+          <div className="px-3 py-2 sm:px-4 bg-surface border-t border-border flex flex-wrap items-center justify-between gap-2 shrink-0">
+            <div className="hidden 2xl:flex text-xs text-slate-400 font-mono items-center gap-2">
               <span>Deterministic MCDA</span>
               <span className="text-slate-600">·</span>
               {decisionId ? (
@@ -1417,12 +1417,12 @@ ${criteria
               )}
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 sm:gap-2 flex-nowrap sm:flex-wrap overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 [scrollbar-width:thin] [&>*]:shrink-0 justify-start sm:justify-end 2xl:justify-start w-full 2xl:w-auto">
               {/* Save to Server Button */}
               {currentUserRole === 'viewer' ? (
                 <button
                   disabled
-                  className="px-3.5 py-2 rounded-xl bg-surface border border-border text-slate-500 font-bold text-xs flex items-center gap-1.5 cursor-not-allowed"
+                  className="px-3 py-1.5 rounded-lg bg-surface border border-border text-slate-500 font-bold text-xs flex items-center gap-1.5 cursor-not-allowed"
                 >
                   <Eye className="w-4 h-4 text-sky-400" />
                   <span>Read-Only</span>
@@ -1431,7 +1431,7 @@ ${criteria
                 <button
                   onClick={handleSaveToServer}
                   disabled={saveStatus === 'in_flight'}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                     saveStatus === 'in_flight'
                       ? 'bg-surface border border-border text-slate-400 cursor-not-allowed'
                       : isAuthoritative
@@ -1463,7 +1463,7 @@ ${criteria
               {decisionId && currentUserRole === 'owner' && (
                 <button
                   onClick={() => setIsShareModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-signal/40 text-signal hover:shadow-glow-signal-sm font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-signal/40 text-signal hover:shadow-glow-signal-sm font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Share decision and manage collaborators"
                 >
                   <Share2 className="w-3.5 h-3.5" />
@@ -1475,7 +1475,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsContributionsModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="View and submit expert contributions"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-signal" />
@@ -1490,7 +1490,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsDeliberationModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open stakeholder deliberation threads"
                 >
                   <MessageSquare className="w-3.5 h-3.5 text-signal" />
@@ -1502,7 +1502,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsEvidenceModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="View and attach supporting evidence"
                 >
                   <BookOpen className="w-3.5 h-3.5 text-blue-400" />
@@ -1514,7 +1514,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAiAnalystModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open AI Decision Analyst"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-purple-400" />
@@ -1526,7 +1526,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAnalyticsModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Advanced Decision Analytics"
                 >
                   <BarChart3 className="w-3.5 h-3.5 text-cyan-400" />
@@ -1538,7 +1538,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsDisagreementsModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 hover:text-amber-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Disagreement Intelligence"
                 >
                   <Scale className="w-3.5 h-3.5 text-amber-400" />
@@ -1550,7 +1550,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsCalibrationModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 hover:text-purple-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Expert Calibration Intelligence"
                 >
                   <Target className="w-3.5 h-3.5 text-purple-400" />
@@ -1562,7 +1562,7 @@ ${criteria
               {decisionId && (
                 <button
                   onClick={() => setIsAuditExportModalOpen(true)}
-                  className="px-3 py-2 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                  className="px-2.5 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 text-cyan-300 hover:text-cyan-200 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                   title="Open Decision History & Export Center"
                 >
                   <History className="w-3.5 h-3.5 text-cyan-400" />
@@ -1573,7 +1573,7 @@ ${criteria
               {/* Copy Briefing Button */}
               <button
                 onClick={handleExportBriefing}
-                className="px-3 py-2 rounded-xl bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-border text-slate-200 hover:text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
               >
                 {copyStatus === 'copied' ? (
                   <>

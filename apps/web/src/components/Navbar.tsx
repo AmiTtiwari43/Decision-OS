@@ -56,7 +56,7 @@ export const Navbar: React.FC<NavbarProps> = ({
           : 'bg-transparent py-3 sm:py-4'
       }`}
     >
-      <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2">
+      <div className={`${isAuthenticated && activeView === 'app' ? 'max-w-[1600px]' : 'max-w-7xl'} mx-auto px-3 sm:px-6 lg:px-8 flex items-center justify-between gap-2`}>
         {/* Brand Logo in Header Navbar Top Left */}
         <a
           href="#"

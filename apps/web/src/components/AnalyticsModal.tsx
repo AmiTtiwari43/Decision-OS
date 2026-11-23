@@ -94,7 +94,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-sm"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-sm"
         onClick={onClose}
       >
         <motion.div
@@ -106,7 +106,7 @@ export const AnalyticsModal: React.FC<AnalyticsModalProps> = ({
           aria-modal="true"
           aria-labelledby="advanced-analytics-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-5xl max-h-[92vh] bg-surface border border-border rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100"
+          className="relative w-full max-w-[1600px] max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] bg-surface border border-border rounded-2xl shadow-glow-card flex flex-col overflow-hidden text-slate-100"
         >
           {/* Header */}
           <div className="flex items-center justify-between p-4 sm:p-6 border-b border-border bg-surface-subtle/50 shrink-0">

@@ -504,7 +504,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
   return (
     <AnimatePresence>
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-background/80 backdrop-blur-md"
         onClick={onClose}
       >
         <motion.div
@@ -515,7 +515,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           aria-modal="true"
           aria-labelledby="ai-analyst-title"
           onClick={(e) => e.stopPropagation()}
-          className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-surface-card border border-border rounded-2xl shadow-2xl overflow-hidden text-slate-100"
+          className="relative w-full max-w-6xl max-h-[calc(100dvh-1rem)] sm:max-h-[calc(100dvh-2rem)] flex flex-col bg-surface-card border border-border rounded-2xl shadow-2xl overflow-hidden text-slate-100"
         >
           {/* Header */}
           <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-surface">
@@ -561,7 +561,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
           <div
             role="tablist"
             aria-label="AI Analyst capabilities"
-            className="flex items-center gap-1 px-6 py-2.5 border-b border-border-subtle bg-surface-subtle/50 overflow-x-auto text-xs scrollbar-none"
+            className="shrink-0 flex flex-wrap items-center gap-1 px-4 sm:px-6 py-2 border-b border-border-subtle bg-surface-subtle/50 text-xs"
           >
             {[
               { id: 'all', label: 'All Overview', icon: Brain },
@@ -676,7 +676,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
                         No actionable advisory suggestions generated for this decision state.
                       </p>
                     ) : (
-                      <div className="space-y-3">
+                      <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
                         {analysis.output.rankedSuggestions.map(s => renderRankedSuggestionCard(s))}
                       </div>
                     )}
