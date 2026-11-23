@@ -17,6 +17,7 @@
     "test:web": "npm run test --workspace=@decision-os/web",
     "lint:web": "npm run lint --workspace=@decision-os/web",
     "build:api": "npm run build --workspace=@decision-os/api",
+    "start:api": "npm run start --workspace=@decision-os/api",
     "test:api": "npm run test --workspace=@decision-os/api",
     "lint:api": "npm run lint --workspace=@decision-os/api",
     "build:engine": "npm run build --workspace=@decision-os/decision-engine",
