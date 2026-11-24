@@ -45,35 +45,55 @@ const CACHE_STORAGE_PREFIX = 'decision_os_ai_cache_';
 const memoryAiCache = new Map<string, Map<AiCapability, AiAnalystResponseDto>>();
 
 export function getCachedAiAnalysis(decisionId: string, cap: AiCapability = 'all'): AiAnalystResponseDto | null {
+  const cleanId = (decisionId || '').trim();
+  if (!cleanId) return null;
+
   // 1. Check in-memory cache first
-  const decMap = memoryAiCache.get(decisionId);
+  const decMap = memoryAiCache.get(cleanId);
   if (decMap) {
     if (decMap.has(cap)) return decMap.get(cap)!;
     if (decMap.has('all')) return decMap.get('all')!;
+    for (const val of decMap.values()) {
+      if (val) return val;
+    }
   }
 
-  // 2. Check sessionStorage fallback
+  // 2. Check localStorage (persists across reloads/sessions) & sessionStorage fallback
   if (typeof window !== 'undefined') {
     try {
-      const stored = window.sessionStorage.getItem(`${CACHE_STORAGE_PREFIX}${decisionId}_${cap}`);
-      if (stored) {
-        const parsed = JSON.parse(stored) as AiAnalystResponseDto;
-        if (!decMap) {
-          memoryAiCache.set(decisionId, new Map([[cap, parsed]]));
-        } else {
-          decMap.set(cap, parsed);
+      const keysToTry = [
+        `${CACHE_STORAGE_PREFIX}${cleanId}_${cap}`,
+        `${CACHE_STORAGE_PREFIX}${cleanId}_all`,
+      ];
+      for (const key of keysToTry) {
+        const stored = window.localStorage.getItem(key) || window.sessionStorage.getItem(key);
+        if (stored) {
+          const parsed = JSON.parse(stored) as AiAnalystResponseDto;
+          if (!decMap) {
+            memoryAiCache.set(cleanId, new Map([[cap, parsed], ['all', parsed]]));
+          } else {
+            decMap.set(cap, parsed);
+            decMap.set('all', parsed);
+          }
+          return parsed;
         }
-        return parsed;
       }
-      const storedAll = window.sessionStorage.getItem(`${CACHE_STORAGE_PREFIX}${decisionId}_all`);
-      if (storedAll) {
-        const parsedAll = JSON.parse(storedAll) as AiAnalystResponseDto;
-        if (!decMap) {
-          memoryAiCache.set(decisionId, new Map([['all', parsedAll]]));
-        } else {
-          decMap.set('all', parsedAll);
+
+      // Check any localStorage key matching this decisionId
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const k = window.localStorage.key(i);
+        if (k && k.startsWith(`${CACHE_STORAGE_PREFIX}${cleanId}`)) {
+          const raw = window.localStorage.getItem(k);
+          if (raw) {
+            const parsed = JSON.parse(raw) as AiAnalystResponseDto;
+            if (!decMap) {
+              memoryAiCache.set(cleanId, new Map([['all', parsed]]));
+            } else {
+              decMap.set('all', parsed);
+            }
+            return parsed;
+          }
         }
-        return parsedAll;
       }
     } catch {
       // safe fallback if storage disabled or restricted
@@ -84,16 +104,24 @@ export function getCachedAiAnalysis(decisionId: string, cap: AiCapability = 'all
 }
 
 export function setCachedAiAnalysis(decisionId: string, cap: AiCapability, data: AiAnalystResponseDto): void {
-  let decMap = memoryAiCache.get(decisionId);
+  const cleanId = (decisionId || '').trim();
+  if (!cleanId) return;
+
+  let decMap = memoryAiCache.get(cleanId);
   if (!decMap) {
     decMap = new Map();
-    memoryAiCache.set(decisionId, decMap);
+    memoryAiCache.set(cleanId, decMap);
   }
   decMap.set(cap, data);
+  decMap.set('all', data);
 
   if (typeof window !== 'undefined') {
     try {
-      window.sessionStorage.setItem(`${CACHE_STORAGE_PREFIX}${decisionId}_${cap}`, JSON.stringify(data));
+      const serialized = JSON.stringify(data);
+      window.localStorage.setItem(`${CACHE_STORAGE_PREFIX}${cleanId}_${cap}`, serialized);
+      window.localStorage.setItem(`${CACHE_STORAGE_PREFIX}${cleanId}_all`, serialized);
+      window.sessionStorage.setItem(`${CACHE_STORAGE_PREFIX}${cleanId}_${cap}`, serialized);
+      window.sessionStorage.setItem(`${CACHE_STORAGE_PREFIX}${cleanId}_all`, serialized);
     } catch {
       // safe fallback
     }
@@ -101,17 +129,29 @@ export function setCachedAiAnalysis(decisionId: string, cap: AiCapability, data:
 }
 
 export function clearCachedAiAnalysis(decisionId: string): void {
-  memoryAiCache.delete(decisionId);
+  const cleanId = (decisionId || '').trim();
+  if (!cleanId) return;
+
+  memoryAiCache.delete(cleanId);
   if (typeof window !== 'undefined') {
     try {
-      const keysToRemove: string[] = [];
-      for (let i = 0; i < window.sessionStorage.length; i++) {
-        const key = window.sessionStorage.key(i);
-        if (key && key.startsWith(`${CACHE_STORAGE_PREFIX}${decisionId}`)) {
-          keysToRemove.push(key);
+      const toRemoveLocal: string[] = [];
+      for (let i = 0; i < window.localStorage.length; i++) {
+        const key = window.localStorage.key(i);
+        if (key && key.startsWith(`${CACHE_STORAGE_PREFIX}${cleanId}`)) {
+          toRemoveLocal.push(key);
         }
       }
-      keysToRemove.forEach(k => window.sessionStorage.removeItem(k));
+      toRemoveLocal.forEach(k => window.localStorage.removeItem(k));
+
+      const toRemoveSession: string[] = [];
+      for (let i = 0; i < window.sessionStorage.length; i++) {
+        const key = window.sessionStorage.key(i);
+        if (key && key.startsWith(`${CACHE_STORAGE_PREFIX}${cleanId}`)) {
+          toRemoveSession.push(key);
+        }
+      }
+      toRemoveSession.forEach(k => window.sessionStorage.removeItem(k));
     } catch {
       // safe fallback
     }
@@ -246,6 +286,13 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
       setExpandedSuggestionIds({});
     }
 
+    // 1. If analysis is already present in state for this decision, retain it with zero refetch!
+    if (analysis && analysis.decisionId === targetDecisionId) {
+      setIsLoading(false);
+      setError(null);
+      return;
+    }
+
     const cached = getCachedAiAnalysis(targetDecisionId, capability) || getCachedAiAnalysis(targetDecisionId, 'all');
     if (cached) {
       setAnalysis(cached);
@@ -263,7 +310,7 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     }
 
     void fetchAnalysis('all');
-  }, [decision?._id, isOpen, capability, fetchAnalysis]);
+  }, [decision?._id, isOpen, capability, fetchAnalysis, analysis]);
 
   // Keyboard navigation: Escape key closes AI analyst modal
   useEffect(() => {
@@ -286,9 +333,11 @@ export const AiAnalystModal: React.FC<AiAnalystModalProps> = ({
     const cached = decision?._id ? (getCachedAiAnalysis(decision._id, cap) || getCachedAiAnalysis(decision._id, 'all')) : null;
     if (cached) {
       setAnalysis(cached);
+      setIsLoading(false);
+      setError(null);
       return;
     }
-    fetchAnalysis(cap);
+    void fetchAnalysis(cap);
   };
 
   const toggleSuggestionExpand = (id: string) => {

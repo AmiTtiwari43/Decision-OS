@@ -24,6 +24,34 @@ import {
   type AiDisagreementExplanationDto,
 } from '../api/index.js';
 
+const DISAGREEMENT_AI_CACHE_PREFIX = 'decision_os_disagreement_ai_';
+
+function getCachedDisagreementAi(decisionId: string): Record<string, AiDisagreementExplanationDto> {
+  const cleanId = (decisionId || '').trim();
+  if (!cleanId || typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(`${DISAGREEMENT_AI_CACHE_PREFIX}${cleanId}`)
+      || window.sessionStorage.getItem(`${DISAGREEMENT_AI_CACHE_PREFIX}${cleanId}`);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
+  }
+}
+
+function setCachedDisagreementAi(decisionId: string, disagreementId: string, data: AiDisagreementExplanationDto): void {
+  const cleanId = (decisionId || '').trim();
+  if (!cleanId || typeof window === 'undefined') return;
+  try {
+    const current = getCachedDisagreementAi(cleanId);
+    current[disagreementId] = data;
+    const serialized = JSON.stringify(current);
+    window.localStorage.setItem(`${DISAGREEMENT_AI_CACHE_PREFIX}${cleanId}`, serialized);
+    window.sessionStorage.setItem(`${DISAGREEMENT_AI_CACHE_PREFIX}${cleanId}`, serialized);
+  } catch {
+    // safe fallback
+  }
+}
+
 export interface DisagreementsModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -43,8 +71,10 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [criticalOnly, setCriticalOnly] = useState<boolean>(false);
 
-  // AI Explanations cache: disagreementId -> AiDisagreementExplanationDto
-  const [aiExplanations, setAiExplanations] = useState<Record<string, AiDisagreementExplanationDto>>({});
+  // AI Explanations cache: disagreementId -> AiDisagreementExplanationDto (persisted across sessions)
+  const [aiExplanations, setAiExplanations] = useState<Record<string, AiDisagreementExplanationDto>>(() => {
+    return decision?._id ? getCachedDisagreementAi(decision._id) : {};
+  });
   const [aiLoadingId, setAiLoadingId] = useState<string | null>(null);
   const [aiError, setAiError] = useState<Record<string, string | null>>({});
 
@@ -82,6 +112,10 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
       fetchDisagreements();
       setAiError({});
       setResolutionError({});
+      const cachedAi = getCachedDisagreementAi(decision._id);
+      if (Object.keys(cachedAi).length > 0) {
+        setAiExplanations(prev => ({ ...cachedAi, ...prev }));
+      }
     }
   }, [isOpen, decision?._id, fetchDisagreements]);
 
@@ -103,12 +137,14 @@ export const DisagreementsModal: React.FC<DisagreementsModalProps> = ({
 
   const handleRequestAiExplanation = async (disagreementId: string) => {
     if (!decision?._id || aiLoadingId) return;
+    if (aiExplanations[disagreementId]) return; // Retain already-fetched AI answer
     setAiLoadingId(disagreementId);
     setAiError(prev => ({ ...prev, [disagreementId]: null }));
 
     try {
       const res = await apiClient.explainDisagreementWithAi(decision._id, disagreementId);
       setAiExplanations(prev => ({ ...prev, [disagreementId]: res }));
+      setCachedDisagreementAi(decision._id, disagreementId, res);
     } catch (err: unknown) {
       setAiError(prev => ({
         ...prev,

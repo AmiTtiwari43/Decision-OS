@@ -71,17 +71,40 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
   }
 
-  // CORS
-  const configuredOrigins = currentEnv.CORS_ORIGIN.split(',').map(o => o.trim());
-  // Local development origins are only implicitly trusted outside production;
-  // production must list every allowed origin explicitly in CORS_ORIGIN.
-  const developmentOrigins = currentEnv.NODE_ENV === 'production'
-    ? []
-    : ['http://localhost:5173', 'http://127.0.0.1:5173', 'http://localhost:3000', 'http://127.0.0.1:3000'];
-  const allowedOrigins = Array.from(new Set([...configuredOrigins, ...developmentOrigins]));
+  // CORS: Dynamic origin matcher supporting localhost, Vercel deployments, and configured origins
+  const configuredOrigins = currentEnv.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean);
+  const staticAllowedOrigins = new Set([
+    ...configuredOrigins,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://localhost:3000',
+    'http://127.0.0.1:3000',
+    'https://decision-os-lac-six.vercel.app',
+  ]);
 
   await app.register(cors, {
-    origin: allowedOrigins,
+    origin: (origin, cb) => {
+      // Allow requests with no origin (mobile apps, curl, server-to-server health checks)
+      if (!origin) {
+        return cb(null, true);
+      }
+      if (staticAllowedOrigins.has(origin) || staticAllowedOrigins.has('*')) {
+        return cb(null, true);
+      }
+      try {
+        const url = new URL(origin);
+        if (
+          url.hostname.endsWith('.vercel.app') ||
+          url.hostname === 'localhost' ||
+          url.hostname === '127.0.0.1'
+        ) {
+          return cb(null, true);
+        }
+      } catch {
+        // Invalid origin format
+      }
+      return cb(new Error('Not allowed by CORS'), false);
+    },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
     exposedHeaders: ['x-request-id'],

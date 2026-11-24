@@ -24,6 +24,7 @@
     "test:engine": "npm run test --workspace=@decision-os/decision-engine",
     "lint:engine": "npm run lint --workspace=@decision-os/decision-engine",
     "demo:reset": "npx tsx scripts/demo_reset.ts",
+    "demo:seed": "npx tsx scripts/seed_vast_demo_data.ts",
     "demo:verify": "npx tsx scripts/canonical_presentation_verification.ts"
   },
   "devDependencies": {
