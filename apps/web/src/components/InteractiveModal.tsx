@@ -65,6 +65,7 @@ interface InteractiveModalProps {
   isOpen: boolean;
   onClose: () => void;
   model?: ReturnType<typeof useDecisionModel>;
+  isProductTour?: boolean;
 }
 
 export type ActiveWorkspaceTab = 'matrix' | 'weights' | 'alternatives' | 'analysis';
@@ -73,6 +74,7 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   isOpen,
   onClose,
   model: externalModel,
+  isProductTour = false,
 }) => {
   const localModel = useDecisionModel(templateDatasets[0]);
   const model = externalModel ?? localModel;
@@ -125,6 +127,9 @@ export const InteractiveModal: React.FC<InteractiveModalProps> = ({
   } = model;
 
   const { isAuthenticated, openAuthModal, user } = useAuth();
+
+  const isRealWorkspace = isAuthenticated && !isProductTour;
+  const showTemplates = !isRealWorkspace && !decisionId;
 
   const [activeTab, setActiveTab] = useState<ActiveWorkspaceTab>('matrix');
   const [selectedTemplateIndex, setSelectedTemplateIndex] = useState<number | null>(0);
@@ -510,20 +515,38 @@ ${criteria
           {/* Template & Saved Selector Ribbon */}
           <div className="px-2.5 py-2 sm:px-3 bg-surface-subtle/50 border-b border-border-subtle flex items-center justify-between gap-2 shrink-0">
             <div className="flex flex-nowrap items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:thin]">
-              <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline shrink-0">Templates:</span>
-              {templateDatasets.map((t, idx) => (
-                <button
-                  key={t.id}
-                  onClick={() => handleTemplateChange(idx)}
-                  className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
-                    selectedTemplateIndex === idx && mode === 'template'
-                      ? 'bg-signal text-background border-signal font-bold shadow-sm'
-                      : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
-                  }`}
-                >
-                  {t.title}
-                </button>
-              ))}
+              {showTemplates ? (
+                <>
+                  <span className="text-xs font-mono text-slate-400 mr-1 hidden sm:inline shrink-0">Templates:</span>
+                  {templateDatasets.map((t, idx) => (
+                    <button
+                      key={t.id}
+                      onClick={() => handleTemplateChange(idx)}
+                      className={`shrink-0 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border cursor-pointer ${
+                        selectedTemplateIndex === idx && mode === 'template'
+                          ? 'bg-signal text-background border-signal font-bold shadow-sm'
+                          : 'bg-surface border-border text-slate-300 hover:text-white hover:border-slate-600'
+                      }`}
+                    >
+                      {t.title}
+                    </button>
+                  ))}
+                </>
+              ) : (
+                <div className="flex items-center gap-2 min-w-0 mr-1">
+                  {decisionId && dataset?.title && (
+                    <span className="text-xs font-mono text-slate-400 flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 rounded-full bg-signal animate-pulse shrink-0" />
+                      <span
+                        className="text-slate-300 font-semibold truncate max-w-[200px] sm:max-w-xs md:max-w-md"
+                        title={dataset.title}
+                      >
+                        {dataset.title}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
 
               <button
                 onClick={handleCreateNew}

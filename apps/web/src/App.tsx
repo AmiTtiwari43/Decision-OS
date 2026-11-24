@@ -342,6 +342,7 @@ function AppContent() {
             isOpen={isSandboxOpen}
             onClose={() => setIsSandboxOpen(false)}
             model={decisionModel}
+            isProductTour={activeView === 'marketing'}
           />
         )}
 
