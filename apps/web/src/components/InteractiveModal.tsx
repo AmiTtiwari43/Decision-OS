@@ -1612,8 +1612,9 @@ ${criteria
               onClose={() => setIsContributionsModalOpen(false)}
               decision={serverDecision}
               onDecisionUpdated={(updated) => {
-                if (model?.loadDecision) {
-                  model.loadDecision(updated._id);
+                const uId = updated?._id || updated?.id;
+                if (model?.loadDecision && uId) {
+                  model.loadDecision(uId);
                 }
               }}
             />
@@ -1633,8 +1634,9 @@ ${criteria
               onClose={() => setIsAiAnalystModalOpen(false)}
               decision={serverDecision}
               onDecisionUpdated={(updated) => {
-                if (model?.loadDecision) {
-                  model.loadDecision(updated._id);
+                const uId = updated?._id || updated?.id;
+                if (model?.loadDecision && uId) {
+                  model.loadDecision(uId);
                 }
               }}
             />

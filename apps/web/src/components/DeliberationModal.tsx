@@ -46,12 +46,17 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
     decision?.currentUserRole === 'owner' || decision?.currentUserRole === 'editor';
 
   const fetchComments = useCallback(async () => {
-    if (!decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!dId) return;
     setIsLoading(true);
     setError(null);
     try {
-      const res = await apiClient.getComments(decision._id);
-      setComments(res.items || []);
+      const res = await apiClient.getComments(dId);
+      const normalizedItems = (res.items || []).map((c: any) => ({
+        ...c,
+        id: c.id || c._id,
+      }));
+      setComments(normalizedItems);
     } catch (err) {
       if (err instanceof ApiClientError) {
         setError(err.message);
@@ -61,13 +66,14 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [decision?._id]);
+  }, [decision?._id, decision?.id]);
 
   useEffect(() => {
-    if (isOpen && decision?._id) {
+    const dId = decision?._id || decision?.id;
+    if (isOpen && dId) {
       fetchComments();
     }
-  }, [isOpen, decision?._id, fetchComments]);
+  }, [isOpen, decision?._id, decision?.id, fetchComments]);
 
   // Keyboard navigation: Escape key closes deliberation modal
   useEffect(() => {
@@ -83,17 +89,23 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
 
   const handleCreateRootComment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCommentContent.trim() || !decision?._id || isSubmitting) return;
+    const dId = decision?._id || decision?.id;
+    if (!newCommentContent.trim() || !dId || isSubmitting) return;
 
     setIsSubmitting(true);
+    setError(null);
     sound.playTick();
     try {
-      const created = await apiClient.createComment(decision._id, {
+      const created = await apiClient.createComment(dId, {
         content: newCommentContent.trim(),
         targetType: 'decision',
-        targetId: decision._id,
+        targetId: dId,
       });
-      setComments((prev) => [...prev, created]);
+      const normalized = {
+        ...created,
+        id: created.id || (created as any)._id,
+      };
+      setComments((prev) => [...prev, normalized]);
       setNewCommentContent('');
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -107,21 +119,32 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
   };
 
   const handleCreateReply = async (parentId: string) => {
-    if (!replyContent.trim() || !decision?._id || isSubmitting) return;
+    const dId = decision?._id || decision?.id;
+    if (!replyContent.trim() || !dId || isSubmitting) return;
 
     setIsSubmitting(true);
+    setError(null);
     sound.playTick();
     try {
-      const created = await apiClient.createComment(decision._id, {
+      const parentComment = comments.find((c) => (c.id || (c as any)._id) === parentId);
+      const created = await apiClient.createComment(dId, {
         content: replyContent.trim(),
         parentCommentId: parentId,
-        targetType: 'decision',
-        targetId: decision._id,
+        // Inherit exact target scope from root comment (or omit so server anchors automatically)
+        targetType: parentComment?.targetType,
+        targetId: parentComment?.targetId,
+        cellCoordinates: parentComment?.cellCoordinates,
       });
+      const normalized = {
+        ...created,
+        id: created.id || (created as any)._id,
+      };
       setComments((prev) =>
         prev.map((c) =>
-          c.id === parentId ? { ...c, replyCount: (c.replyCount || 0) + 1 } : c
-        ).concat(created)
+          (c.id || (c as any)._id) === parentId
+            ? { ...c, replyCount: (c.replyCount || 0) + 1 }
+            : c
+        ).concat(normalized)
       );
       setReplyContent('');
       setReplyingToId(null);
@@ -137,11 +160,18 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
   };
 
   const handleToggleResolve = async (commentId: string, currentResolved: boolean) => {
-    if (!decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!dId) return;
     sound.playTick();
     try {
-      const updated = await apiClient.resolveComment(decision._id, commentId, !currentResolved);
-      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      const updated = await apiClient.resolveComment(dId, commentId, !currentResolved);
+      const normalized = {
+        ...updated,
+        id: updated.id || (updated as any)._id,
+      };
+      setComments((prev) =>
+        prev.map((c) => ((c.id || (c as any)._id) === commentId ? normalized : c))
+      );
     } catch (err) {
       if (err instanceof ApiClientError) {
         setError(err.message);
@@ -150,13 +180,20 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
   };
 
   const handleSaveEdit = async (commentId: string) => {
-    if (!editContent.trim() || !decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!editContent.trim() || !dId) return;
     sound.playTick();
     try {
-      const updated = await apiClient.updateComment(decision._id, commentId, {
+      const updated = await apiClient.updateComment(dId, commentId, {
         content: editContent.trim(),
       });
-      setComments((prev) => prev.map((c) => (c.id === commentId ? updated : c)));
+      const normalized = {
+        ...updated,
+        id: updated.id || (updated as any)._id,
+      };
+      setComments((prev) =>
+        prev.map((c) => ((c.id || (c as any)._id) === commentId ? normalized : c))
+      );
       setEditingId(null);
       setEditContent('');
     } catch (err) {
@@ -167,18 +204,21 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
   };
 
   const handleDelete = async (commentId: string) => {
-    if (!decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!dId) return;
     sound.playTick();
     try {
-      const res = await apiClient.deleteComment(decision._id, commentId);
+      const res = await apiClient.deleteComment(dId, commentId);
       if (res.tombstoned) {
         setComments((prev) =>
           prev.map((c) =>
-            c.id === commentId ? { ...c, isDeleted: true, content: 'Comment deleted by author.' } : c
+            (c.id || (c as any)._id) === commentId
+              ? { ...c, isDeleted: true, content: 'Comment deleted by author.' }
+              : c
           )
         );
       } else {
-        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        setComments((prev) => prev.filter((c) => (c.id || (c as any)._id) !== commentId));
       }
     } catch (err) {
       if (err instanceof ApiClientError) {
@@ -313,12 +353,18 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
 
             {!isLoading &&
               filteredRootComments.map((root) => {
-                const childReplies = replies.filter((r) => r.parentCommentId === root.id);
+                const rootId = root.id || (root as any)._id;
+                const childReplies = replies.filter(
+                  (r) =>
+                    r.parentCommentId === rootId ||
+                    r.parentCommentId === root.id ||
+                    (r.parentCommentId && (root as any)._id && r.parentCommentId === (root as any)._id)
+                );
                 const isAuthor = user?.id === root.authorId;
 
                 return (
                   <div
-                    key={root.id}
+                    key={rootId}
                     className={`p-4 rounded-xl border transition-all ${
                       root.isResolved
                         ? 'bg-surface/30 border-emerald-500/30'
@@ -461,7 +507,7 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
                     )}
 
                     {/* Reply Input */}
-                    {replyingToId === root.id ? (
+                    {replyingToId === rootId ? (
                       <div className="mt-3 pl-4 border-l-2 border-signal/40 space-y-2">
                         <textarea
                           value={replyContent}
@@ -477,14 +523,14 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
                               setReplyingToId(null);
                               setReplyContent('');
                             }}
-                            className="px-2.5 py-1 text-xs text-slate-400 hover:text-white"
+                            className="px-2.5 py-1 text-xs text-slate-400 hover:text-white cursor-pointer"
                           >
                             Cancel
                           </button>
                           <button
-                            onClick={() => handleCreateReply(root.id)}
+                            onClick={() => handleCreateReply(rootId)}
                             disabled={!replyContent.trim() || isSubmitting}
-                            className="px-3 py-1 text-xs font-semibold rounded bg-signal text-slate-950 hover:bg-signal-hover disabled:opacity-50"
+                            className="px-3 py-1 text-xs font-semibold rounded bg-signal text-slate-950 hover:bg-signal-hover disabled:opacity-50 cursor-pointer"
                           >
                             Reply
                           </button>
@@ -495,7 +541,7 @@ export const DeliberationModal: React.FC<DeliberationModalProps> = ({
                         <div className="mt-2 text-right">
                           <button
                             onClick={() => {
-                              setReplyingToId(root.id);
+                              setReplyingToId(rootId);
                               setReplyContent('');
                             }}
                             className="text-[11px] font-mono text-slate-400 hover:text-signal transition-colors inline-flex items-center gap-1 cursor-pointer"

@@ -82,15 +82,24 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
   const [isRejecting, setIsRejecting] = useState<boolean>(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
+  const getContributionId = (sub: DecisionContributionDto | any): string => {
+    return String(sub?.id || sub?._id || '').trim();
+  };
+
   // Fetch my contribution
   const fetchMyContribution = useCallback(async () => {
-    if (!decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!dId) return;
     setIsLoadingMine(true);
     setFormError(null);
     try {
-      const res = await apiClient.getMineContribution(decision._id);
+      const res = await apiClient.getMineContribution(dId);
       if (res.item) {
-        setMyContribution(res.item);
+        const normalized = {
+          ...res.item,
+          id: res.item.id || (res.item as any)._id,
+        };
+        setMyContribution(normalized);
         setPreferredOptionId(res.item.recommendation.preferredOptionId || '');
         setRationale(res.item.recommendation.rationale || '');
         setConfidence(res.item.confidence !== undefined ? res.item.confidence : 0.8);
@@ -117,12 +126,17 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
   // Fetch all submissions
   const fetchSubmissions = useCallback(async () => {
-    if (!decision?._id) return;
+    const dId = decision?._id || decision?.id;
+    if (!dId) return;
     setIsLoadingSubmissions(true);
     setSubmissionsError(null);
     try {
-      const res = await apiClient.listContributions(decision._id);
-      setSubmissions(res.items);
+      const res = await apiClient.listContributions(dId);
+      const normalizedItems = (res.items || []).map((s: any) => ({
+        ...s,
+        id: s.id || s._id,
+      }));
+      setSubmissions(normalizedItems);
     } catch (err) {
       if (err instanceof ApiClientError) {
         setSubmissionsError(err.message);
@@ -133,14 +147,15 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
   }, [decision]);
 
   useEffect(() => {
-    if (isOpen && decision?._id) {
+    const dId = decision?._id || decision?.id;
+    if (isOpen && dId) {
       fetchMyContribution();
       fetchSubmissions();
       setFormError(null);
       setFormSuccess(null);
       setConfirmWithdraw(false);
     }
-  }, [isOpen, decision?._id, fetchMyContribution, fetchSubmissions]);
+  }, [isOpen, decision?._id, decision?.id, fetchMyContribution, fetchSubmissions]);
 
   // Keyboard navigation: Escape key closes contributions modal
   useEffect(() => {
@@ -174,9 +189,9 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
       criterionReasoning,
       prediction: predictionStatement
         ? {
-            statement: predictionStatement,
-            probability: predictionProbability,
-          }
+          statement: predictionStatement,
+          probability: predictionProbability,
+        }
         : undefined,
     };
 
@@ -216,9 +231,9 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
         criterionReasoning,
         prediction: predictionStatement
           ? {
-              statement: predictionStatement,
-              probability: predictionProbability,
-            }
+            statement: predictionStatement,
+            probability: predictionProbability,
+          }
           : undefined,
       };
       await apiClient.saveContribution(decision._id, payload);
@@ -389,11 +404,10 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                 <button
                   onClick={handleToggleRoundLock}
                   disabled={isTogglingLock}
-                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
-                    isRoundLocked
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${isRoundLocked
                       ? 'bg-signal/15 text-signal border-signal/30 hover:bg-signal/25'
                       : 'bg-surface-subtle text-slate-300 border-border hover:bg-surface'
-                  }`}
+                    }`}
                   title={isRoundLocked ? 'Unlock contribution round' : 'Lock contribution round'}
                   aria-label={isRoundLocked ? 'Unlock contribution round' : 'Lock contribution round'}
                 >
@@ -433,21 +447,19 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
               role="tab"
               aria-selected={activeTab === 'mine'}
               onClick={() => setActiveTab('mine')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
-                activeTab === 'mine'
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${activeTab === 'mine'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+                }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>My Submission</span>
               {myContribution && (
                 <span
-                  className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded ${
-                    myContribution.status === 'submitted'
+                  className={`text-[9px] font-mono uppercase px-1.5 py-0.2 rounded ${myContribution.status === 'submitted'
                       ? 'bg-signal/20 text-signal'
                       : 'bg-surface-card text-slate-400'
-                  }`}
+                    }`}
                 >
                   {myContribution.status}
                 </span>
@@ -458,11 +470,10 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
               role="tab"
               aria-selected={activeTab === 'submissions'}
               onClick={() => setActiveTab('submissions')}
-              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${
-                activeTab === 'submissions'
+              className={`px-3 py-2 text-xs font-bold rounded-t-lg transition-colors border-b-2 cursor-pointer flex items-center gap-1.5 focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none ${activeTab === 'submissions'
                   ? 'border-signal text-signal bg-surface'
                   : 'border-transparent text-slate-400 hover:text-slate-200'
-              }`}
+                }`}
             >
               <Users className="w-3.5 h-3.5" />
               <span>All Submissions ({submissions.filter((s) => s.status === 'submitted').length})</span>
@@ -489,13 +500,12 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                       <div className="flex items-center gap-2">
                         <span className="text-slate-400">Current Status:</span>
                         <span
-                          className={`font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
-                            myContribution?.status === 'submitted'
+                          className={`font-mono text-[10px] uppercase font-bold px-2 py-0.5 rounded ${myContribution?.status === 'submitted'
                               ? 'bg-signal/20 text-signal border border-signal/30'
                               : myContribution?.status === 'withdrawn'
-                              ? 'bg-accent-rose/20 text-accent-rose border border-accent-rose/30'
-                              : 'bg-surface-subtle text-slate-300 border border-border'
-                          }`}
+                                ? 'bg-accent-rose/20 text-accent-rose border border-accent-rose/30'
+                                : 'bg-surface-subtle text-slate-300 border border-border'
+                            }`}
                         >
                           {myContribution?.status || 'No Submission Yet (Draft)'}
                         </span>
@@ -547,11 +557,10 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                 type="button"
                                 disabled={isRoundLocked}
                                 onClick={() => setPreferredOptionId(opt.id)}
-                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer disabled:cursor-not-allowed ${
-                                  preferredOptionId === opt.id
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer disabled:cursor-not-allowed ${preferredOptionId === opt.id
                                     ? 'bg-surface-card border-signal text-white shadow-glow-signal-sm'
                                     : 'bg-surface/50 border-border text-slate-300 hover:border-slate-500'
-                                }`}
+                                  }`}
                               >
                                 <div className="flex items-center justify-between">
                                   <span className="font-bold text-sm">{opt.name}</span>
@@ -797,6 +806,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                     {submissions
                       .filter((s) => s.status !== 'draft')
                       .map((sub) => {
+                        const contribId = getContributionId(sub);
                         const contributor =
                           typeof sub.contributorId === 'object'
                             ? sub.contributorId
@@ -807,7 +817,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
 
                         return (
                           <div
-                            key={sub.id}
+                            key={contribId || sub.id}
                             className="p-4 rounded-xl bg-surface border border-border space-y-3"
                           >
                             {/* Contributor Header */}
@@ -831,12 +841,12 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                   Rev {sub.revision}
                                 </span>
                                 {sub.status === 'adopted' && (
-                                  <span className="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1">
-                                    <CheckCircle2 className="w-3 h-3" /> Adopted
+                                  <span className="text-[10px] font-mono bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded border border-emerald-500/30 flex items-center gap-1 font-bold">
+                                    <CheckCircle2 className="w-3 h-3" /> Accepted / Adopted
                                   </span>
                                 )}
                                 {sub.status === 'rejected' && (
-                                  <span className="text-[10px] font-mono bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30 flex items-center gap-1">
+                                  <span className="text-[10px] font-mono bg-rose-500/15 text-rose-400 px-2 py-0.5 rounded border border-rose-500/30 flex items-center gap-1 font-bold">
                                     <Ban className="w-3 h-3" /> Rejected
                                   </span>
                                 )}
@@ -874,7 +884,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                             {sub.status === 'rejected' && sub.rejectionReason && (
                               <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
                                 <span className="font-mono text-[10px] uppercase text-rose-400 block mb-0.5 font-bold">
-                                  Rejection Rationale
+                                  Rejection Rationale Sent to Contributor
                                 </span>
                                 <span>{sub.rejectionReason}</span>
                               </div>
@@ -928,7 +938,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                 <button
                                   type="button"
                                   onClick={() =>
-                                    setExpandedHistoryId(expandedHistoryId === sub.id ? null : sub.id)
+                                    setExpandedHistoryId(expandedHistoryId === contribId ? null : contribId)
                                   }
                                   className="flex items-center gap-1.5 text-[11px] font-mono text-slate-400 hover:text-slate-200 cursor-pointer"
                                 >
@@ -937,13 +947,13 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                     Revision History ({sub.history.length} previous{' '}
                                     {sub.history.length === 1 ? 'revision' : 'revisions'})
                                   </span>
-                                  {expandedHistoryId === sub.id ? (
+                                  {expandedHistoryId === contribId ? (
                                     <ChevronUp className="w-3 h-3" />
                                   ) : (
                                     <ChevronDown className="w-3 h-3" />
                                   )}
                                 </button>
-                                {expandedHistoryId === sub.id && (
+                                {expandedHistoryId === contribId && (
                                   <div className="mt-2 space-y-2 pl-3 border-l-2 border-border">
                                     {sub.history.map((rev) => (
                                       <div
@@ -974,10 +984,44 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                               </div>
                             )}
 
-                            {/* Owner Actions: Adopt or Reject */}
+                            {/* Actions & Status Feedback */}
+                            {sub.status === 'adopted' && (
+                              <div className="pt-2 border-t border-border-subtle flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 text-xs text-emerald-400 font-medium">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                                  <span>Scores added to analysis & authoritative decision model</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-3.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold flex items-center gap-1.5 cursor-default"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Accepted</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {sub.status === 'rejected' && (
+                              <div className="pt-2 border-t border-border-subtle flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 text-xs text-rose-400 font-medium">
+                                  <Ban className="w-4 h-4 text-rose-400 shrink-0" />
+                                  <span>Contribution rejected & reason sent to contributor</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="px-3.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-1.5 cursor-default"
+                                >
+                                  <Ban className="w-3.5 h-3.5" />
+                                  <span>Rejected</span>
+                                </button>
+                              </div>
+                            )}
+
                             {isOwner && sub.status === 'submitted' && (
                               <div className="pt-2 border-t border-border-subtle space-y-2">
-                                {rejectingId === sub.id ? (
+                                {rejectingId === contribId ? (
                                   <div className="p-3 rounded-xl bg-surface-subtle border border-rose-500/30 space-y-2">
                                     <label className="block text-xs font-mono uppercase text-rose-300 font-semibold">
                                       Rejection Rationale
@@ -1003,7 +1047,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                       <button
                                         type="button"
                                         disabled={isRejecting || !rejectionReasonText.trim()}
-                                        onClick={() => handleReject(sub.id)}
+                                        onClick={() => handleReject(contribId)}
                                         className="px-3 py-1 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-300 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                                       >
                                         {isRejecting ? (
@@ -1020,7 +1064,7 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        setRejectingId(sub.id);
+                                        setRejectingId(contribId);
                                         setRejectionReasonText('');
                                       }}
                                       className="px-3 py-1.5 rounded-lg bg-surface hover:bg-rose-500/10 border border-border hover:border-rose-500/30 text-slate-400 hover:text-rose-300 text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors"
@@ -1031,17 +1075,17 @@ export const ContributionsModal: React.FC<ContributionsModalProps> = ({
                                     </button>
                                     <button
                                       type="button"
-                                      onClick={() => handleAdopt(sub.id)}
-                                      disabled={adoptingId === sub.id}
+                                      onClick={() => handleAdopt(contribId)}
+                                      disabled={adoptingId === contribId}
                                       className="px-3.5 py-1.5 rounded-lg bg-surface hover:bg-surface-subtle border border-signal/40 text-signal text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors disabled:opacity-50"
                                       title="Adopt these scores into the authoritative decision model"
                                     >
-                                      {adoptingId === sub.id ? (
+                                      {adoptingId === contribId ? (
                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                       ) : (
                                         <Award className="w-3.5 h-3.5" />
                                       )}
-                                      <span>Adopt Expert Scores</span>
+                                      <span>Accept & Adopt Scores</span>
                                     </button>
                                   </div>
                                 )}

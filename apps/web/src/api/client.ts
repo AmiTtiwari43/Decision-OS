@@ -921,6 +921,13 @@ export class DecisionApiClient {
   ): Promise<DecisionDto> {
     const cleanId = (decisionId || '').trim();
     const cleanContribId = (contributionId || '').trim();
+    if (!cleanId || !cleanContribId) {
+      throw new ApiClientError({
+        message: 'Both decision ID and contribution ID are required',
+        statusCode: 400,
+        error: 'Bad Request',
+      });
+    }
     const body: Record<string, unknown> = {
       confirmation: payload.confirmation ?? true,
     };
@@ -950,6 +957,13 @@ export class DecisionApiClient {
   ): Promise<DecisionContributionDto> {
     const cleanId = (decisionId || '').trim();
     const cleanContribId = (contributionId || '').trim();
+    if (!cleanId || !cleanContribId) {
+      throw new ApiClientError({
+        message: 'Both decision ID and contribution ID are required',
+        statusCode: 400,
+        error: 'Bad Request',
+      });
+    }
     return this.request<DecisionContributionDto>(
       `/api/decisions/${encodeURIComponent(cleanId)}/contributions/${encodeURIComponent(cleanContribId)}/reject`,
       {

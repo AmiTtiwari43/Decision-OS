@@ -19,19 +19,24 @@ import {
   Activity,
   Check,
   Award,
+  Loader2,
+  X,
 } from 'lucide-react';
 import { sound } from '../utils/audioFx.js';
 import { copyTextToClipboard } from '../utils/clipboard.js';
+import { generateShowcaseExport, triggerFileDownload } from '../utils/showcaseExport.js';
 
 export interface ShowcaseSectionProps {
   onOpenStudio?: () => void;
   onOpenAudit?: () => void;
+  onExport?: (format: 'json' | 'csv' | 'html') => void;
   defaultTab?: 'collaboration' | 'ai' | 'audit';
 }
 
 export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
   onOpenStudio,
   onOpenAudit,
+  onExport,
   defaultTab = 'collaboration',
 }) => {
   const [activeTab, setActiveTab] = useState<'collaboration' | 'ai' | 'audit'>(defaultTab);
@@ -45,6 +50,11 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
   const [isSimulatingTamper, setIsSimulatingTamper] = useState<boolean>(false);
   const [tamperDetected, setTamperDetected] = useState<boolean>(false);
+
+  // Export State
+  const [isExporting, setIsExporting] = useState<'json' | 'csv' | 'html' | null>(null);
+  const [exportedFormat, setExportedFormat] = useState<'json' | 'csv' | 'html' | null>(null);
+  const [exportSuccessMessage, setExportSuccessMessage] = useState<string | null>(null);
 
   const personas = {
     cto: {
@@ -109,6 +119,32 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
     if (!(await copyTextToClipboard(hash))) return;
     setCopiedHash(hash);
     setTimeout(() => setCopiedHash(null), 1500);
+  };
+
+  const handleExport = (format: 'json' | 'csv' | 'html') => {
+    sound.playTick();
+    setIsExporting(format);
+    setExportSuccessMessage(null);
+    try {
+      if (onExport) {
+        onExport(format);
+      }
+      const pkg = generateShowcaseExport(format, isSimulatingTamper);
+      triggerFileDownload(pkg.filename, pkg.contentType, pkg.content);
+      setExportedFormat(format);
+      setExportSuccessMessage(`Downloaded ${pkg.filename}`);
+      sound.playCelebrate();
+      setTimeout(() => {
+        setExportedFormat((prev) => (prev === format ? null : prev));
+      }, 2500);
+      setTimeout(() => {
+        setExportSuccessMessage(null);
+      }, 5000);
+    } catch {
+      // safe fallback
+    } finally {
+      setIsExporting(null);
+    }
   };
 
   return (
@@ -759,21 +795,79 @@ export const ShowcaseSection: React.FC<ShowcaseSectionProps> = ({
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <FileCode className="w-3.5 h-3.5 text-signal" />
-                    <span>JSON Package</span>
-                  </span>
-                  <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
-                    <span>CSV Matrix</span>
-                  </span>
-                  <span className="px-3 py-1.5 rounded-lg bg-surface-subtle border border-border text-xs font-mono text-slate-300 flex items-center gap-1.5">
-                    <FileText className="w-3.5 h-3.5 text-purple-400" />
-                    <span>Printable HTML</span>
-                  </span>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => handleExport('json')}
+                    disabled={isExporting !== null}
+                    className="px-3 py-1.5 rounded-lg bg-surface-subtle hover:bg-surface active:scale-95 border border-border hover:border-signal/50 text-xs font-mono text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-signal focus-visible:outline-none disabled:opacity-50"
+                    title="Export complete JSON Package with 11 guaranteed components &amp; cryptographic audit proof"
+                    aria-label="Export Boardroom Defense JSON Package"
+                  >
+                    {exportedFormat === 'json' ? (
+                      <Check className="w-3.5 h-3.5 text-signal" />
+                    ) : isExporting === 'json' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-signal" />
+                    ) : (
+                      <FileCode className="w-3.5 h-3.5 text-signal" />
+                    )}
+                    <span>{exportedFormat === 'json' ? 'JSON Downloaded' : 'JSON Package'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExport('csv')}
+                    disabled={isExporting !== null}
+                    className="px-3 py-1.5 rounded-lg bg-surface-subtle hover:bg-surface active:scale-95 border border-border hover:border-sky-400/50 text-xs font-mono text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-sky-400 focus-visible:outline-none disabled:opacity-50"
+                    title="Export RFC 4180 CSV Matrix with criteria weights &amp; sensitivity findings"
+                    aria-label="Export Boardroom Defense CSV Matrix"
+                  >
+                    {exportedFormat === 'csv' ? (
+                      <Check className="w-3.5 h-3.5 text-sky-400" />
+                    ) : isExporting === 'csv' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-sky-400" />
+                    ) : (
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-sky-400" />
+                    )}
+                    <span>{exportedFormat === 'csv' ? 'CSV Downloaded' : 'CSV Matrix'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleExport('html')}
+                    disabled={isExporting !== null}
+                    className="px-3 py-1.5 rounded-lg bg-surface-subtle hover:bg-surface active:scale-95 border border-border hover:border-purple-400/50 text-xs font-mono text-slate-300 hover:text-white flex items-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-purple-400 focus-visible:outline-none disabled:opacity-50"
+                    title="Export standalone executive Printable Briefing (HTML/PDF)"
+                    aria-label="Export Boardroom Defense Printable HTML"
+                  >
+                    {exportedFormat === 'html' ? (
+                      <Check className="w-3.5 h-3.5 text-purple-400" />
+                    ) : isExporting === 'html' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5 text-purple-400" />
+                    )}
+                    <span>{exportedFormat === 'html' ? 'HTML Downloaded' : 'Printable HTML'}</span>
+                  </button>
                 </div>
               </div>
+
+              {exportSuccessMessage && (
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs text-emerald-400 flex items-center justify-between gap-2 font-mono">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
+                    <span>{exportSuccessMessage}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setExportSuccessMessage(null)}
+                    className="text-emerald-400 hover:text-white cursor-pointer"
+                    aria-label="Dismiss export success notice"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </motion.div>
           )}
         </div>

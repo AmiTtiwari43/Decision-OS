@@ -133,6 +133,30 @@ describe('Batch 03: Collaboration, AI Advisory & Cryptographic Audit Showcase Su
       );
     });
 
+    it('invokes POST for createComment reply with parentCommentId matching root comment target', async () => {
+      const requestSpy = vi.spyOn(apiClient as any, 'request').mockResolvedValueOnce({ id: 'c-reply-1' });
+
+      await apiClient.createComment('dec-123', {
+        content: 'good work',
+        parentCommentId: 'c-root-opt',
+        targetType: 'option',
+        targetId: 'opt-databricks',
+      });
+
+      expect(requestSpy).toHaveBeenCalledWith(
+        '/api/decisions/dec-123/comments',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            content: 'good work',
+            parentCommentId: 'c-root-opt',
+            targetType: 'option',
+            targetId: 'opt-databricks',
+          }),
+        })
+      );
+    });
+
     it('invokes PATCH for updateComment with content payload', async () => {
       const requestSpy = vi.spyOn(apiClient as any, 'request').mockResolvedValueOnce({ id: 'c-1' });
 

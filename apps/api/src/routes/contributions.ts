@@ -137,7 +137,11 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     try {
       const items = await contributionService.listContributions(id, request.user);
-      return reply.status(200).send({ items });
+      const normalizedItems = (items || []).map((item: any) => ({
+        ...(typeof item.toObject === 'function' ? item.toObject() : item),
+        id: item.id || item._id?.toString?.() || item._id,
+      }));
+      return reply.status(200).send({ items: normalizedItems });
     } catch (err) {
       return handleContributionError(err, request, reply);
     }
@@ -159,7 +163,13 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
 
     try {
       const item = await contributionService.getMineContribution(id, request.user);
-      return reply.status(200).send({ item });
+      const normalizedItem = item
+        ? {
+          ...(typeof (item as any).toObject === 'function' ? (item as any).toObject() : item),
+          id: (item as any).id || (item as any)._id?.toString?.() || (item as any)._id,
+        }
+        : null;
+      return reply.status(200).send({ item: normalizedItem });
     } catch (err) {
       return handleContributionError(err, request, reply);
     }
@@ -298,7 +308,10 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const { id, contributionId } = request.params as { id: string; contributionId: string };
       const requestId = (request.id as string) || 'unknown';
 
-      if (!isValidObjectId(id) || !isValidObjectId(contributionId)) {
+      const cleanId = (id || '').trim();
+      const cleanContributionId = (contributionId || '').trim();
+
+      if (!isValidObjectId(cleanId) || !isValidObjectId(cleanContributionId)) {
         return reply.status(400).send({
           statusCode: 400,
           error: 'Bad Request',
@@ -308,12 +321,12 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
 
       try {
-        const decision = await decisionRepository.findById(id);
+        const decision = await decisionRepository.findById(cleanId);
         if (!decision) {
           return reply.status(404).send({
             statusCode: 404,
             error: 'Not Found',
-            message: `Decision with id '${id}' not found`,
+            message: `Decision with id '${cleanId}' not found`,
             requestId,
           });
         }
@@ -334,8 +347,8 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         }
 
         const rejected = await contributionService.rejectContribution(
-          id,
-          contributionId,
+          cleanId,
+          cleanContributionId,
           parsed.data as RejectContributionInput,
           request.user
         );
@@ -353,7 +366,10 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       const { id, contributionId } = request.params as { id: string; contributionId: string };
       const requestId = (request.id as string) || 'unknown';
 
-      if (!isValidObjectId(id) || !isValidObjectId(contributionId)) {
+      const cleanId = (id || '').trim();
+      const cleanContributionId = (contributionId || '').trim();
+
+      if (!isValidObjectId(cleanId) || !isValidObjectId(cleanContributionId)) {
         return reply.status(400).send({
           statusCode: 400,
           error: 'Bad Request',
@@ -363,12 +379,12 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
       }
 
       try {
-        const decision = await decisionRepository.findById(id);
+        const decision = await decisionRepository.findById(cleanId);
         if (!decision) {
           return reply.status(404).send({
             statusCode: 404,
             error: 'Not Found',
-            message: `Decision with id '${id}' not found`,
+            message: `Decision with id '${cleanId}' not found`,
             requestId,
           });
         }
@@ -390,8 +406,8 @@ export const contributionRoutes: FastifyPluginAsync = async (app: FastifyInstanc
         }
 
         const result = await contributionService.adoptExpertScores(
-          id,
-          contributionId,
+          cleanId,
+          cleanContributionId,
           parsed.data as AdoptContributionInput,
           request.user
         );

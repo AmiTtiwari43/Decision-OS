@@ -65,11 +65,16 @@ export class ContributionRepository {
       conditions.push({ status: { $in: nonDraftStatuses } });
     }
 
-    return DecisionContributionModel.find({ $and: conditions })
+    const docs = await DecisionContributionModel.find({ $and: conditions })
       .populate('contributorId', 'id name email')
       .sort({ createdAt: -1 })
       .lean<DecisionContributionDocument[]>()
       .exec();
+
+    return docs.map((doc: any) => ({
+      ...doc,
+      id: doc.id || doc._id?.toString?.() || doc._id,
+    }));
   }
 
   /**
